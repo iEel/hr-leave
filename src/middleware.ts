@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { getToken } from 'next-auth/jwt';
 
 // Routes that don't require authentication
-const publicRoutes = ['/login', '/api/auth'];
+const publicRoutes = ['/login', '/api/auth', '/action', '/api/email'];
 
 // Role-based route access control
 const roleBasedRoutes: Record<string, string[]> = {

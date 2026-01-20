@@ -185,17 +185,42 @@ export async function POST(request: NextRequest) {
                 .query(`
                     SELECT 
                         u.firstName + ' ' + u.lastName as employeeName,
-                        u.departmentHeadId as managerId
+                        m.id as managerId,
+                        m.firstName + ' ' + m.lastName as managerName,
+                        m.email as managerEmail
                     FROM Users u
+                    LEFT JOIN Users m ON u.departmentHeadId = m.id
                     WHERE u.id = @userId
                 `);
 
-            if (managerResult.recordset[0]?.managerId) {
+            const info = managerResult.recordset[0];
+
+            if (info?.managerId) {
+                // 1. System Notification
                 await notifyPendingApproval(
-                    managerResult.recordset[0].managerId,
-                    managerResult.recordset[0].employeeName,
+                    info.managerId,
+                    info.employeeName,
                     leaveType
                 );
+
+                // 2. Email Notification (Magic Link)
+                if (info.managerEmail) {
+                    const { sendLeaveRequestEmail } = await import('@/lib/email');
+                    await sendLeaveRequestEmail(
+                        info.managerEmail,
+                        info.managerName || 'Manager',
+                        info.employeeName,
+                        {
+                            id: newRequestId,
+                            type: leaveType,
+                            startDate: startDate,
+                            endDate: endDate,
+                            reason: reason,
+                            days: usageAmount
+                        },
+                        info.managerId
+                    );
+                }
             }
         } catch (notifyError) {
             console.error('Error notifying manager:', notifyError);

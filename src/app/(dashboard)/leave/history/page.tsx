@@ -277,7 +277,7 @@ export default function LeaveHistoryPage() {
                                                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                                                         {leave.reason}
                                                     </p>
-                                                    {leave.rejectionReason && (
+                                                    {leave.status === 'REJECTED' && leave.rejectionReason && (
                                                         <p className="text-sm text-red-600 mt-1">
                                                             เหตุผลที่ไม่อนุมัติ: {leave.rejectionReason}
                                                         </p>
