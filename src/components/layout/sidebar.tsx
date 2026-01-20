@@ -66,6 +66,10 @@ const hrNavItems: NavItem[] = [
     { href: '/hr/reports', label: 'รายงาน', icon: <FileText className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
 ];
 
+const adminNavItems: NavItem[] = [
+    { href: '/admin/auth-settings', label: 'ตั้งค่า Authentication', icon: <Shield className="w-5 h-5" />, roles: [UserRole.ADMIN] },
+];
+
 export function Sidebar() {
     const { data: session } = useSession();
     const pathname = usePathname();
@@ -181,6 +185,22 @@ export function Sidebar() {
                                     ))}
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Admin Only Section */}
+                {userRole === UserRole.ADMIN && (
+                    <div className="pt-4">
+                        <div className="px-4 py-2 text-sm font-semibold text-gray-500 dark:text-gray-400">
+                            System Admin
+                        </div>
+                        <div className="space-y-1">
+                            {adminNavItems
+                                .filter((item) => canAccess(item.roles))
+                                .map((item) => (
+                                    <NavLink key={item.href} item={item} />
+                                ))}
+                        </div>
                     </div>
                 )}
             </nav>
