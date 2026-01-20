@@ -1,0 +1,129 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/auth';
+import { getPool } from '@/lib/db';
+import { logAudit } from '@/lib/audit';
+
+/**
+ * POST /api/leave/cancel
+ * ยกเลิกใบลา (เฉพาะสถานะ PENDING เท่านั้น)
+ */
+export async function POST(request: NextRequest) {
+    try {
+        // Check authentication
+        const session = await auth();
+        if (!session?.user?.id) {
+            return NextResponse.json(
+                { error: 'Unauthorized' },
+                { status: 401 }
+            );
+        }
+
+        const userId = Number(session.user.id);
+        const body = await request.json();
+        const { leaveId } = body;
+
+        if (!leaveId) {
+            return NextResponse.json(
+                { error: 'Missing leaveId' },
+                { status: 400 }
+            );
+        }
+
+        const pool = await getPool();
+
+        // Get the leave request and verify ownership and status
+        const leaveResult = await pool.request()
+            .input('leaveId', leaveId)
+            .query(`
+                SELECT id, userId, leaveType, usageAmount, status
+                FROM LeaveRequests
+                WHERE id = @leaveId
+            `);
+
+        if (leaveResult.recordset.length === 0) {
+            return NextResponse.json(
+                { error: 'ไม่พบใบลานี้' },
+                { status: 404 }
+            );
+        }
+
+        const leave = leaveResult.recordset[0];
+        const userRole = session.user.role;
+        const isOwner = leave.userId === userId;
+        const isHrOrAdmin = userRole === 'HR' || userRole === 'ADMIN';
+
+        // Permission check
+        if (!isOwner && !isHrOrAdmin) {
+            return NextResponse.json(
+                { error: 'Unauthorized' },
+                { status: 403 }
+            );
+        }
+
+        // Logic check
+        if (leave.status === 'CANCELLED' || leave.status === 'REJECTED') {
+            return NextResponse.json(
+                { error: 'ใบลาถูกยกเลิกหรือปฏิเสธไปแล้ว' },
+                { status: 400 }
+            );
+        }
+
+        // If regular user, can only cancel PENDING
+        if (!isHrOrAdmin && leave.status !== 'PENDING') {
+            return NextResponse.json(
+                { error: 'สามารถยกเลิกได้เฉพาะใบลาที่สถานะ "รออนุมัติ" เท่านั้น (หากอนุมัติแล้วกรุณาติดต่อ HR)' },
+                { status: 400 }
+            );
+        }
+
+        // Update status to CANCELLED
+        await pool.request()
+            .input('leaveId', leaveId)
+            .input('status', 'CANCELLED')
+            .input('cancelledBy', userId)
+            .query(`
+                UPDATE LeaveRequests
+                SET status = @status, 
+                    updatedAt = GETDATE(),
+                    rejectionReason = 'Cancelled by ' + CAST(@cancelledBy as varchar)
+                WHERE id = @leaveId
+            `);
+
+        // Return the used days back to balance
+        const currentYear = new Date().getFullYear();
+        await pool.request()
+            .input('userId', userId)
+            .input('leaveType', leave.leaveType)
+            .input('year', currentYear)
+            .input('usageAmount', leave.usageAmount)
+            .query(`
+                UPDATE LeaveBalances
+                SET used = used - @usageAmount,
+                    remaining = remaining + @usageAmount,
+                    updatedAt = GETDATE()
+                WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+            `);
+
+        // Audit log
+        await logAudit({
+            userId,
+            action: 'CANCEL_LEAVE_REQUEST',
+            targetTable: 'LeaveRequests',
+            targetId: leaveId,
+            oldValue: { leaveType: leave.leaveType, usageAmount: leave.usageAmount, status: 'PENDING' },
+            newValue: { status: 'CANCELLED' }
+        });
+
+        return NextResponse.json({
+            success: true,
+            message: 'ยกเลิกใบลาสำเร็จ',
+        });
+
+    } catch (error) {
+        console.error('Error cancelling leave:', error);
+        return NextResponse.json(
+            { error: 'Failed to cancel leave' },
+            { status: 500 }
+        );
+    }
+}
