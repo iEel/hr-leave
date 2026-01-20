@@ -1,6 +1,6 @@
 # HR Leave Management System - Developer Handoff Documentation
 
-> 📅 เอกสารนี้สร้างเมื่อ: 16 มกราคม 2026  
+> 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -17,6 +17,7 @@
 8. [สิ่งที่ยังต้องทำ](#8-สิ่งที่ยังต้องทำ)
 9. [ไฟล์สำคัญ](#9-ไฟล์สำคัญ)
 10. [Business Rules](#10-business-rules)
+11. [Developer Guidelines](#11-developer-guidelines)
 
 ---
 
@@ -32,8 +33,9 @@
 - ✅ ยื่นคำขอลา (8 ประเภท)
 - ✅ ดูประวัติการลา + ยกเลิกใบลา
 - ✅ หัวหน้าอนุมัติ/ไม่อนุมัติ
-- 🔲 HR จัดการพนักงาน
-- 🔲 จัดการวันหยุด
+- ✅ HR จัดการพนักงาน
+- ✅ จัดการวันหยุด
+- ✅ System Security (Rate Limiting)
 - 🔲 Reports & Analytics
 
 ---
@@ -172,6 +174,7 @@ npm run dev
 | `AuditLogs` | บันทึกกิจกรรม |
 | `LeaveQuotaSettings` | ตั้งค่าโควตาวันลา |
 | `DelegateApprovers` | ผู้รักษาการแทน |
+| `SystemSettings` | ตั้งค่าระบบ (เช่น Rate Limits) |
 
 ### Key Columns ใน LeaveRequests:
 - `timeSlot`: FULL_DAY, HALF_MORNING, HALF_AFTERNOON
@@ -233,6 +236,11 @@ sequenceDiagram
 - [x] Middleware (RBAC)
 - [x] Session Provider
 
+### ✅ Phase 2.5: Security
+- [x] Rate Limiting (Token Bucket Algorithm)
+- [x] Admin Settings UI (`/admin/rate-limit`)
+- [x] Login Protection
+
 ### ✅ Phase 3: Core Pages
 - [x] Dashboard - แสดงยอดวันลา, ประวัติล่าสุด, วันหยุด
 - [x] Leave Request Form - เลือกประเภท, วันที่, Half-day, เหตุผล
@@ -252,8 +260,8 @@ sequenceDiagram
 ## 8. สิ่งที่ยังต้องทำ
 
 ### 🔲 Phase 4: HR Features
-- [ ] `/hr/employees` - จัดการพนักงาน (CRUD, Import/Export Excel)
-- [ ] `/hr/holidays` - จัดการวันหยุด (Public, Special per company)
+- [x] `/hr/employees` - จัดการพนักงาน (CRUD, Import/Export Excel)
+- [x] `/hr/holidays` - จัดการวันหยุด (Public, Special per company)
 - [ ] `/hr/settings` - ตั้งค่าโควตาวันลา
 - [ ] `/hr/year-end` - ประมวลผลสิ้นปี (Reset/Carry-over)
 - [ ] `/hr/analytics` - Charts, Company comparison
@@ -288,6 +296,7 @@ sequenceDiagram
 | `src/middleware.ts` | Auth guard + RBAC |
 | `src/lib/db.ts` | Database connection (Singleton) |
 | `src/types/index.ts` | All TypeScript types |
+| `src/lib/rate-limiter.ts` | Rate Limiting Logic |
 | `.env` | Environment variables |
 
 ### 📄 Key Components
@@ -339,6 +348,35 @@ sequenceDiagram
 ### Timezone:
 - ระบบใช้ `Asia/Bangkok (UTC+7)`
 - แสดงเวลาแบบ 24 ชั่วโมง
+
+---
+
+## 11. Developer Guidelines
+
+### 🛠️ Modal & Popup Positioning (Frontend)
+หากพบปัญหา **Modal เด้งอยู่ข้างล่าง** หรือไม่อยู่กึ่งกลางหน้าจอ สาเหตุเกิดจาก `transform` property ใน class `animate-fade-in` ของ Parent Container ทำให้ `fixed` positioning ทำงานผิดพลาด
+
+**วิธีแก้ไข:**
+1.  **ย้าย Modal ออกนอก `animate-fade-in`**: ให้ Modal เป็น Sibling กับ Container หลัก
+2.  **ใช้ Structure นี้เสมอ**:
+    ```tsx
+    return (
+      <>
+        <div className="animate-fade-in">
+           {/* Page Content */}
+        </div>
+
+        {/* Modal อยู่นอกนี้ */}
+        {isOpen && (
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl">
+                 {/* Modal Content */}
+              </div>
+           </div>
+        )}
+      </>
+    )
+    ```
 
 ---
 
