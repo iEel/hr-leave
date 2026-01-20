@@ -10,8 +10,24 @@ import {
     Clock,
     AlertTriangle,
     FileText,
-    RefreshCw
+    RefreshCw,
+    Shield,
+    Server,
+    Cloud
 } from 'lucide-react';
+
+type AuthMode = 'LOCAL' | 'LDAP' | 'AZURE' | 'HYBRID';
+
+interface AuthSettings {
+    authMode: AuthMode;
+    ldapUrl: string;
+    ldapDomain: string;
+    ldapBaseDN: string;
+    ldapBindDN: string;
+    azureAdEnabled: boolean;
+    azureAdTenantId: string;
+    azureAdClientId: string;
+}
 
 interface SettingItem {
     value: string;

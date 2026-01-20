@@ -1,7 +1,10 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
+import MicrosoftEntraID from 'next-auth/providers/microsoft-entra-id';
 import bcrypt from 'bcryptjs';
 import { UserRole, Company } from '@/types';
+import { verifyLdapCredentials } from '@/lib/ldap';
+import { findOrCreateUser } from '@/lib/auth/jit-user';
 
 // Extend NextAuth types
 declare module 'next-auth' {
@@ -15,6 +18,8 @@ declare module 'next-auth' {
         company: Company;
         department: string;
         departmentHeadId: number | null;
+        isADUser?: boolean;
+        authProvider?: string;
     }
 
     interface Session {
@@ -30,6 +35,8 @@ declare module 'next-auth/jwt' {
         company: Company;
         department: string;
         departmentHeadId: number | null;
+        isADUser?: boolean;
+        authProvider?: string;
     }
 }
 
@@ -49,8 +56,45 @@ const DEMO_USERS = [
     },
 ];
 
+// Get auth mode from env (DB-based settings can be added later)
+const AUTH_MODE = process.env.AUTH_MODE || 'LOCAL';
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
     providers: [
+        // Microsoft Entra ID (Azure AD) Provider
+        ...(AUTH_MODE === 'AZURE' || AUTH_MODE === 'HYBRID' ? [
+            MicrosoftEntraID({
+                clientId: process.env.AZURE_AD_CLIENT_ID!,
+                clientSecret: process.env.AZURE_AD_CLIENT_SECRET!,
+                issuer: `https://login.microsoftonline.com/${process.env.AZURE_AD_TENANT_ID}/v2.0`,
+                async profile(profile) {
+                    // JIT Provisioning for Azure AD users
+                    const user = await findOrCreateUser({
+                        username: profile.preferred_username?.split('@')[0] || profile.email?.split('@')[0] || 'unknown',
+                        email: profile.email || profile.preferred_username || '',
+                        firstName: profile.given_name || profile.name?.split(' ')[0] || '',
+                        lastName: profile.family_name || profile.name?.split(' ').slice(1).join(' ') || '',
+                        authProvider: 'AZURE'
+                    });
+
+                    return {
+                        id: user.id.toString(),
+                        employeeId: user.employeeId,
+                        email: user.email,
+                        firstName: user.firstName,
+                        lastName: user.lastName,
+                        role: user.role as UserRole,
+                        company: user.company as Company,
+                        department: user.department,
+                        departmentHeadId: user.departmentHeadId,
+                        isADUser: true,
+                        authProvider: 'AZURE'
+                    };
+                }
+            })
+        ] : []),
+
+        // Credentials Provider (Local + LDAP)
         Credentials({
             name: 'Employee Login',
             credentials: {
@@ -65,8 +109,42 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 const employeeId = credentials.employeeId as string;
                 const password = credentials.password as string;
 
+                // 1. Try LDAP authentication first (if enabled)
+                if (AUTH_MODE === 'LDAP' || AUTH_MODE === 'HYBRID') {
+                    try {
+                        const ldapUser = await verifyLdapCredentials(employeeId, password);
+                        if (ldapUser) {
+                            // JIT Provisioning for LDAP users
+                            const user = await findOrCreateUser({
+                                username: ldapUser.sAMAccountName,
+                                email: ldapUser.mail || `${ldapUser.sAMAccountName}@${process.env.LDAP_DOMAIN}`,
+                                firstName: ldapUser.givenName || '',
+                                lastName: ldapUser.sn || '',
+                                employeeId: ldapUser.employeeID,
+                                authProvider: 'LDAP'
+                            });
+
+                            return {
+                                id: user.id.toString(),
+                                employeeId: user.employeeId,
+                                email: user.email,
+                                firstName: user.firstName,
+                                lastName: user.lastName,
+                                role: user.role as UserRole,
+                                company: user.company as Company,
+                                department: user.department,
+                                departmentHeadId: user.departmentHeadId,
+                                isADUser: true,
+                                authProvider: 'LDAP'
+                            };
+                        }
+                    } catch (ldapError) {
+                        console.log('[AUTH] LDAP auth failed, falling back to local...', ldapError);
+                    }
+                }
+
+                // 2. Try Local DB authentication
                 try {
-                    // Try to authenticate via API (which connects to DB)
                     const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3002';
                     const response = await fetch(`${baseUrl}/api/auth/verify`, {
                         method: 'POST',
@@ -79,16 +157,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                         return user;
                     }
 
-                    // If API returns specific error, use that message
                     const errorData = await response.json().catch(() => ({}));
                     if (errorData.message) {
                         throw new Error(errorData.message);
                     }
                 } catch (error) {
-                    console.log('DB auth failed, trying demo mode...', error);
+                    console.log('[AUTH] DB auth failed, trying demo mode...', error);
                 }
 
-                // Fallback to demo users if DB fails
+                // 3. Fallback to demo users
                 const demoUser = DEMO_USERS.find(
                     (u) => u.employeeId === employeeId && u.password === password
                 );
@@ -120,6 +197,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 token.company = user.company;
                 token.department = user.department;
                 token.departmentHeadId = user.departmentHeadId;
+                token.isADUser = user.isADUser;
+                token.authProvider = user.authProvider;
             }
             return token;
         },
@@ -131,6 +210,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 session.user.company = token.company;
                 session.user.department = token.department;
                 session.user.departmentHeadId = token.departmentHeadId;
+                session.user.isADUser = token.isADUser;
+                session.user.authProvider = token.authProvider;
             }
             return session;
         },

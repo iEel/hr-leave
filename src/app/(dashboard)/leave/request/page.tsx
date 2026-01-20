@@ -279,6 +279,22 @@ export default function LeaveRequestPage() {
                 </div>
             </div>
 
+            {/* Manager Warning Banner - Show if user has no manager assigned */}
+            {!session?.user?.departmentHeadId && (
+                <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-xl flex items-start gap-3">
+                    <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                        <h3 className="font-semibold text-amber-800 dark:text-amber-200">
+                            ยังไม่ได้กำหนดหัวหน้างาน
+                        </h3>
+                        <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                            คุณยังไม่สามารถขอลาได้ เนื่องจากยังไม่มีการกำหนดหัวหน้างานในระบบ
+                            กรุณาติดต่อฝ่าย HR เพื่อดำเนินการ
+                        </p>
+                    </div>
+                </div>
+            )}
+
             {/* Error Alert */}
             {error && (
                 <div className="mb-6 p-4 rounded-xl bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 flex items-start gap-3">
@@ -573,7 +589,7 @@ export default function LeaveRequestPage() {
                     </button>
                     <button
                         type="submit"
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || !session?.user?.departmentHeadId}
                         className="flex-1 py-3.5 px-6 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold shadow-lg hover:shadow-xl hover:from-blue-500 hover:to-indigo-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                     >
                         {isSubmitting ? (

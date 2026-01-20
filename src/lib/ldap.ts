@@ -1,0 +1,83 @@
+import { Client } from 'ldapts';
+
+export interface LdapUserEntry {
+    sAMAccountName: string;
+    mail?: string;
+    displayName?: string;
+    givenName?: string;
+    sn?: string;
+    employeeID?: string;
+}
+
+/**
+ * Verify user credentials against LDAP/Active Directory
+ * @param username - sAMAccountName (e.g., "veerapon.l")
+ * @param password - User's AD password
+ * @returns LDAP user entry or null if authentication failed
+ */
+export async function verifyLdapCredentials(
+    username: string,
+    password: string
+): Promise<LdapUserEntry | null> {
+    // 🛑 Security Fix: ป้องกัน Unauthenticated Bind Attack
+    if (!password || password.trim() === '') {
+        console.warn('[LDAP] Empty password rejected');
+        return null;
+    }
+
+    if (!username || username.trim() === '') {
+        console.warn('[LDAP] Empty username rejected');
+        return null;
+    }
+
+    const ldapUrl = process.env.LDAP_URL;
+    const ldapDomain = process.env.LDAP_DOMAIN;
+    const ldapBaseDN = process.env.LDAP_BASE_DN;
+
+    if (!ldapUrl || !ldapDomain || !ldapBaseDN) {
+        console.error('[LDAP] Missing LDAP configuration');
+        return null;
+    }
+
+    const client = new Client({ url: ldapUrl });
+
+    try {
+        // Bind with user credentials
+        const userDN = `${username}@${ldapDomain}`;
+        await client.bind(userDN, password);
+
+        // Search for user info
+        const { searchEntries } = await client.search(ldapBaseDN, {
+            filter: `(sAMAccountName=${username})`,
+            scope: 'sub',
+            attributes: [
+                'sAMAccountName',
+                'mail',
+                'displayName',
+                'givenName',
+                'sn',
+                'employeeID'
+            ]
+        });
+
+        await client.unbind();
+
+        if (searchEntries.length === 0) {
+            console.warn(`[LDAP] User ${username} not found in directory`);
+            return null;
+        }
+
+        const entry = searchEntries[0];
+        return {
+            sAMAccountName: entry.sAMAccountName as string,
+            mail: entry.mail as string | undefined,
+            displayName: entry.displayName as string | undefined,
+            givenName: entry.givenName as string | undefined,
+            sn: entry.sn as string | undefined,
+            employeeID: entry.employeeID as string | undefined,
+        };
+    } catch (error) {
+        console.error('[LDAP] Authentication error:', error);
+        return null;
+    }
+}
