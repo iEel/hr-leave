@@ -2,9 +2,30 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { query } from '@/lib/db';
 import { User } from '@/types';
+import { checkRateLimit, getClientIP } from '@/lib/rate-limiter';
 
 export async function POST(request: NextRequest) {
     try {
+        // Rate limiting check
+        const clientIP = getClientIP(request);
+        const rateLimitResult = await checkRateLimit('login', clientIP);
+
+        if (!rateLimitResult.allowed) {
+            return NextResponse.json(
+                {
+                    message: `คุณพยายาม Login มากเกินไป กรุณารอ ${rateLimitResult.resetIn} วินาที`,
+                    retryAfter: rateLimitResult.resetIn
+                },
+                {
+                    status: 429,
+                    headers: {
+                        'Retry-After': rateLimitResult.resetIn.toString(),
+                        'X-RateLimit-Remaining': '0',
+                    }
+                }
+            );
+        }
+
         const { employeeId, password } = await request.json();
 
         if (!employeeId || !password) {

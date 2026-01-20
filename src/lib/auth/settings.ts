@@ -20,7 +20,7 @@ export async function getAuthSettings(): Promise<AuthSettings> {
     const pool = await getPool();
 
     const result = await pool.request()
-        .query(`SELECT [key], [value] FROM SystemSettings`);
+        .query(`SELECT [settingKey] as [key], [settingValue] as [value] FROM SystemSettings`);
 
     const settings: Record<string, string> = {};
     result.recordset.forEach((row: { key: string; value: string }) => {
@@ -64,10 +64,10 @@ export async function updateAuthSettings(settings: Partial<AuthSettings>): Promi
                 .input('key', dbKey)
                 .input('value', dbValue)
                 .query(`
-                    IF EXISTS (SELECT 1 FROM SystemSettings WHERE [key] = @key)
-                        UPDATE SystemSettings SET [value] = @value, updatedAt = GETDATE() WHERE [key] = @key
+                    IF EXISTS (SELECT 1 FROM SystemSettings WHERE [settingKey] = @key)
+                        UPDATE SystemSettings SET [settingValue] = @value, updatedAt = GETDATE() WHERE [settingKey] = @key
                     ELSE
-                        INSERT INTO SystemSettings ([key], [value]) VALUES (@key, @value)
+                        INSERT INTO SystemSettings ([settingKey], [settingValue]) VALUES (@key, @value)
                 `);
         }
     }
