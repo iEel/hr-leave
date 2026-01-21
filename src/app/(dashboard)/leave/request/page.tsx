@@ -35,7 +35,7 @@ import {
 // Leave type options
 const leaveTypes = [
     { value: 'VACATION', label: 'ลาพักร้อน', icon: Briefcase, color: 'blue', requiresDoc: false },
-    { value: 'SICK', label: 'ลาป่วย', icon: Heart, color: 'red', requiresDoc: true, docThreshold: 3 },
+    { value: 'SICK', label: 'ลาป่วย', icon: Heart, color: 'red', requiresDoc: true }, // docThreshold set dynamically
     { value: 'PERSONAL', label: 'ลากิจ', icon: User, color: 'purple', requiresDoc: false },
     { value: 'MATERNITY', label: 'ลาคลอด', icon: Baby, color: 'pink', requiresDoc: true },
     { value: 'MILITARY', label: 'เกณฑ์ทหาร', icon: Shield, color: 'green', requiresDoc: true },
@@ -79,6 +79,30 @@ export default function LeaveRequestPage() {
         netHours: number;
         lunchDeducted: boolean;
     } | null>(null);
+
+    // Dynamic Rules State
+    const [leaveRules, setLeaveRules] = useState({
+        advanceNoticeDays: 3,
+        sickCertThreshold: 3
+    });
+
+    // Fetch rules on mount
+    useEffect(() => {
+        const fetchRules = async () => {
+            try {
+                const res = await fetch('/api/settings/rules');
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success) {
+                        setLeaveRules(data.rules);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to fetch leave rules', error);
+            }
+        };
+        fetchRules();
+    }, []);
 
     // Calculate leave days when dates/times change
     useEffect(() => {
@@ -149,8 +173,13 @@ export default function LeaveRequestPage() {
 
     // Check if medical cert is required
     const selectedType = leaveTypes.find(t => t.value === leaveType);
+
+    // Dynamic Doc Threshold Check
+    // Dynamic Doc Threshold Check
     const requiresMedicalCert = selectedType?.requiresDoc &&
-        (calculatedDays >= (selectedType.docThreshold || 1));
+        (leaveType === 'SICK'
+            ? calculatedDays >= leaveRules.sickCertThreshold
+            : calculatedDays >= ('docThreshold' in (selectedType || {}) ? (selectedType as any).docThreshold : 1));
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -181,7 +210,10 @@ export default function LeaveRequestPage() {
                 throw new Error('กรุณาระบุเหตุผลการลา');
             }
             if (requiresMedicalCert && !hasMedicalCert) {
-                throw new Error(`ลาป่วยตั้งแต่ ${selectedType?.docThreshold} วันขึ้นไป ต้องมีใบรับรองแพทย์`);
+                const threshold = leaveType === 'SICK'
+                    ? leaveRules.sickCertThreshold
+                    : ('docThreshold' in (selectedType || {}) ? (selectedType as any).docThreshold : 1);
+                throw new Error(`ลาป่วยตั้งแต่ ${threshold} วันขึ้นไป ต้องมีใบรับรองแพทย์`);
             }
 
             // Upload medical certificate file if exists
@@ -568,7 +600,7 @@ export default function LeaveRequestPage() {
                             <p className="font-medium mb-1">โปรดทราบ</p>
                             <ul className="text-blue-100 space-y-1">
                                 <li>• คำขอจะถูกส่งไปยังหัวหน้างานของคุณเพื่อพิจารณา</li>
-                                <li>• ลาป่วย 3 วันขึ้นไปต้องมีใบรับรองแพทย์</li>
+                                <li>• ลาป่วย {leaveRules.sickCertThreshold} วันขึ้นไปต้องมีใบรับรองแพทย์</li>
                                 <li>• สามารถยกเลิกได้เฉพาะเมื่อสถานะยังเป็น &quot;รออนุมัติ&quot;</li>
                                 {isHourlyMode && (
                                     <li>• ลาเป็นชั่วโมงจะหักพักเที่ยง (12:00-13:00) อัตโนมัติ</li>

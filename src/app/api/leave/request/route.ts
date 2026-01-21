@@ -91,7 +91,16 @@ export async function POST(request: NextRequest) {
                 }
             }
 
-            // Rule 2: Must notify 3 days in advance
+            // Rule 2: Dynamic Advance Notice (Default: 3 days)
+            // Fetch setting from DB
+            const settingResult = await pool.request()
+                .input('key', 'LEAVE_ADVANCE_DAYS')
+                .query('SELECT settingValue FROM SystemSettings WHERE settingKey = @key');
+
+            const advanceDays = settingResult.recordset.length > 0
+                ? parseInt(settingResult.recordset[0].settingValue, 10)
+                : 3; // Default fallback
+
             const leaveStartDate = new Date(startDate);
             const todayDate = new Date();
             todayDate.setHours(0, 0, 0, 0);
@@ -99,9 +108,28 @@ export async function POST(request: NextRequest) {
 
             const diffDays = Math.floor((leaveStartDate.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
 
-            if (diffDays < 3) {
+            if (diffDays < advanceDays) {
                 return NextResponse.json(
-                    { error: 'การลาพักร้อนต้องแจ้งล่วงหน้าอย่างน้อย 3 วัน' },
+                    { error: `การลาพักร้อนต้องแจ้งล่วงหน้าอย่างน้อย ${advanceDays} วัน` },
+                    { status: 400 }
+                );
+            }
+        }
+
+        // === SICK LEAVE CERTIFICATE RULE ===
+        if (leaveType === 'SICK') {
+            // Fetch setting from DB
+            const sickResult = await pool.request()
+                .input('key', 'LEAVE_SICK_CERT_DAYS')
+                .query('SELECT settingValue FROM SystemSettings WHERE settingKey = @key');
+
+            const threshold = sickResult.recordset.length > 0
+                ? parseInt(sickResult.recordset[0].settingValue, 10)
+                : 3; // Default fallback
+
+            if (usageAmount >= threshold && !hasMedicalCert) {
+                return NextResponse.json(
+                    { error: `ลาป่วยตั้งแต่ ${threshold} วันขึ้นไป ต้องมีใบรับรองแพทย์` },
                     { status: 400 }
                 );
             }
