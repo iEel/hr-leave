@@ -22,8 +22,12 @@ import {
     Download,
     Upload,
     FileSpreadsheet,
-    CalendarDays
+    CalendarDays,
+    RefreshCw,
+    Database,
+    Cloud
 } from 'lucide-react';
+import Modal from '@/components/ui/Modal';
 import SearchableSelect from '@/components/ui/SearchableSelect';
 import DepartmentCombobox from '@/components/ui/DepartmentCombobox';
 import { formatLeaveDays } from '@/lib/leave-utils';
@@ -80,6 +84,20 @@ export default function EmployeeManagementPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Sync AD State
+    const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [syncConfig, setSyncConfig] = useState<{
+        syncNewOnly: boolean;
+        updateExisting: boolean;
+        source: 'ldap' | 'azure';
+    }>({
+        syncNewOnly: true,
+        updateExisting: false,
+        source: 'ldap' // Default to LDAP
+    });
+    const [syncResult, setSyncResult] = useState<{ totalFound: number; added: number; updated: number; source: string } | null>(null);
 
     // Leave balance modal state
     const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
@@ -445,6 +463,41 @@ export default function EmployeeManagementPage() {
         }
     };
 
+    // Handle AD Sync
+    const handleSyncSubmit = async () => {
+        setIsSyncing(true);
+        setSyncResult(null);
+
+        try {
+            const res = await fetch('/api/hr/employees/sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(syncConfig)
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                setSyncResult(result.summary);
+                fetchEmployees();
+                setFormSuccess('Sync Active Directory สำเร็จ');
+                setTimeout(() => setFormSuccess(''), 3000);
+            } else {
+                alert(result.error || 'เกิดข้อผิดพลาดในการ Sync');
+                setIsSyncing(false); // Only stop loading if error, otherwise keep open to show result
+            }
+        } catch (error) {
+            console.error('Sync error:', error);
+            alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
+            setIsSyncing(false);
+        }
+    };
+
+    const closeSyncModal = () => {
+        setIsSyncModalOpen(false);
+        setIsSyncing(false);
+        setSyncResult(null);
+    };
+
     // Convert managers to SearchableSelect options
     const managerOptions = managers.map(m => ({
         id: m.id,
@@ -503,6 +556,18 @@ export default function EmployeeManagementPage() {
                         )}
                         <span className="hidden sm:inline">Import</span>
                     </button>
+
+                    {/* Sync AD Button */}
+                    <button
+                        onClick={() => setIsSyncModalOpen(true)}
+                        className="flex items-center gap-2 px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors shadow-sm"
+                        title="Sync with Active Directory"
+                    >
+                        <RefreshCw className="w-4 h-4" />
+                        <span className="hidden sm:inline">Sync AD</span>
+                    </button>
+
+                    {/* Add Button */}
 
                     {/* Export Button */}
                     <button
@@ -683,343 +748,347 @@ export default function EmployeeManagementPage() {
             </div>
 
             {/* Add Modal */}
-            {isAddModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
-                        {/* Header */}
-                        <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-t-2xl">
-                            <h2 className="text-xl font-bold text-white flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                                    <User className="w-5 h-5 text-white" />
+            {
+                isAddModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
+                            {/* Header */}
+                            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-t-2xl">
+                                <h2 className="text-xl font-bold text-white flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                                        <User className="w-5 h-5 text-white" />
+                                    </div>
+                                    เพิ่มพนักงานใหม่
+                                </h2>
+                                <button
+                                    onClick={() => setIsAddModalOpen(false)}
+                                    className="text-white/80 hover:text-white transition-colors"
+                                >
+                                    <XCircle className="w-6 h-6" />
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleAddSubmit} className="p-6">
+                                {/* Error Message */}
+                                {formError && (
+                                    <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm flex items-center gap-2">
+                                        <XCircle className="w-4 h-4 flex-shrink-0" />
+                                        {formError}
+                                    </div>
+                                )}
+
+                                {/* Section: ข้อมูลส่วนตัว */}
+                                <div className="mb-6">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <User className="w-4 h-4 text-blue-600" />
+                                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลส่วนตัว</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">รหัสพนักงาน *</label>
+                                            <div className="relative">
+                                                <input required type="text" value={formData.employeeId} onChange={e => setFormData({ ...formData, employeeId: e.target.value })}
+                                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                                    placeholder="เช่น EMP001" />
+                                                <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">อีเมล *</label>
+                                            <div className="relative">
+                                                <input required type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })}
+                                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                                    placeholder="email@company.com" />
+                                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">ชื่อจริง *</label>
+                                            <input required type="text" value={formData.firstName} onChange={e => setFormData({ ...formData, firstName: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                                placeholder="ชื่อจริง" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">นามสกุล *</label>
+                                            <input required type="text" value={formData.lastName} onChange={e => setFormData({ ...formData, lastName: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                                placeholder="นามสกุล" />
+                                        </div>
+                                    </div>
                                 </div>
-                                เพิ่มพนักงานใหม่
-                            </h2>
-                            <button
-                                onClick={() => setIsAddModalOpen(false)}
-                                className="text-white/80 hover:text-white transition-colors"
-                            >
-                                <XCircle className="w-6 h-6" />
-                            </button>
+
+                                {/* Section: ข้อมูลบัญชี */}
+                                <div className="mb-6">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <Shield className="w-4 h-4 text-purple-600" />
+                                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลบัญชี</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">รหัสผ่าน *</label>
+                                            <div className="relative">
+                                                <input required type="password" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })}
+                                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                                    placeholder="••••••••" />
+                                                <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">Role *</label>
+                                            <select value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+                                                <option value="EMPLOYEE">👤 EMPLOYEE</option>
+                                                <option value="MANAGER">👔 MANAGER</option>
+                                                <option value="HR">📋 HR</option>
+                                                <option value="ADMIN">🔐 ADMIN</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Section: ข้อมูลบริษัท */}
+                                <div className="mb-6">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <Briefcase className="w-4 h-4 text-green-600" />
+                                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลบริษัท</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">บริษัท *</label>
+                                            <select value={formData.company} onChange={e => setFormData({ ...formData, company: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
+                                                <option value="SONIC">🟦 SONIC</option>
+                                                <option value="GRANDLINK">🟩 GRANDLINK</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">แผนก *</label>
+                                            <DepartmentCombobox
+                                                suggestions={departments}
+                                                value={formData.department}
+                                                onChange={(val) => setFormData({ ...formData, department: val })}
+                                                placeholder="เลือกหรือพิมพ์แผนก"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">หัวหน้างาน</label>
+                                            <SearchableSelect
+                                                options={managerOptions}
+                                                value={formData.departmentHeadId}
+                                                onChange={(val) => setFormData({ ...formData, departmentHeadId: val ? String(val) : '' })}
+                                                placeholder="-- ค้นหาหัวหน้างาน --"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">วันที่เริ่มงาน *</label>
+                                            <input required type="date" value={formData.startDate} onChange={e => setFormData({ ...formData, startDate: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Actions */}
+                                <div className="pt-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setIsAddModalOpen(false); setFormError(''); }}
+                                        className="px-5 py-2.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors font-medium"
+                                    >
+                                        ยกเลิก
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting}
+                                        className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-lg shadow-blue-500/25 transition-all font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isSubmitting ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                กำลังบันทึก...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Plus className="w-4 h-4" />
+                                                บันทึกข้อมูล
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </form>
                         </div>
-
-                        <form onSubmit={handleAddSubmit} className="p-6">
-                            {/* Error Message */}
-                            {formError && (
-                                <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm flex items-center gap-2">
-                                    <XCircle className="w-4 h-4 flex-shrink-0" />
-                                    {formError}
-                                </div>
-                            )}
-
-                            {/* Section: ข้อมูลส่วนตัว */}
-                            <div className="mb-6">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <User className="w-4 h-4 text-blue-600" />
-                                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลส่วนตัว</h3>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">รหัสพนักงาน *</label>
-                                        <div className="relative">
-                                            <input required type="text" value={formData.employeeId} onChange={e => setFormData({ ...formData, employeeId: e.target.value })}
-                                                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                                placeholder="เช่น EMP001" />
-                                            <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">อีเมล *</label>
-                                        <div className="relative">
-                                            <input required type="email" value={formData.email} onChange={e => setFormData({ ...formData, email: e.target.value })}
-                                                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                                placeholder="email@company.com" />
-                                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">ชื่อจริง *</label>
-                                        <input required type="text" value={formData.firstName} onChange={e => setFormData({ ...formData, firstName: e.target.value })}
-                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                            placeholder="ชื่อจริง" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">นามสกุล *</label>
-                                        <input required type="text" value={formData.lastName} onChange={e => setFormData({ ...formData, lastName: e.target.value })}
-                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                            placeholder="นามสกุล" />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Section: ข้อมูลบัญชี */}
-                            <div className="mb-6">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <Shield className="w-4 h-4 text-purple-600" />
-                                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลบัญชี</h3>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">รหัสผ่าน *</label>
-                                        <div className="relative">
-                                            <input required type="password" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })}
-                                                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                                                placeholder="••••••••" />
-                                            <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">Role *</label>
-                                        <select value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}
-                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
-                                            <option value="EMPLOYEE">👤 EMPLOYEE</option>
-                                            <option value="MANAGER">👔 MANAGER</option>
-                                            <option value="HR">📋 HR</option>
-                                            <option value="ADMIN">🔐 ADMIN</option>
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Section: ข้อมูลบริษัท */}
-                            <div className="mb-6">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <Briefcase className="w-4 h-4 text-green-600" />
-                                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลบริษัท</h3>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">บริษัท *</label>
-                                        <select value={formData.company} onChange={e => setFormData({ ...formData, company: e.target.value })}
-                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
-                                            <option value="SONIC">🟦 SONIC</option>
-                                            <option value="GRANDLINK">🟩 GRANDLINK</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">แผนก *</label>
-                                        <DepartmentCombobox
-                                            suggestions={departments}
-                                            value={formData.department}
-                                            onChange={(val) => setFormData({ ...formData, department: val })}
-                                            placeholder="เลือกหรือพิมพ์แผนก"
-                                            required
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">หัวหน้างาน</label>
-                                        <SearchableSelect
-                                            options={managerOptions}
-                                            value={formData.departmentHeadId}
-                                            onChange={(val) => setFormData({ ...formData, departmentHeadId: val ? String(val) : '' })}
-                                            placeholder="-- ค้นหาหัวหน้างาน --"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">วันที่เริ่มงาน *</label>
-                                        <input required type="date" value={formData.startDate} onChange={e => setFormData({ ...formData, startDate: e.target.value })}
-                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Actions */}
-                            <div className="pt-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => { setIsAddModalOpen(false); setFormError(''); }}
-                                    className="px-5 py-2.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors font-medium"
-                                >
-                                    ยกเลิก
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={isSubmitting}
-                                    className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-lg shadow-blue-500/25 transition-all font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {isSubmitting ? (
-                                        <>
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                            กำลังบันทึก...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Plus className="w-4 h-4" />
-                                            บันทึกข้อมูล
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </form>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Edit Modal */}
-            {isEditModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
-                        {/* Header */}
-                        <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-2xl">
-                            <h2 className="text-xl font-bold text-white flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                                    <Edit className="w-5 h-5 text-white" />
-                                </div>
-                                แก้ไขข้อมูลพนักงาน
-                            </h2>
-                            <button
-                                onClick={() => setIsEditModalOpen(false)}
-                                className="text-white/80 hover:text-white transition-colors"
-                            >
-                                <XCircle className="w-6 h-6" />
-                            </button>
-                        </div>
-
-                        <form onSubmit={handleEditSubmit} className="p-6">
-                            {/* Error Message */}
-                            {formError && (
-                                <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm flex items-center gap-2">
-                                    <XCircle className="w-4 h-4 flex-shrink-0" />
-                                    {formError}
-                                </div>
-                            )}
-
-                            {/* Section: ข้อมูลส่วนตัว */}
-                            <div className="mb-6">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <User className="w-4 h-4 text-indigo-600" />
-                                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลส่วนตัว</h3>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">รหัสพนักงาน</label>
-                                        <div className="relative">
-                                            <input disabled type="text" value={formData.employeeId}
-                                                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 cursor-not-allowed" />
-                                            <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                        </div>
+            {
+                isEditModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
+                            {/* Header */}
+                            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-2xl">
+                                <h2 className="text-xl font-bold text-white flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                                        <Edit className="w-5 h-5 text-white" />
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">อีเมล</label>
-                                        <div className="relative">
-                                            <input disabled type="email" value={formData.email}
-                                                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 cursor-not-allowed" />
-                                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">ชื่อจริง *</label>
-                                        <input required type="text" value={formData.firstName} onChange={e => setFormData({ ...formData, firstName: e.target.value })}
-                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">นามสกุล *</label>
-                                        <input required type="text" value={formData.lastName} onChange={e => setFormData({ ...formData, lastName: e.target.value })}
-                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all" />
-                                    </div>
-                                </div>
+                                    แก้ไขข้อมูลพนักงาน
+                                </h2>
+                                <button
+                                    onClick={() => setIsEditModalOpen(false)}
+                                    className="text-white/80 hover:text-white transition-colors"
+                                >
+                                    <XCircle className="w-6 h-6" />
+                                </button>
                             </div>
 
-                            {/* Section: ข้อมูลบัญชี */}
-                            <div className="mb-6">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <Shield className="w-4 h-4 text-purple-600" />
-                                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลบัญชี</h3>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">Role *</label>
-                                        <select value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}
-                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
-                                            <option value="EMPLOYEE">👤 EMPLOYEE</option>
-                                            <option value="MANAGER">👔 MANAGER</option>
-                                            <option value="HR">📋 HR</option>
-                                            <option value="ADMIN">🔐 ADMIN</option>
-                                        </select>
+                            <form onSubmit={handleEditSubmit} className="p-6">
+                                {/* Error Message */}
+                                {formError && (
+                                    <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 text-sm flex items-center gap-2">
+                                        <XCircle className="w-4 h-4 flex-shrink-0" />
+                                        {formError}
                                     </div>
-                                    <div className="flex items-center pt-6">
-                                        <label className="flex items-center gap-3 cursor-pointer bg-gray-50 dark:bg-gray-900 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 w-full">
-                                            <input
-                                                type="checkbox"
-                                                checked={formData.isActive}
-                                                onChange={e => setFormData({ ...formData, isActive: e.target.checked })}
-                                                className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500"
+                                )}
+
+                                {/* Section: ข้อมูลส่วนตัว */}
+                                <div className="mb-6">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <User className="w-4 h-4 text-indigo-600" />
+                                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลส่วนตัว</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">รหัสพนักงาน</label>
+                                            <div className="relative">
+                                                <input disabled type="text" value={formData.employeeId}
+                                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 cursor-not-allowed" />
+                                                <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">อีเมล</label>
+                                            <div className="relative">
+                                                <input disabled type="email" value={formData.email}
+                                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 cursor-not-allowed" />
+                                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">ชื่อจริง *</label>
+                                            <input required type="text" value={formData.firstName} onChange={e => setFormData({ ...formData, firstName: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">นามสกุล *</label>
+                                            <input required type="text" value={formData.lastName} onChange={e => setFormData({ ...formData, lastName: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Section: ข้อมูลบัญชี */}
+                                <div className="mb-6">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <Shield className="w-4 h-4 text-purple-600" />
+                                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลบัญชี</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">Role *</label>
+                                            <select value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
+                                                <option value="EMPLOYEE">👤 EMPLOYEE</option>
+                                                <option value="MANAGER">👔 MANAGER</option>
+                                                <option value="HR">📋 HR</option>
+                                                <option value="ADMIN">🔐 ADMIN</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex items-center pt-6">
+                                            <label className="flex items-center gap-3 cursor-pointer bg-gray-50 dark:bg-gray-900 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 w-full">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.isActive}
+                                                    onChange={e => setFormData({ ...formData, isActive: e.target.checked })}
+                                                    className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500"
+                                                />
+                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                                    {formData.isActive ? '✅ Active' : '❌ Inactive'}
+                                                </span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Section: ข้อมูลบริษัท */}
+                                <div className="mb-6">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <Briefcase className="w-4 h-4 text-green-600" />
+                                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลบริษัท</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">บริษัท *</label>
+                                            <select value={formData.company} onChange={e => setFormData({ ...formData, company: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
+                                                <option value="SONIC">🟦 SONIC</option>
+                                                <option value="GRANDLINK">🟩 GRANDLINK</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">แผนก *</label>
+                                            <DepartmentCombobox
+                                                suggestions={departments}
+                                                value={formData.department}
+                                                onChange={(val) => setFormData({ ...formData, department: val })}
+                                                placeholder="เลือกหรือพิมพ์แผนก"
+                                                required
                                             />
-                                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                                {formData.isActive ? '✅ Active' : '❌ Inactive'}
-                                            </span>
-                                        </label>
+                                        </div>
+                                        <div className="col-span-2">
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">หัวหน้างาน</label>
+                                            <SearchableSelect
+                                                options={managerOptions}
+                                                value={formData.departmentHeadId}
+                                                onChange={(val) => setFormData({ ...formData, departmentHeadId: val ? String(val) : '' })}
+                                                placeholder="-- ค้นหาหัวหน้างาน --"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            {/* Section: ข้อมูลบริษัท */}
-                            <div className="mb-6">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <Briefcase className="w-4 h-4 text-green-600" />
-                                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลบริษัท</h3>
+                                {/* Actions */}
+                                <div className="pt-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setIsEditModalOpen(false); setFormError(''); }}
+                                        className="px-5 py-2.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors font-medium"
+                                    >
+                                        ยกเลิก
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmitting}
+                                        className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl shadow-lg shadow-indigo-500/25 transition-all font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {isSubmitting ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                กำลังบันทึก...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <CheckCircle className="w-4 h-4" />
+                                                บันทึกการแก้ไข
+                                            </>
+                                        )}
+                                    </button>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">บริษัท *</label>
-                                        <select value={formData.company} onChange={e => setFormData({ ...formData, company: e.target.value })}
-                                            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
-                                            <option value="SONIC">🟦 SONIC</option>
-                                            <option value="GRANDLINK">🟩 GRANDLINK</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">แผนก *</label>
-                                        <DepartmentCombobox
-                                            suggestions={departments}
-                                            value={formData.department}
-                                            onChange={(val) => setFormData({ ...formData, department: val })}
-                                            placeholder="เลือกหรือพิมพ์แผนก"
-                                            required
-                                        />
-                                    </div>
-                                    <div className="col-span-2">
-                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">หัวหน้างาน</label>
-                                        <SearchableSelect
-                                            options={managerOptions}
-                                            value={formData.departmentHeadId}
-                                            onChange={(val) => setFormData({ ...formData, departmentHeadId: val ? String(val) : '' })}
-                                            placeholder="-- ค้นหาหัวหน้างาน --"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Actions */}
-                            <div className="pt-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => { setIsEditModalOpen(false); setFormError(''); }}
-                                    className="px-5 py-2.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors font-medium"
-                                >
-                                    ยกเลิก
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={isSubmitting}
-                                    className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl shadow-lg shadow-indigo-500/25 transition-all font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {isSubmitting ? (
-                                        <>
-                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                            กำลังบันทึก...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <CheckCircle className="w-4 h-4" />
-                                            บันทึกการแก้ไข
-                                        </>
-                                    )}
-                                </button>
-                            </div>
-                        </form>
+                            </form>
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Password Modal */}
             {
@@ -1077,219 +1146,339 @@ export default function EmployeeManagementPage() {
             }
 
             {/* Transfer Subordinates Modal */}
-            {isTransferModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg shadow-xl">
-                        {/* Header */}
-                        <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-orange-500 to-amber-500 rounded-t-2xl">
-                            <h2 className="text-xl font-bold text-white flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
-                                    <ArrowRightLeft className="w-5 h-5 text-white" />
-                                </div>
-                                โอนย้ายลูกน้อง
-                            </h2>
-                            {selectedEmployee && (
-                                <p className="text-white/80 mt-1 text-sm">
-                                    จาก: {selectedEmployee.firstName} {selectedEmployee.lastName}
-                                </p>
-                            )}
-                        </div>
-
-                        <div className="p-6">
-                            {/* Subordinates List */}
-                            <div className="mb-6">
-                                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">
-                                    รายชื่อลูกน้อง ({subordinates.length} คน)
-                                </h3>
-                                {subordinates.length === 0 ? (
-                                    <div className="text-center py-8 text-gray-400">
-                                        <User className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                                        <p>ไม่มีลูกน้องที่ต้องโอนย้าย</p>
+            {
+                isTransferModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg shadow-xl">
+                            {/* Header */}
+                            <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gradient-to-r from-orange-500 to-amber-500 rounded-t-2xl">
+                                <h2 className="text-xl font-bold text-white flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                                        <ArrowRightLeft className="w-5 h-5 text-white" />
                                     </div>
-                                ) : (
-                                    <div className="max-h-48 overflow-y-auto space-y-2 border border-gray-200 dark:border-gray-600 rounded-xl p-3">
-                                        {subordinates.map(sub => (
-                                            <div key={sub.id} className="flex items-center gap-3 p-2 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white text-xs font-bold">
-                                                    {sub.firstName?.charAt(0)}
-                                                </div>
-                                                <div>
-                                                    <p className="text-sm font-medium text-gray-900 dark:text-white">
-                                                        {sub.firstName} {sub.lastName}
-                                                    </p>
-                                                    <p className="text-xs text-gray-500">{sub.department}</p>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                    โอนย้ายลูกน้อง
+                                </h2>
+                                {selectedEmployee && (
+                                    <p className="text-white/80 mt-1 text-sm">
+                                        จาก: {selectedEmployee.firstName} {selectedEmployee.lastName}
+                                    </p>
                                 )}
                             </div>
 
-                            {/* Target Manager Selection */}
-                            {subordinates.length > 0 && (
-                                <div className="mb-6">
-                                    <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-                                        โอนไปยังหัวหน้างานใหม่
-                                    </label>
-                                    <SearchableSelect
-                                        options={managerOptions.filter(m => m.id !== selectedEmployee?.id)}
-                                        value={transferTargetId}
-                                        onChange={(val) => setTransferTargetId(val)}
-                                        placeholder="-- เลือกหัวหน้างานใหม่ (หรือยกเลิกหัวหน้า) --"
-                                    />
-                                    <p className="text-xs text-gray-500 mt-2">
-                                        💡 หากไม่เลือก ลูกน้องทั้งหมดจะไม่มีหัวหน้างาน
-                                    </p>
-                                </div>
-                            )}
-
-                            {/* Actions */}
-                            <div className="flex justify-end gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsTransferModalOpen(false)}
-                                    className="px-5 py-2.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors font-medium"
-                                >
-                                    ยกเลิก
-                                </button>
-                                {subordinates.length > 0 && (
-                                    <button
-                                        type="button"
-                                        onClick={handleTransferSubordinates}
-                                        className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-xl shadow-lg shadow-orange-500/25 transition-all font-medium flex items-center gap-2"
-                                    >
-                                        <ArrowRightLeft className="w-4 h-4" />
-                                        โอนย้าย {subordinates.length} คน
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Balance Modal */}
-            {isBalanceModalOpen && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setIsBalanceModalOpen(false)}>
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                        <div className="p-6 border-b border-gray-200 dark:border-gray-700">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">
-                                        วันลาของ {employeeBalance?.employee.firstName} {employeeBalance?.employee.lastName}
-                                    </h2>
-                                    <p className="text-sm text-gray-500">
-                                        {employeeBalance?.employee.employeeId} | {employeeBalance?.employee.department}
-                                    </p>
-                                </div>
-                                <button
-                                    onClick={() => setIsBalanceModalOpen(false)}
-                                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
-                                >
-                                    <XCircle className="w-5 h-5 text-gray-400" />
-                                </button>
-                            </div>
-                        </div>
-
-                        {balanceLoading ? (
-                            <div className="p-12 flex items-center justify-center">
-                                <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
-                            </div>
-                        ) : employeeBalance ? (
                             <div className="p-6">
-                                {/* Balance Cards */}
-                                <h3 className="text-sm font-medium text-gray-500 uppercase mb-3">
-                                    วันลาคงเหลือ ปี {employeeBalance.year}
-                                </h3>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
-                                    {employeeBalance.balances.map(b => (
-                                        <div key={b.leaveType} className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4 text-center">
-                                            <p className="text-xs text-gray-500 mb-1">
-                                                {{
-                                                    'VACATION': 'ลาพักร้อน',
-                                                    'SICK': 'ลาป่วย',
-                                                    'PERSONAL': 'ลากิจ',
-                                                    'MATERNITY': 'ลาคลอด',
-                                                    'MILITARY': 'เกณฑ์ทหาร',
-                                                    'ORDINATION': 'ลาบวช',
-                                                    'STERILIZATION': 'ลาทำหมัน',
-                                                    'TRAINING': 'ลาฝึกอบรม',
-                                                    'OTHER': 'อื่นๆ'
-                                                }[b.leaveType] || b.leaveType}
-                                            </p>
-                                            <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                                                {formatLeaveDays(b.remaining)}
-                                            </p>
-                                            <p className="text-xs text-gray-400">
-                                                ใช้ {formatLeaveDays(b.used)} / {formatLeaveDays(b.entitlement + b.carryOver)}
-                                            </p>
-                                            {b.carryOver > 0 && (
-                                                <p className="text-xs text-blue-500 mt-1">
-                                                    (ยกมา {formatLeaveDays(b.carryOver)})
-                                                </p>
-                                            )}
+                                {/* Subordinates List */}
+                                <div className="mb-6">
+                                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">
+                                        รายชื่อลูกน้อง ({subordinates.length} คน)
+                                    </h3>
+                                    {subordinates.length === 0 ? (
+                                        <div className="text-center py-8 text-gray-400">
+                                            <User className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                                            <p>ไม่มีลูกน้องที่ต้องโอนย้าย</p>
                                         </div>
-                                    ))}
-                                </div>
-
-                                {/* Leave History */}
-                                <h3 className="text-sm font-medium text-gray-500 uppercase mb-3">
-                                    ประวัติการลาปีนี้
-                                </h3>
-                                {employeeBalance.leaveHistory.length === 0 ? (
-                                    <p className="text-center text-gray-400 py-4">ยังไม่มีประวัติการลา</p>
-                                ) : (
-                                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                                        {employeeBalance.leaveHistory.map(h => (
-                                            <div key={h.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                                                <div className="flex items-center gap-3">
-                                                    <span className={`w-2 h-2 rounded-full ${h.status === 'APPROVED' ? 'bg-green-500' :
-                                                        h.status === 'PENDING' ? 'bg-yellow-500' : 'bg-red-500'
-                                                        }`} />
+                                    ) : (
+                                        <div className="max-h-48 overflow-y-auto space-y-2 border border-gray-200 dark:border-gray-600 rounded-xl p-3">
+                                            {subordinates.map(sub => (
+                                                <div key={sub.id} className="flex items-center gap-3 p-2 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white text-xs font-bold">
+                                                        {sub.firstName?.charAt(0)}
+                                                    </div>
                                                     <div>
                                                         <p className="text-sm font-medium text-gray-900 dark:text-white">
-                                                            {{
-                                                                'VACATION': 'ลาพักร้อน',
-                                                                'SICK': 'ลาป่วย',
-                                                                'PERSONAL': 'ลากิจ',
-                                                                'MATERNITY': 'ลาคลอด',
-                                                                'MILITARY': 'เกณฑ์ทหาร',
-                                                                'ORDINATION': 'ลาบวช',
-                                                                'STERILIZATION': 'ลาทำหมัน',
-                                                                'TRAINING': 'ลาฝึกอบรม',
-                                                                'OTHER': 'อื่นๆ'
-                                                            }[h.leaveType] || h.leaveType}
+                                                            {sub.firstName} {sub.lastName}
                                                         </p>
-                                                        <p className="text-xs text-gray-500">
-                                                            {h.startDate} - {h.endDate}
-                                                        </p>
+                                                        <p className="text-xs text-gray-500">{sub.department}</p>
                                                     </div>
                                                 </div>
-                                                <div className="text-right">
-                                                    <p className="text-sm font-bold text-gray-900 dark:text-white">
-                                                        {h.days} วัน
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Target Manager Selection */}
+                                {subordinates.length > 0 && (
+                                    <div className="mb-6">
+                                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                                            โอนไปยังหัวหน้างานใหม่
+                                        </label>
+                                        <SearchableSelect
+                                            options={managerOptions.filter(m => m.id !== selectedEmployee?.id)}
+                                            value={transferTargetId}
+                                            onChange={(val) => setTransferTargetId(val)}
+                                            placeholder="-- เลือกหัวหน้างานใหม่ (หรือยกเลิกหัวหน้า) --"
+                                        />
+                                        <p className="text-xs text-gray-500 mt-2">
+                                            💡 หากไม่เลือก ลูกน้องทั้งหมดจะไม่มีหัวหน้างาน
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Actions */}
+                                <div className="flex justify-end gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsTransferModalOpen(false)}
+                                        className="px-5 py-2.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors font-medium"
+                                    >
+                                        ยกเลิก
+                                    </button>
+                                    {subordinates.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={handleTransferSubordinates}
+                                            className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-xl shadow-lg shadow-orange-500/25 transition-all font-medium flex items-center gap-2"
+                                        >
+                                            <ArrowRightLeft className="w-4 h-4" />
+                                            โอนย้าย {subordinates.length} คน
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Balance Modal */}
+            {
+                isBalanceModalOpen && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setIsBalanceModalOpen(false)}>
+                        <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                                            วันลาของ {employeeBalance?.employee.firstName} {employeeBalance?.employee.lastName}
+                                        </h2>
+                                        <p className="text-sm text-gray-500">
+                                            {employeeBalance?.employee.employeeId} | {employeeBalance?.employee.department}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={() => setIsBalanceModalOpen(false)}
+                                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                                    >
+                                        <XCircle className="w-5 h-5 text-gray-400" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {balanceLoading ? (
+                                <div className="p-12 flex items-center justify-center">
+                                    <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+                                </div>
+                            ) : employeeBalance ? (
+                                <div className="p-6">
+                                    {/* Balance Cards */}
+                                    <h3 className="text-sm font-medium text-gray-500 uppercase mb-3">
+                                        วันลาคงเหลือ ปี {employeeBalance.year}
+                                    </h3>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+                                        {employeeBalance.balances.map(b => (
+                                            <div key={b.leaveType} className="bg-gray-50 dark:bg-gray-900 rounded-xl p-4 text-center">
+                                                <p className="text-xs text-gray-500 mb-1">
+                                                    {{
+                                                        'VACATION': 'ลาพักร้อน',
+                                                        'SICK': 'ลาป่วย',
+                                                        'PERSONAL': 'ลากิจ',
+                                                        'MATERNITY': 'ลาคลอด',
+                                                        'MILITARY': 'เกณฑ์ทหาร',
+                                                        'ORDINATION': 'ลาบวช',
+                                                        'STERILIZATION': 'ลาทำหมัน',
+                                                        'TRAINING': 'ลาฝึกอบรม',
+                                                        'OTHER': 'อื่นๆ'
+                                                    }[b.leaveType] || b.leaveType}
+                                                </p>
+                                                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                                                    {formatLeaveDays(b.remaining)}
+                                                </p>
+                                                <p className="text-xs text-gray-400">
+                                                    ใช้ {formatLeaveDays(b.used)} / {formatLeaveDays(b.entitlement + b.carryOver)}
+                                                </p>
+                                                {b.carryOver > 0 && (
+                                                    <p className="text-xs text-blue-500 mt-1">
+                                                        (ยกมา {formatLeaveDays(b.carryOver)})
                                                     </p>
-                                                    <span className={`text-xs ${h.status === 'APPROVED' ? 'text-green-600' :
-                                                        h.status === 'PENDING' ? 'text-yellow-600' : 'text-red-600'
-                                                        }`}>
-                                                        {h.status === 'APPROVED' ? 'อนุมัติ' :
-                                                            h.status === 'PENDING' ? 'รอ' : 'ไม่อนุมัติ'}
-                                                    </span>
-                                                </div>
+                                                )}
                                             </div>
                                         ))}
                                     </div>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="p-6 text-center text-gray-500">
-                                ไม่พบข้อมูลวันลา
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
 
-        </div>
+                                    {/* Leave History */}
+                                    <h3 className="text-sm font-medium text-gray-500 uppercase mb-3">
+                                        ประวัติการลาปีนี้
+                                    </h3>
+                                    {employeeBalance.leaveHistory.length === 0 ? (
+                                        <p className="text-center text-gray-400 py-4">ยังไม่มีประวัติการลา</p>
+                                    ) : (
+                                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                                            {employeeBalance.leaveHistory.map(h => (
+                                                <div key={h.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className={`w-2 h-2 rounded-full ${h.status === 'APPROVED' ? 'bg-green-500' :
+                                                            h.status === 'PENDING' ? 'bg-yellow-500' : 'bg-red-500'
+                                                            }`} />
+                                                        <div>
+                                                            <p className="text-sm font-medium text-gray-900 dark:text-white">
+                                                                {{
+                                                                    'VACATION': 'ลาพักร้อน',
+                                                                    'SICK': 'ลาป่วย',
+                                                                    'PERSONAL': 'ลากิจ',
+                                                                    'MATERNITY': 'ลาคลอด',
+                                                                    'MILITARY': 'เกณฑ์ทหาร',
+                                                                    'ORDINATION': 'ลาบวช',
+                                                                    'STERILIZATION': 'ลาทำหมัน',
+                                                                    'TRAINING': 'ลาฝึกอบรม',
+                                                                    'OTHER': 'อื่นๆ'
+                                                                }[h.leaveType] || h.leaveType}
+                                                            </p>
+                                                            <p className="text-xs text-gray-500">
+                                                                {h.startDate} - {h.endDate}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-sm font-bold text-gray-900 dark:text-white">
+                                                            {h.days} วัน
+                                                        </p>
+                                                        <span className={`text-xs ${h.status === 'APPROVED' ? 'text-green-600' :
+                                                            h.status === 'PENDING' ? 'text-yellow-600' : 'text-red-600'
+                                                            }`}>
+                                                            {h.status === 'APPROVED' ? 'อนุมัติ' :
+                                                                h.status === 'PENDING' ? 'รอ' : 'ไม่อนุมัติ'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="p-6 text-center text-gray-500">
+                                    ไม่พบข้อมูลวันลา
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Sync AD Modal */}
+            <Modal
+                isOpen={isSyncModalOpen}
+                onClose={closeSyncModal}
+                title="Sync ข้อมูลจาก Active Directory"
+                maxWidth="md"
+                footer={
+                    !syncResult ? (
+                        <>
+                            <button
+                                onClick={closeSyncModal}
+                                disabled={isSyncing}
+                                className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                            >
+                                ยกเลิก
+                            </button>
+                            <button
+                                onClick={handleSyncSubmit}
+                                disabled={isSyncing}
+                                className="px-4 py-2 rounded-lg bg-purple-600 text-white font-medium hover:bg-purple-700 disabled:opacity-50 flex items-center gap-2 transition-colors shadow-sm"
+                            >
+                                {isSyncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                                เริ่มการ Sync
+                            </button>
+                        </>
+                    ) : (
+                        <button
+                            onClick={closeSyncModal}
+                            className="px-4 py-2 rounded-lg bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-medium hover:bg-gray-800 dark:hover:bg-gray-100 transition-colors"
+                        >
+                            ปิดหน้าต่าง
+                        </button>
+                    )
+                }
+            >
+                {!syncResult ? (
+                    <div className="space-y-6">
+                        <div className="flex items-start gap-4 p-4 bg-purple-50 dark:bg-purple-900/20 rounded-xl border border-purple-100 dark:border-purple-800">
+                            <div className="p-2 bg-purple-100 dark:bg-purple-900/50 rounded-lg shrink-0">
+                                <RefreshCw className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                            </div>
+                            <div>
+                                <h4 className="font-semibold text-purple-900 dark:text-purple-100 mb-1">
+                                    ยืนยันการ Sync ข้อมูล?
+                                </h4>
+                                <p className="text-sm text-purple-700 dark:text-purple-300">
+                                    ระบบจะทำการค้นหาบัญชีผู้ใช้ (Users) ทั้งหมดจาก Active Directory และนำมาเปรียบเทียบกับฐานข้อมูลปัจจุบัน
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3 mb-4">
+                                <div
+                                    className={`p-3 rounded-lg border cursor-pointer transition-all ${syncConfig.source === 'ldap' ? 'bg-purple-50 border-purple-200 ring-1 ring-purple-500' : 'border-gray-200 hover:bg-gray-50'}`}
+                                    onClick={() => setSyncConfig({ ...syncConfig, source: 'ldap' })}
+                                >
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <Database className={`w-4 h-4 ${syncConfig.source === 'ldap' ? 'text-purple-600' : 'text-gray-500'}`} />
+                                        <span className={`font-medium ${syncConfig.source === 'ldap' ? 'text-purple-900' : 'text-gray-700'}`}>Local AD (LDAP)</span>
+                                    </div>
+                                    <p className="text-xs text-gray-500">ดึงข้อมูลจาก On-Premise AD</p>
+                                </div>
+
+                                <div
+                                    className={`p-3 rounded-lg border cursor-pointer transition-all ${syncConfig.source === 'azure' ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-500' : 'border-gray-200 hover:bg-gray-50'}`}
+                                    onClick={() => setSyncConfig({ ...syncConfig, source: 'azure' })}
+                                >
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <Cloud className={`w-4 h-4 ${syncConfig.source === 'azure' ? 'text-blue-600' : 'text-gray-500'}`} />
+                                        <span className={`font-medium ${syncConfig.source === 'azure' ? 'text-blue-900' : 'text-gray-700'}`}>Azure AD</span>
+                                    </div>
+                                    <p className="text-xs text-gray-500">ดึงข้อมูลจาก Microsoft Entra ID</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer" onClick={() => setSyncConfig({ ...syncConfig, syncNewOnly: !syncConfig.syncNewOnly })}>
+                                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${syncConfig.syncNewOnly ? 'bg-purple-600 border-purple-600' : 'border-gray-300 dark:border-gray-600'}`}>
+                                    {syncConfig.syncNewOnly && <CheckCircle className="w-3.5 h-3.5 text-white" />}
+                                </div>
+                                <span className="text-gray-700 dark:text-gray-300">นำเข้าพนักงานใหม่ (Insert New)</span>
+                            </div>
+
+                            <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer" onClick={() => setSyncConfig({ ...syncConfig, updateExisting: !syncConfig.updateExisting })}>
+                                <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${syncConfig.updateExisting ? 'bg-purple-600 border-purple-600' : 'border-gray-300 dark:border-gray-600'}`}>
+                                    {syncConfig.updateExisting && <CheckCircle className="w-3.5 h-3.5 text-white" />}
+                                </div>
+                                <span className="text-gray-700 dark:text-gray-300">อัปเดตข้อมูลพนักงานเดิม (Update Existing)</span>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="text-center py-6">
+                        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                            <CheckCircle className="w-8 h-8 text-green-600 dark:text-green-400" />
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Sync สำเร็จ!</h3>
+                        <p className="text-gray-500 mb-6">ดำเนินการปรับปรุงข้อมูลเรียบร้อยแล้ว</p>
+
+                        <div className="grid grid-cols-3 gap-4">
+                            <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl">
+                                <div className="text-2xl font-bold text-gray-900 dark:text-white">{syncResult.totalFound}</div>
+                                <div className="text-xs text-gray-500 uppercase tracking-wide">Users พบทั้งหมด</div>
+                            </div>
+                            <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl">
+                                <div className="text-2xl font-bold text-green-600 dark:text-green-400">{syncResult.added}</div>
+                                <div className="text-xs text-green-600/80 dark:text-green-400/80 uppercase tracking-wide">เพิ่มใหม่</div>
+                            </div>
+                            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
+                                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{syncResult.updated}</div>
+                                <div className="text-xs text-blue-600/80 dark:text-blue-400/80 uppercase tracking-wide">อัปเดต</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </Modal>
+        </div >
     );
 }
