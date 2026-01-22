@@ -250,5 +250,21 @@ BEGIN
 END
 GO
 
+-- ==============================================
+-- SystemSettings Table (ตั้งค่าระบบ)
+-- ==============================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='SystemSettings' AND xtype='U')
+BEGIN
+    CREATE TABLE SystemSettings (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        settingKey NVARCHAR(50) NOT NULL UNIQUE,
+        settingValue NVARCHAR(MAX) NULL,
+        updatedAt DATETIME2 NOT NULL DEFAULT GETDATE()
+    );
+    
+    CREATE INDEX IX_SystemSettings_Key ON SystemSettings(settingKey);
+END
+GO
+
 PRINT '✅ HR Leave Database Schema Created Successfully!';
 GO

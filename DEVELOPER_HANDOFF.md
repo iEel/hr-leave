@@ -268,7 +268,7 @@ sequenceDiagram
 ### 🔲 Phase 4: HR Features
 - [x] `/hr/employees` - จัดการพนักงาน (CRUD, Import/Export Excel)
 - [x] `/hr/holidays` - จัดการวันหยุด (Public, Special per company)
-- [ ] `/hr/settings` - ตั้งค่าโควตาวันลา
+- [x] `/hr/settings` - ตั้งค่าโควตาวันลา (Auto-sync to active balances)
 - [ ] `/hr/year-end` - ประมวลผลสิ้นปี (Reset/Carry-over)
 - [ ] `/hr/analytics` - Charts, Company comparison
 - [ ] `/hr/reports` - ออกรายงาน

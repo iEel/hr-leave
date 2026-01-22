@@ -69,6 +69,7 @@ export async function PUT(request: NextRequest) {
 
         // Update each setting
         for (const [key, value] of Object.entries(settings)) {
+            // 1. Update SystemSettings (The generic settings table)
             await pool.request()
                 .input('key', key)
                 .input('value', String(value))
@@ -80,6 +81,39 @@ export async function PUT(request: NextRequest) {
                         updatedBy = @userId
                     WHERE settingKey = @key
                 `);
+
+            // 2. Check if it's a Quota setting (e.g., LEAVE_QUOTA_VACATION)
+            if (key.startsWith('LEAVE_QUOTA_')) {
+                const type = key.replace('LEAVE_QUOTA_', ''); // VACATION, SICK...
+                const days = parseInt(String(value));
+
+                if (!isNaN(days)) {
+                    // 2.1 Update Default in LeaveQuotaSettings table (For new users/future years)
+                    await pool.request()
+                        .input('type', type)
+                        .input('days', days)
+                        .query(`
+                            UPDATE LeaveQuotaSettings 
+                            SET defaultDays = @days, updatedAt = GETDATE()
+                            WHERE leaveType = @type
+                        `);
+
+                    // 2.2 Sync to Current Year Balances for ALL users
+                    // This creates the immediate effect expected by the user
+                    const currentYear = new Date().getFullYear();
+                    await pool.request()
+                        .input('days', days)
+                        .input('type', type)
+                        .input('year', currentYear)
+                        .query(`
+                            UPDATE LeaveBalances 
+                            SET entitlement = @days, 
+                                remaining = @days - used, -- Recalculate remaining based on new entitlement
+                                updatedAt = GETDATE()
+                            WHERE leaveType = @type AND year = @year
+                        `);
+                }
+            }
         }
 
         // Audit log
