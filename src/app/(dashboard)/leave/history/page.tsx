@@ -27,6 +27,7 @@ import {
     GraduationCap,
     CalendarPlus,
     RefreshCw,
+    HelpCircle,
 } from 'lucide-react';
 
 // Leave type mapping
@@ -39,6 +40,7 @@ const leaveTypeConfig: Record<string, { label: string; icon: React.ElementType; 
     ORDINATION: { label: 'ลาบวช', icon: Church, color: 'from-yellow-500 to-yellow-600' },
     STERILIZATION: { label: 'ลาทำหมัน', icon: Scissors, color: 'from-teal-500 to-teal-600' },
     TRAINING: { label: 'ลาฝึกอบรม', icon: GraduationCap, color: 'from-indigo-500 to-indigo-600' },
+    OTHER: { label: 'อื่นๆ', icon: HelpCircle, color: 'from-gray-500 to-gray-600' },
 };
 
 const statusConfig: Record<string, { label: string; color: string; bgColor: string }> = {

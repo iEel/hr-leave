@@ -16,6 +16,7 @@ import {
     Church,
     Scissors,
     GraduationCap,
+    HelpCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -29,6 +30,7 @@ const leaveTypeIcons: Record<string, React.ReactNode> = {
     ORDINATION: <Church className="w-5 h-5" />,
     STERILIZATION: <Scissors className="w-5 h-5" />,
     TRAINING: <GraduationCap className="w-5 h-5" />,
+    OTHER: <HelpCircle className="w-5 h-5" />,
 };
 
 const leaveTypeNames: Record<string, string> = {
@@ -40,6 +42,7 @@ const leaveTypeNames: Record<string, string> = {
     ORDINATION: 'ลาบวช',
     STERILIZATION: 'ทำหมัน',
     TRAINING: 'ฝึกอบรม',
+    OTHER: 'อื่นๆ',
 };
 
 const leaveTypeColors: Record<string, string> = {
@@ -51,6 +54,7 @@ const leaveTypeColors: Record<string, string> = {
     ORDINATION: 'from-yellow-500 to-yellow-600',
     STERILIZATION: 'from-teal-500 to-teal-600',
     TRAINING: 'from-indigo-500 to-indigo-600',
+    OTHER: 'from-gray-500 to-gray-600',
 };
 
 // Fetch leave balances from database

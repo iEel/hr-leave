@@ -146,11 +146,13 @@ export async function POST(request: NextRequest) {
                 WHERE userId = @userId AND leaveType = @leaveType AND year = @year
             `);
 
-        if (balanceCheck.recordset.length === 0 || balanceCheck.recordset[0].remaining < usageAmount) {
-            return NextResponse.json(
-                { error: 'วันลาไม่เพียงพอ' },
-                { status: 400 }
-            );
+        if (leaveType !== 'OTHER') {
+            if (balanceCheck.recordset.length === 0 || balanceCheck.recordset[0].remaining < usageAmount) {
+                return NextResponse.json(
+                    { error: 'วันลาไม่เพียงพอ' },
+                    { status: 400 }
+                );
+            }
         }
 
         // Insert leave request

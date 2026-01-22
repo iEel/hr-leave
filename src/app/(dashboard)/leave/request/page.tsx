@@ -42,6 +42,7 @@ const leaveTypes = [
     { value: 'ORDINATION', label: 'ลาบวช', icon: Church, color: 'yellow', requiresDoc: false },
     { value: 'STERILIZATION', label: 'ลาทำหมัน', icon: Scissors, color: 'teal', requiresDoc: true },
     { value: 'TRAINING', label: 'ลาฝึกอบรม', icon: GraduationCap, color: 'indigo', requiresDoc: false },
+    { value: 'OTHER', label: 'อื่นๆ', icon: HelpCircle, color: 'gray', requiresDoc: false },
 ];
 
 // Time slot options for day/half-day
