@@ -45,10 +45,12 @@ async function runMigration() {
             IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='SystemSettings' AND xtype='U')
             BEGIN
                 CREATE TABLE SystemSettings (
-                    [key] VARCHAR(100) PRIMARY KEY,
-                    [value] NVARCHAR(MAX),
-                    updatedAt DATETIME DEFAULT GETDATE()
+                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    settingKey NVARCHAR(50) NOT NULL UNIQUE,
+                    settingValue NVARCHAR(MAX) NULL,
+                    updatedAt DATETIME2 NOT NULL DEFAULT GETDATE()
                 );
+                CREATE INDEX IX_SystemSettings_Key ON SystemSettings(settingKey);
             END
         `);
         console.log('✅ SystemSettings table ready');
@@ -71,9 +73,9 @@ async function runMigration() {
                 .input('key', key)
                 .input('value', value)
                 .query(`
-                    IF NOT EXISTS (SELECT 1 FROM SystemSettings WHERE [key] = @key)
+                    IF NOT EXISTS (SELECT 1 FROM SystemSettings WHERE settingKey = @key)
                     BEGIN
-                        INSERT INTO SystemSettings ([key], [value]) VALUES (@key, @value)
+                        INSERT INTO SystemSettings (settingKey, settingValue) VALUES (@key, @value)
                     END
                 `);
         }

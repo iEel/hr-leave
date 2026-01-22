@@ -97,15 +97,17 @@ export async function POST(req: Request) {
                 const hashedPassword = await bcrypt.hash('password123', 10); // Default password
 
                 await execute(
-                    `INSERT INTO Users (employeeId, email, password, firstName, lastName, role, company, department, gender, startDate, isActive, createdAt)
-                     VALUES (@id, @email, @pass, @first, @last, 'EMPLOYEE', 'SONIC', 'General', 'M', GETDATE(), @isActive, GETDATE())`,
+                    `INSERT INTO Users (employeeId, email, password, firstName, lastName, role, company, department, gender, startDate, isActive, isADUser, adUsername, authProvider, createdAt)
+                     VALUES (@id, @email, @pass, @first, @last, 'EMPLOYEE', 'SONIC', 'General', 'M', GETDATE(), @isActive, 1, @adUser, @provider, GETDATE())`,
                     {
                         id: employeeId,
                         email: email,
                         pass: hashedPassword,
                         first: firstName,
                         last: lastName,
-                        isActive: isActive ? 1 : 0
+                        isActive: isActive ? 1 : 0,
+                        adUser: user.sAMAccountName || user.onPremisesSamAccountName || '',
+                        provider: source === 'azure' ? 'AZURE' : 'AD'
                     }
                 );
                 addedCount++;
@@ -113,18 +115,55 @@ export async function POST(req: Request) {
                 // CASE: Update Existing
                 await execute(
                     `UPDATE Users 
-                     SET firstName = @first, lastName = @last, email = @email, isActive = @isActive
+                     SET firstName = @first, lastName = @last, email = @email, isActive = @isActive,
+                         isADUser = 1, adUsername = @adUser, authProvider = @provider
                      WHERE employeeId = @id`,
                     {
                         id: employeeId,
                         email: email,
                         first: firstName,
                         last: lastName,
-                        isActive: isActive ? 1 : 0
+                        isActive: isActive ? 1 : 0,
+                        adUser: user.sAMAccountName || user.onPremisesSamAccountName || '',
+                        provider: source === 'azure' ? 'AZURE' : 'AD'
                     }
                 );
                 updatedCount++;
             }
+        }
+
+        // 3. Deactivate Users not found in AD (Soft Delete)
+        // Only for users marked as isADUser = 1
+        const syncedEmployeeIds = rawUsers
+            .map(u => {
+                if (source === 'azure') {
+                    const samAccount = u.onPremisesSamAccountName;
+                    const upnPrefix = u.userPrincipalName?.split('@')[0];
+                    return (samAccount || u.employeeId || upnPrefix || '').toUpperCase();
+                } else {
+                    const adEmployeeID = u.employeeID ? String(u.employeeID).trim() : null;
+                    return (adEmployeeID || u.sAMAccountName).toUpperCase();
+                }
+            })
+            .filter(id => id && id.length > 0);
+
+        if (syncedEmployeeIds.length > 0) {
+            // Safety: Ensure we don't deactivate everyone if sync failed partially (empty list check handled above)
+            // Use query builder logic or raw string for IN clause
+            const placeholders = syncedEmployeeIds.map((_, i) => `@id${i}`).join(',');
+            const params: Record<string, any> = {};
+            syncedEmployeeIds.forEach((id, i) => {
+                params[`id${i}`] = id;
+            });
+
+            // Note: Deactivating users who ARE AD Users but NOT in the current Sync List
+            await execute(
+                `UPDATE Users SET isActive = 0 
+                 WHERE isADUser = 1 
+                 AND authProvider = '${source === 'azure' ? 'AZURE' : 'AD'}'
+                 AND employeeId NOT IN (${placeholders})`,
+                params
+            );
         }
 
         return NextResponse.json({

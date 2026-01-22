@@ -29,6 +29,9 @@ BEGIN
         startDate DATE NOT NULL,
         departmentHeadId INT NULL,
         isActive BIT NOT NULL DEFAULT 1,
+        isADUser BIT NOT NULL DEFAULT 0,
+        adUsername NVARCHAR(100) NULL,
+        authProvider VARCHAR(20) DEFAULT 'LOCAL', -- LOCAL, AD, AZURE
         createdAt DATETIME2 NOT NULL DEFAULT GETDATE(),
         updatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
         CONSTRAINT FK_Users_DepartmentHead FOREIGN KEY (departmentHeadId) REFERENCES Users(id)
