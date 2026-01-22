@@ -58,7 +58,7 @@ export async function POST(req: Request) {
             } else {
                 // LDAP Mapping
                 if (!user.sAMAccountName) continue;
-                employeeId = (user.employeeID || user.sAMAccountName).toUpperCase();
+                employeeId = String(user.employeeID || user.sAMAccountName).toUpperCase();
                 email = user.mail || `${user.sAMAccountName}@example.com`;
                 firstName = user.givenName || user.displayName?.split(' ')[0] || user.sAMAccountName;
                 lastName = user.sn || user.displayName?.split(' ').slice(1).join(' ') || '';
@@ -79,8 +79,8 @@ export async function POST(req: Request) {
                 const hashedPassword = await bcrypt.hash('password123', 10); // Default password
 
                 await execute(
-                    `INSERT INTO Users (employeeId, email, password, firstName, lastName, role, company, department, isActive, createdAt)
-                     VALUES (@id, @email, @pass, @first, @last, 'EMPLOYEE', 'SONIC', 'General', @isActive, GETDATE())`,
+                    `INSERT INTO Users (employeeId, email, password, firstName, lastName, role, company, department, gender, startDate, isActive, createdAt)
+                     VALUES (@id, @email, @pass, @first, @last, 'EMPLOYEE', 'SONIC', 'General', 'M', GETDATE(), @isActive, GETDATE())`,
                     {
                         id: employeeId,
                         email: email,

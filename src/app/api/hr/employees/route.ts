@@ -167,7 +167,7 @@ export async function PUT(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { id, firstName, lastName, role, company, department, isActive, startDate, departmentHeadId } = body;
+        const { id, firstName, lastName, role, company, department, isActive, gender, startDate, departmentHeadId } = body;
 
         if (!id) {
             return NextResponse.json({ error: 'Missing user ID' }, { status: 400 });
@@ -183,6 +183,7 @@ export async function PUT(request: NextRequest) {
             .input('company', company)
             .input('department', department)
             .input('isActive', isActive ? 1 : 0)
+            .input('gender', gender)
             .input('startDate', startDate)
             .input('departmentHeadId', departmentHeadId || null)
             .query(`
@@ -193,6 +194,7 @@ export async function PUT(request: NextRequest) {
                     company = @company,
                     department = @department,
                     isActive = @isActive,
+                    gender = @gender,
                     startDate = @startDate,
                     departmentHeadId = @departmentHeadId,
                     updatedAt = GETDATE()
@@ -205,7 +207,7 @@ export async function PUT(request: NextRequest) {
             action: 'UPDATE_EMPLOYEE',
             targetTable: 'Users',
             targetId: id,
-            newValue: { firstName, lastName, role, company, department, isActive, startDate }
+            newValue: { firstName, lastName, role, company, department, isActive, gender, startDate }
         });
 
         return NextResponse.json({ success: true, message: 'Employee updated successfully' });

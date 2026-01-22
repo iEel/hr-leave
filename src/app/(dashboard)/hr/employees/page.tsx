@@ -984,6 +984,33 @@ export default function EmployeeManagementPage() {
                                             <input required type="text" value={formData.lastName} onChange={e => setFormData({ ...formData, lastName: e.target.value })}
                                                 className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all" />
                                         </div>
+                                        <div className="col-span-2">
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">เพศ *</label>
+                                            <div className="flex gap-4">
+                                                <label className="flex items-center gap-2 cursor-pointer bg-gray-50 dark:bg-gray-900 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 flex-1 hover:border-indigo-500 transition-colors">
+                                                    <input
+                                                        type="radio"
+                                                        name="edit-gender"
+                                                        value="M"
+                                                        checked={formData.gender === 'M'}
+                                                        onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                                                        className="w-4 h-4 text-indigo-600"
+                                                    />
+                                                    <span className="text-gray-700 dark:text-gray-300">ชาย</span>
+                                                </label>
+                                                <label className="flex items-center gap-2 cursor-pointer bg-gray-50 dark:bg-gray-900 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 flex-1 hover:border-indigo-500 transition-colors">
+                                                    <input
+                                                        type="radio"
+                                                        name="edit-gender"
+                                                        value="F"
+                                                        checked={formData.gender === 'F'}
+                                                        onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                                                        className="w-4 h-4 text-indigo-600"
+                                                    />
+                                                    <span className="text-gray-700 dark:text-gray-300">หญิง</span>
+                                                </label>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1045,7 +1072,7 @@ export default function EmployeeManagementPage() {
                                                 required
                                             />
                                         </div>
-                                        <div className="col-span-2">
+                                        <div>
                                             <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">หัวหน้างาน</label>
                                             <SearchableSelect
                                                 options={managerOptions}
@@ -1053,6 +1080,11 @@ export default function EmployeeManagementPage() {
                                                 onChange={(val) => setFormData({ ...formData, departmentHeadId: val ? String(val) : '' })}
                                                 placeholder="-- ค้นหาหัวหน้างาน --"
                                             />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">วันที่เริ่มงาน *</label>
+                                            <input required type="date" value={formData.startDate} onChange={e => setFormData({ ...formData, startDate: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all" />
                                         </div>
                                     </div>
                                 </div>

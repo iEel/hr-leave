@@ -266,7 +266,7 @@ sequenceDiagram
 ## 8. สิ่งที่ยังต้องทำ
 
 ### 🔲 Phase 4: HR Features
-- [x] `/hr/employees` - จัดการพนักงาน (CRUD, Import/Export Excel)
+- [x] `/hr/employees` - จัดการพนักงาน (CRUD, Import/Export Excel, LDAP Sync, Edit Gender/StartDate)
 - [x] `/hr/holidays` - จัดการวันหยุด (Public, Special per company)
 - [x] `/hr/settings` - ตั้งค่าโควตาวันลา (Auto-sync to active balances)
 - [ ] `/hr/year-end` - ประมวลผลสิ้นปี (Reset/Carry-over)

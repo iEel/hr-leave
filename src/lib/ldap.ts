@@ -89,6 +89,21 @@ export async function verifyLdapCredentials(
  * @param filter - Optional custom filter (default: objectClass=user)
  * @returns Array of LDAP user entries
  */
+/**
+ * Helper to safely extract string from LDAP attribute
+ */
+function getLdapString(value: string | string[] | Buffer | Buffer[] | undefined): string | undefined {
+    if (!value) return undefined;
+    if (Array.isArray(value)) {
+        // Return first element if array
+        return getLdapString(value[0]);
+    }
+    if (Buffer.isBuffer(value)) {
+        return value.toString();
+    }
+    return String(value);
+}
+
 export async function searchLdapUsers(customFilter?: string): Promise<LdapUserEntry[]> {
     const settings = await getAuthSettings();
     const ldapUrl = settings.ldapUrl || process.env.LDAP_URL;
@@ -136,13 +151,13 @@ export async function searchLdapUsers(customFilter?: string): Promise<LdapUserEn
         await client.unbind();
 
         return searchEntries.map(entry => ({
-            sAMAccountName: entry.sAMAccountName as string,
-            mail: entry.mail as string | undefined,
-            displayName: entry.displayName as string | undefined,
-            givenName: entry.givenName as string | undefined,
-            sn: entry.sn as string | undefined,
-            employeeID: entry.employeeID as string | undefined,
-        }));
+            sAMAccountName: getLdapString(entry.sAMAccountName) || '', // Ensure at least empty string if undefined but required
+            mail: getLdapString(entry.mail),
+            displayName: getLdapString(entry.displayName),
+            givenName: getLdapString(entry.givenName),
+            sn: getLdapString(entry.sn),
+            employeeID: getLdapString(entry.employeeID),
+        })).filter(u => !!u.sAMAccountName); // Filter out entries without sAMAccountName
     } catch (error) {
         console.error('[LDAP] Search error:', error);
         return [];
