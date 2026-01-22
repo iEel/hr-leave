@@ -37,7 +37,7 @@ async function seedDatabase() {
                 // If error is about object already exists, we might want to ignore or log it
                 // But since we are likely on a clean DB, let's log it.
                 // However, the schema has IF NOT EXISTS checks, so it should be fine.
-                console.warn('⚠️  Warning executing batch:', err.message.split('\n')[0]);
+                console.warn('⚠️  Warning executing batch:', (err as Error).message.split('\n')[0]);
             }
         }
 

@@ -46,7 +46,7 @@ async function checkDatabase(dbName: string, config: any) {
 
         await pool.close();
     } catch (error) {
-        console.log(`❌ Error connecting to ${dbName}:`, error.message);
+        console.log(`❌ Error connecting to ${dbName}:`, (error as Error).message || error);
     }
 }
 

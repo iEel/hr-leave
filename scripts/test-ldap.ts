@@ -36,7 +36,7 @@ async function testLdapConnection() {
         await client.unbind();
         console.log('✅ Connection closed cleanly.');
         process.exit(0);
-    } catch (error) {
+    } catch (error: any) {
         console.error('❌ LDAP Connection Failed:', error.message || error);
         if (error.code === 'EQA_INVALID_CREDENTIALS' || error.name === 'InvalidCredentialsError') {
             console.error('👉 Hint: Check your username (Bind DN) or Password.');
