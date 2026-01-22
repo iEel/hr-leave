@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { generateApprovalToken, getMagicLink } from './tokens';
+import { formatLeaveDays } from './leave-utils';
 
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
@@ -66,7 +67,7 @@ export async function sendLeaveRequestEmail(
                     </tr>
                     <tr>
                         <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">จำนวนวัน</td>
-                        <td style="padding: 12px; border: 1px solid #e5e7eb;">${leaveDetails.days} วัน</td>
+                        <td style="padding: 12px; border: 1px solid #e5e7eb;">${formatLeaveDays(leaveDetails.days)}</td>
                     </tr>
                     <tr>
                         <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">เหตุผล</td>
