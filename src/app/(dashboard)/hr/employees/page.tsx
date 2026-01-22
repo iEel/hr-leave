@@ -506,245 +506,248 @@ export default function EmployeeManagementPage() {
     }));
 
     return (
-        <div className="animate-fade-in">
-            {/* Success Toast */}
-            {formSuccess && (
-                <div className="fixed top-4 right-4 z-50 animate-fade-in">
-                    <div className="px-4 py-3 bg-green-500 text-white rounded-xl shadow-lg flex items-center gap-2">
-                        <CheckCircle className="w-5 h-5" />
-                        {formSuccess}
+        <>
+            <div className="animate-fade-in">
+                {/* Success Toast */}
+                {formSuccess && (
+                    <div className="fixed top-4 right-4 z-50 animate-fade-in">
+                        <div className="px-4 py-3 bg-green-500 text-white rounded-xl shadow-lg flex items-center gap-2">
+                            <CheckCircle className="w-5 h-5" />
+                            {formSuccess}
+                        </div>
                     </div>
-                </div>
-            )}
+                )}
 
-            {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-                <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center">
-                        <Users className="w-6 h-6 text-white" />
+                {/* Header */}
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
+                    <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center">
+                            <Users className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+                                จัดการพนักงาน
+                            </h1>
+                            <p className="text-gray-500">เพิ่ม, แก้ไข และจัดการสิทธิ์ผู้ใช้งาน</p>
+                        </div>
                     </div>
-                    <div>
-                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                            จัดการพนักงาน
-                        </h1>
-                        <p className="text-gray-500">เพิ่ม, แก้ไข และจัดการสิทธิ์ผู้ใช้งาน</p>
-                    </div>
-                </div>
 
-                {/* Action Buttons */}
-                <div className="flex items-center gap-2">
-                    {/* Hidden file input for import */}
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleFileChange}
-                        accept=".csv"
-                        className="hidden"
-                    />
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2">
+                        {/* Hidden file input for import */}
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFileChange}
+                            accept=".csv"
+                            className="hidden"
+                        />
 
-                    {/* Import Button */}
-                    <button
-                        onClick={handleImportClick}
-                        disabled={isImporting}
-                        className="flex items-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors shadow-sm disabled:opacity-50"
-                        title="Import จาก CSV"
-                    >
-                        {isImporting ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                            <Upload className="w-4 h-4" />
-                        )}
-                        <span className="hidden sm:inline">Import</span>
-                    </button>
-
-                    {/* Sync AD Button */}
-                    <button
-                        onClick={() => setIsSyncModalOpen(true)}
-                        className="flex items-center gap-2 px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors shadow-sm"
-                        title="Sync with Active Directory"
-                    >
-                        <RefreshCw className="w-4 h-4" />
-                        <span className="hidden sm:inline">Sync AD</span>
-                    </button>
-
-                    {/* Add Button */}
-
-                    {/* Export Button */}
-                    <button
-                        onClick={handleExport}
-                        className="flex items-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors shadow-sm"
-                        title="Export เป็น CSV"
-                    >
-                        <Download className="w-4 h-4" />
-                        <span className="hidden sm:inline">Export</span>
-                    </button>
-
-                    {/* Add Employee Button */}
-                    <button
-                        onClick={() => {
-                            setFormData({ ...formData, employeeId: '', email: '', password: '', firstName: '', lastName: '' });
-                            setIsAddModalOpen(true);
-                        }}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm"
-                    >
-                        <Plus className="w-5 h-5" />
-                        เพิ่มพนักงาน
-                    </button>
-                </div>
-            </div>
-
-            {/* Search & Stats */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 mb-6 flex flex-col md:flex-row gap-4">
-                <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                        type="text"
-                        placeholder="ค้นหาชื่อ, รหัสพนักงาน..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-900 dark:text-white"
-                    />
-                </div>
-                <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <Users className="w-4 h-4" />
-                    <span>ทั้งหมด {pagination.total} คน</span>
-                </div>
-            </div>
-
-            {/* Table */}
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="w-full">
-                        <thead>
-                            <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-700">
-                                <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">พนักงาน</th>
-                                <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">บริษัท/แผนก</th>
-                                <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
-                                <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">สถานะ</th>
-                                <th className="text-right py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">จัดการ</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                            {loading ? (
-                                <tr>
-                                    <td colSpan={5} className="py-8 text-center text-gray-500">
-                                        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-                                        กำลังโหลด...
-                                    </td>
-                                </tr>
-                            ) : employees.length === 0 ? (
-                                <tr>
-                                    <td colSpan={5} className="py-8 text-center text-gray-500">
-                                        ไม่พบข้อมูลพนักงาน
-                                    </td>
-                                </tr>
+                        {/* Import Button */}
+                        <button
+                            onClick={handleImportClick}
+                            disabled={isImporting}
+                            className="flex items-center gap-2 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors shadow-sm disabled:opacity-50"
+                            title="Import จาก CSV"
+                        >
+                            {isImporting ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
-                                employees.map((emp) => (
-                                    <tr key={emp.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                        <td className="py-4 px-6">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 font-bold text-sm">
-                                                    {emp.firstName.charAt(0)}
-                                                </div>
-                                                <div>
-                                                    <p className="font-semibold text-gray-900 dark:text-white">{emp.firstName} {emp.lastName}</p>
-                                                    <p className="text-xs text-gray-500">{emp.employeeId} | {emp.email}</p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="py-4 px-6">
-                                            <div className="flex flex-col">
-                                                <span className="text-sm font-medium text-gray-900 dark:text-white">{emp.company}</span>
-                                                <span className="text-xs text-gray-500">{emp.department}</span>
-                                            </div>
-                                        </td>
-                                        <td className="py-4 px-6">
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
-                        ${emp.role === 'ADMIN' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
-                                                    emp.role === 'HR' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
-                                                        emp.role === 'MANAGER' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
-                                                            'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
-                                                }`}>
-                                                {emp.role}
-                                            </span>
-                                        </td>
-                                        <td className="py-4 px-6">
-                                            {emp.isActive ? (
-                                                <span className="flex items-center gap-1 text-green-600 text-sm">
-                                                    <CheckCircle className="w-4 h-4" /> Active
-                                                </span>
-                                            ) : (
-                                                <span className="flex items-center gap-1 text-gray-400 text-sm">
-                                                    <XCircle className="w-4 h-4" /> Inactive
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="py-4 px-6 text-right">
-                                            <div className="flex items-center justify-end gap-2">
-                                                <button
-                                                    onClick={() => openBalanceModal(emp)}
-                                                    className="p-1.5 text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/30 rounded-lg transition-colors"
-                                                    title="ดูวันลา"
-                                                >
-                                                    <CalendarDays className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => openTransferModal(emp)}
-                                                    className="p-1.5 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded-lg transition-colors"
-                                                    title="โอนลูกน้อง"
-                                                >
-                                                    <ArrowRightLeft className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => openPasswordModal(emp)}
-                                                    className="p-1.5 text-yellow-600 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 rounded-lg transition-colors"
-                                                    title="รีเซ็ตรหัสผ่าน"
-                                                >
-                                                    <KeyRound className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => openEditModal(emp)}
-                                                    className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
-                                                    title="แก้ไข"
-                                                >
-                                                    <Edit className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDeleteEmployee(emp)}
-                                                    className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                                                    title="ลบ"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
+                                <Upload className="w-4 h-4" />
+                            )}
+                            <span className="hidden sm:inline">Import</span>
+                        </button>
+
+                        {/* Sync AD Button */}
+                        <button
+                            onClick={() => setIsSyncModalOpen(true)}
+                            className="flex items-center gap-2 px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition-colors shadow-sm"
+                            title="Sync with Active Directory"
+                        >
+                            <RefreshCw className="w-4 h-4" />
+                            <span className="hidden sm:inline">Sync AD</span>
+                        </button>
+
+                        {/* Add Button */}
+
+                        {/* Export Button */}
+                        <button
+                            onClick={handleExport}
+                            className="flex items-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors shadow-sm"
+                            title="Export เป็น CSV"
+                        >
+                            <Download className="w-4 h-4" />
+                            <span className="hidden sm:inline">Export</span>
+                        </button>
+
+                        {/* Add Employee Button */}
+                        <button
+                            onClick={() => {
+                                setFormData({ ...formData, employeeId: '', email: '', password: '', firstName: '', lastName: '' });
+                                setIsAddModalOpen(true);
+                            }}
+                            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm"
+                        >
+                            <Plus className="w-5 h-5" />
+                            เพิ่มพนักงาน
+                        </button>
+                    </div>
+                </div>
+
+                {/* Search & Stats */}
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 mb-6 flex flex-col md:flex-row gap-4">
+                    <div className="relative flex-1">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                        <input
+                            type="text"
+                            placeholder="ค้นหาชื่อ, รหัสพนักงาน..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-900 dark:text-white"
+                        />
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <Users className="w-4 h-4" />
+                        <span>ทั้งหมด {pagination.total} คน</span>
+                    </div>
+                </div>
+
+                {/* Table */}
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead>
+                                <tr className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-100 dark:border-gray-700">
+                                    <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">พนักงาน</th>
+                                    <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">บริษัท/แผนก</th>
+                                    <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
+                                    <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">สถานะ</th>
+                                    <th className="text-right py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                                {loading ? (
+                                    <tr>
+                                        <td colSpan={5} className="py-8 text-center text-gray-500">
+                                            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                                            กำลังโหลด...
                                         </td>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                                ) : employees.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} className="py-8 text-center text-gray-500">
+                                            ไม่พบข้อมูลพนักงาน
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    employees.map((emp) => (
+                                        <tr key={emp.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                                            <td className="py-4 px-6">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 font-bold text-sm">
+                                                        {emp.firstName.charAt(0)}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-semibold text-gray-900 dark:text-white">{emp.firstName} {emp.lastName}</p>
+                                                        <p className="text-xs text-gray-500">{emp.employeeId} | {emp.email}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm font-medium text-gray-900 dark:text-white">{emp.company}</span>
+                                                    <span className="text-xs text-gray-500">{emp.department}</span>
+                                                </div>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium
+                        ${emp.role === 'ADMIN' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' :
+                                                        emp.role === 'HR' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400' :
+                                                            emp.role === 'MANAGER' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
+                                                                'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                                                    }`}>
+                                                    {emp.role}
+                                                </span>
+                                            </td>
+                                            <td className="py-4 px-6">
+                                                {emp.isActive ? (
+                                                    <span className="flex items-center gap-1 text-green-600 text-sm">
+                                                        <CheckCircle className="w-4 h-4" /> Active
+                                                    </span>
+                                                ) : (
+                                                    <span className="flex items-center gap-1 text-gray-400 text-sm">
+                                                        <XCircle className="w-4 h-4" /> Inactive
+                                                    </span>
+                                                )}
+                                            </td>
+                                            <td className="py-4 px-6 text-right">
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button
+                                                        onClick={() => openBalanceModal(emp)}
+                                                        className="p-1.5 text-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/30 rounded-lg transition-colors"
+                                                        title="ดูวันลา"
+                                                    >
+                                                        <CalendarDays className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => openTransferModal(emp)}
+                                                        className="p-1.5 text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded-lg transition-colors"
+                                                        title="โอนลูกน้อง"
+                                                    >
+                                                        <ArrowRightLeft className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => openPasswordModal(emp)}
+                                                        className="p-1.5 text-yellow-600 hover:bg-yellow-50 dark:hover:bg-yellow-900/30 rounded-lg transition-colors"
+                                                        title="รีเซ็ตรหัสผ่าน"
+                                                    >
+                                                        <KeyRound className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => openEditModal(emp)}
+                                                        className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
+                                                        title="แก้ไข"
+                                                    >
+                                                        <Edit className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteEmployee(emp)}
+                                                        className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                                                        title="ลบ"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Pagination */}
+                    <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                        <button
+                            disabled={page === 1}
+                            onClick={() => setPage(page - 1)}
+                            className="p-2 border border-gray-200 dark:border-gray-700 rounded-lg disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800"
+                        >
+                            <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <span className="text-sm text-gray-500">
+                            หน้า {page} จาก {pagination.totalPages}
+                        </span>
+                        <button
+                            disabled={page === pagination.totalPages}
+                            onClick={() => setPage(page + 1)}
+                            className="p-2 border border-gray-200 dark:border-gray-700 rounded-lg disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800"
+                        >
+                            <ChevronRight className="w-4 h-4" />
+                        </button>
+                    </div>
                 </div>
 
-                {/* Pagination */}
-                <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
-                    <button
-                        disabled={page === 1}
-                        onClick={() => setPage(page - 1)}
-                        className="p-2 border border-gray-200 dark:border-gray-700 rounded-lg disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800"
-                    >
-                        <ChevronLeft className="w-4 h-4" />
-                    </button>
-                    <span className="text-sm text-gray-500">
-                        หน้า {page} จาก {pagination.totalPages}
-                    </span>
-                    <button
-                        disabled={page === pagination.totalPages}
-                        onClick={() => setPage(page + 1)}
-                        className="p-2 border border-gray-200 dark:border-gray-700 rounded-lg disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-800"
-                    >
-                        <ChevronRight className="w-4 h-4" />
-                    </button>
-                </div>
             </div>
 
             {/* Add Modal */}
@@ -753,7 +756,7 @@ export default function EmployeeManagementPage() {
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
                         <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
                             {/* Header */}
-                            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-t-2xl">
+                            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between sticky top-0 z-10 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-t-2xl">
                                 <h2 className="text-xl font-bold text-white flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
                                         <User className="w-5 h-5 text-white" />
@@ -927,7 +930,7 @@ export default function EmployeeManagementPage() {
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
                         <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
                             {/* Header */}
-                            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-2xl">
+                            <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between sticky top-0 z-10 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-2xl">
                                 <h2 className="text-xl font-bold text-white flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
                                         <Edit className="w-5 h-5 text-white" />
@@ -1511,6 +1514,6 @@ export default function EmployeeManagementPage() {
                     </div>
                 )}
             </Modal>
-        </div >
+        </>
     );
 }
