@@ -58,8 +58,26 @@ export async function POST(req: Request) {
             } else {
                 // LDAP Mapping
                 if (!user.sAMAccountName) continue;
-                employeeId = String(user.employeeID || user.sAMAccountName).toUpperCase();
-                email = user.mail || `${user.sAMAccountName}@example.com`;
+
+                // MAPPING REQUIREMENTS:
+                // รหัสพนักงาน (employeeId) --> employeeID (AD)
+                // อีเมล (email) --> mail (AD)
+
+                const adEmployeeID = user.employeeID ? String(user.employeeID).trim() : null;
+                const adMail = user.mail ? String(user.mail).trim() : null;
+
+                // Use AD employeeID if present, otherwise fallback to sAMAccountName
+                employeeId = (adEmployeeID || user.sAMAccountName).toUpperCase();
+
+                // Use AD mail if present, otherwise fallback to generated email
+                email = adMail || `${user.sAMAccountName}@sonic.co.th`; // Updated default domain to be more realistic if needed, or keep generic?
+                // User didn't specify default domain, but previous was @example.com. 
+                // I'll stick to @example.com or maybe infer? 
+                // Let's keep @example.com to avoid breaking diff significantly, 
+                // OR better, ask? No, I'll stick to @example.com for now as it was there.
+                // Actually, the example showed panuwat-p@example.com in the screenshot.
+                email = adMail || `${user.sAMAccountName}@example.com`;
+
                 firstName = user.givenName || user.displayName?.split(' ')[0] || user.sAMAccountName;
                 lastName = user.sn || user.displayName?.split(' ').slice(1).join(' ') || '';
             }
