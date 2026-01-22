@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { UserRole, Company } from '@/types';
 import { verifyLdapCredentials } from '@/lib/ldap';
 import { findOrCreateUser } from '@/lib/auth/jit-user';
+import { getAuthSettings } from '@/lib/auth/settings';
 
 // Extend NextAuth types
 declare module 'next-auth' {
@@ -109,15 +110,19 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 const employeeId = credentials.employeeId as string;
                 const password = credentials.password as string;
 
+                // Fetch dynamic settings
+                const settings = await getAuthSettings();
+                const authMode = settings.authMode;
+
                 // 1. Try LDAP authentication first (if enabled)
-                if (AUTH_MODE === 'LDAP' || AUTH_MODE === 'HYBRID') {
+                if (authMode === 'LDAP' || authMode === 'HYBRID') {
                     try {
                         const ldapUser = await verifyLdapCredentials(employeeId, password);
                         if (ldapUser) {
                             // JIT Provisioning for LDAP users
                             const user = await findOrCreateUser({
                                 username: ldapUser.sAMAccountName,
-                                email: ldapUser.mail || `${ldapUser.sAMAccountName}@${process.env.LDAP_DOMAIN}`,
+                                email: ldapUser.mail || `${ldapUser.sAMAccountName}@${settings.ldapDomain || process.env.LDAP_DOMAIN}`,
                                 firstName: ldapUser.givenName || '',
                                 lastName: ldapUser.sn || '',
                                 employeeId: ldapUser.employeeID,

@@ -1,4 +1,5 @@
 import { Client } from 'ldapts';
+import { getAuthSettings } from '@/lib/auth/settings';
 
 export interface LdapUserEntry {
     sAMAccountName: string;
@@ -30,9 +31,10 @@ export async function verifyLdapCredentials(
         return null;
     }
 
-    const ldapUrl = process.env.LDAP_URL;
-    const ldapDomain = process.env.LDAP_DOMAIN;
-    const ldapBaseDN = process.env.LDAP_BASE_DN;
+    const settings = await getAuthSettings();
+    const ldapUrl = settings.ldapUrl || process.env.LDAP_URL;
+    const ldapDomain = settings.ldapDomain || process.env.LDAP_DOMAIN;
+    const ldapBaseDN = settings.ldapBaseDN || process.env.LDAP_BASE_DN;
 
     if (!ldapUrl || !ldapDomain || !ldapBaseDN) {
         console.error('[LDAP] Missing LDAP configuration');
@@ -88,11 +90,12 @@ export async function verifyLdapCredentials(
  * @returns Array of LDAP user entries
  */
 export async function searchLdapUsers(customFilter?: string): Promise<LdapUserEntry[]> {
-    const ldapUrl = process.env.LDAP_URL;
-    const ldapDomain = process.env.LDAP_DOMAIN;
-    const ldapBaseDN = process.env.LDAP_BASE_DN;
-    const bindDN = process.env.LDAP_BIND_DN; // Username/DN for binding
-    const bindPassword = process.env.LDAP_BIND_PASSWORD;
+    const settings = await getAuthSettings();
+    const ldapUrl = settings.ldapUrl || process.env.LDAP_URL;
+    // const ldapDomain = settings.ldapDomain || process.env.LDAP_DOMAIN; // Not used in binding directly
+    const ldapBaseDN = settings.ldapBaseDN || process.env.LDAP_BASE_DN;
+    const bindDN = settings.ldapBindDN || process.env.LDAP_BIND_DN; // Username/DN for binding
+    const bindPassword = process.env.LDAP_BIND_PASSWORD; // Keep password in ENV only for security? Or DB? The UI says Env.
 
     if (!ldapUrl || !ldapBaseDN) {
         console.error('[LDAP] Missing LDAP configuration');

@@ -211,6 +211,12 @@ sequenceDiagram
 - Max Age: 15 นาที (Auto Logout)
 - Secret: `NEXTAUTH_SECRET` in .env
 
+### Dynamic Authentication Settings:
+- **Storage**: `SystemSettings` table in Database (Key: `AUTH_MODE`, `LDAP_URL`, etc.).
+- **Logic**: `src/auth.ts` and `src/lib/ldap.ts` fetch settings from DB at runtime.
+- **Priority**: Database Settings > .env Setup (Fallback).
+- **Benefit**: Change Auth Mode (Local/LDAP/Hybrid) via UI without restarting server.
+
 ### RBAC (middleware.ts):
 | Route | Allowed Roles |
 |-------|---------------|

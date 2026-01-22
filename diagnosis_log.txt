@@ -1,0 +1,11 @@
+[dotenv@17.2.3] injecting env (28) from .env -- tip: โ๏ธ  override existing env vars with { override: true }
+
+--- Checking Database: HRLeaveDev ---
+User: ADMIN001
+Hash: $2b$10$n2o87Y32C7652...
+Password 'admin123' Match: โ… YES
+
+--- Checking Database: HRLeave ---
+User: ADMIN001
+Hash: $2b$10$pkuhFNUL4dfgB...
+Password 'admin123' Match: โ… YES

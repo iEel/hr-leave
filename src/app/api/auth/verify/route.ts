@@ -35,6 +35,8 @@ export async function POST(request: NextRequest) {
             );
         }
 
+
+
         // Query user from database using parameterized query
         const users = await query<User>(
             `SELECT * FROM Users WHERE employeeId = @employeeId AND isActive = 1`,
