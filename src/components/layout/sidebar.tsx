@@ -58,6 +58,7 @@ const hrNavItems: NavItem[] = [
     { href: '/hr/overview', label: 'ภาพรวม HR', icon: <Building2 className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
     { href: '/hr/leaves', label: 'ประวัติลาทั้งหมด', icon: <FileText className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
     { href: '/hr/employees', label: 'จัดการพนักงาน', icon: <Users className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
+    { href: '/hr/companies', label: 'จัดการบริษัท', icon: <Building2 className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
     { href: '/hr/holidays', label: 'จัดการวันหยุด', icon: <CalendarDays className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
     { href: '/hr/settings', label: 'ตั้งค่าระบบ', icon: <Settings className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
     { href: '/hr/year-end', label: 'ประมวลผลสิ้นปี', icon: <CalendarClock className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },

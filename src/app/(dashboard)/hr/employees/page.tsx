@@ -30,6 +30,7 @@ import {
 import Modal from '@/components/ui/Modal';
 import SearchableSelect from '@/components/ui/SearchableSelect';
 import ManagerSearchSelect from '@/components/ui/ManagerSearchSelect';
+import CompanySelect from '@/components/ui/CompanySelect';
 import DepartmentCombobox from '@/components/ui/DepartmentCombobox';
 import { formatLeaveDays } from '@/lib/leave-utils';
 
@@ -859,11 +860,10 @@ export default function EmployeeManagementPage() {
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">บริษัท *</label>
-                                            <select value={formData.company} onChange={e => setFormData({ ...formData, company: e.target.value })}
-                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all">
-                                                <option value="SONIC">🟦 SONIC</option>
-                                                <option value="GRANDLINK">🟩 GRANDLINK</option>
-                                            </select>
+                                            <CompanySelect
+                                                value={formData.company}
+                                                onChange={(val) => setFormData({ ...formData, company: val })}
+                                            />
                                         </div>
                                         <div>
                                             <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">แผนก *</label>
@@ -1059,11 +1059,10 @@ export default function EmployeeManagementPage() {
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">บริษัท *</label>
-                                            <select value={formData.company} onChange={e => setFormData({ ...formData, company: e.target.value })}
-                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all">
-                                                <option value="SONIC">🟦 SONIC</option>
-                                                <option value="GRANDLINK">🟩 GRANDLINK</option>
-                                            </select>
+                                            <CompanySelect
+                                                value={formData.company}
+                                                onChange={(val) => setFormData({ ...formData, company: val })}
+                                            />
                                         </div>
                                         <div>
                                             <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">แผนก *</label>

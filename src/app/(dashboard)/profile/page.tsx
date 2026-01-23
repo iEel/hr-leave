@@ -17,17 +17,13 @@ import {
     CheckCircle,
     AlertCircle,
 } from 'lucide-react';
+import { useCompanies } from '@/components/ui/CompanySelect';
 
 const roleLabels: Record<string, string> = {
     EMPLOYEE: 'พนักงาน',
     MANAGER: 'หัวหน้าแผนก',
     HR: 'ฝ่ายบุคคล',
     ADMIN: 'ผู้ดูแลระบบ',
-};
-
-const companyLabels: Record<string, string> = {
-    SONIC: 'บริษัท โซนิค อินเตอร์เฟรท จำกัด',
-    GRANDLINK: 'บริษัท แกรนด์ลิงค์ ลอจิสติคส์ จำกัด',
 };
 
 interface UserProfile {
@@ -43,6 +39,7 @@ interface UserProfile {
 export default function ProfilePage() {
     const { data: session, update: updateSession } = useSession();
     const user = session?.user;
+    const { getCompanyName } = useCompanies();
 
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
@@ -87,7 +84,7 @@ export default function ProfilePage() {
         { icon: User, label: 'รหัสพนักงาน', value: profile?.employeeId || user?.employeeId || '-' },
         { icon: User, label: 'ชื่อ-นามสกุล', value: displayName },
         { icon: Mail, label: 'อีเมล', value: profile?.email || user?.email || '-' },
-        { icon: Building2, label: 'บริษัท', value: companyLabels[profile?.company || user?.company || ''] || profile?.company || '-' },
+        { icon: Building2, label: 'บริษัท', value: getCompanyName(profile?.company || user?.company || '') || profile?.company || '-' },
         { icon: Briefcase, label: 'แผนก', value: profile?.department || user?.department || '-' },
         { icon: Shield, label: 'ตำแหน่ง/Role', value: roleLabels[profile?.role || user?.role || ''] || profile?.role || '-' },
     ];
