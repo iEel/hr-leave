@@ -95,17 +95,36 @@ export async function POST(req: Request) {
                 };
                 const mappedCompany = companyMapping[adCompany] || 'SONIC'; // Default to SONIC
 
-                // Parse whenCreated (format: "20240115123000.0Z" or "2024-01-15T12:30:00Z")
+                // Parse whenCreated 
+                // Format examples:
+                // - Thai: "5/2/2567 15:38:30 SE Asia Standard Time" (พ.ศ. 2567 = ค.ศ. 2024)
+                // - AD Generalized: "20240115123000.0Z"
+                // - ISO: "2024-01-15T12:30:00Z"
                 let startDate = new Date();
                 if (adWhenCreated) {
-                    if (adWhenCreated.includes('T')) {
-                        // ISO format
-                        startDate = new Date(adWhenCreated);
-                    } else if (adWhenCreated.length >= 14) {
-                        // AD format: "20240115123000.0Z"
-                        const year = adWhenCreated.substring(0, 4);
-                        const month = adWhenCreated.substring(4, 6);
-                        const day = adWhenCreated.substring(6, 8);
+                    const whenCreatedStr = String(adWhenCreated).trim();
+
+                    if (whenCreatedStr.includes('SE Asia') || whenCreatedStr.includes('/')) {
+                        // Thai format: "5/2/2567 15:38:30 SE Asia Standard Time"
+                        // Parse: day/month/buddhistYear time timezone
+                        const parts = whenCreatedStr.split(' ')[0]; // Get "5/2/2567"
+                        const dateParts = parts.split('/');
+                        if (dateParts.length >= 3) {
+                            const day = parseInt(dateParts[0], 10);
+                            const month = parseInt(dateParts[1], 10);
+                            const buddhistYear = parseInt(dateParts[2], 10);
+                            // Convert Buddhist year to Gregorian (พ.ศ. - 543 = ค.ศ.)
+                            const gregorianYear = buddhistYear > 2500 ? buddhistYear - 543 : buddhistYear;
+                            startDate = new Date(gregorianYear, month - 1, day);
+                        }
+                    } else if (whenCreatedStr.includes('T')) {
+                        // ISO format: "2024-01-15T12:30:00Z"
+                        startDate = new Date(whenCreatedStr);
+                    } else if (whenCreatedStr.length >= 14 && !whenCreatedStr.includes('/')) {
+                        // AD Generalized Time format: "20240115123000.0Z"
+                        const year = whenCreatedStr.substring(0, 4);
+                        const month = whenCreatedStr.substring(4, 6);
+                        const day = whenCreatedStr.substring(6, 8);
                         startDate = new Date(`${year}-${month}-${day}`);
                     }
                 }
