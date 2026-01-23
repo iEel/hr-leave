@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 23 มกราคม 2026 (เพิ่ม Dynamic Company Management, LDAP Sync Mapping)  
+> 📅 อัปเดตล่าสุด: 23 มกราคม 2026 (แก้ไข LDAP Sync startDate UPDATE)  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -320,7 +320,7 @@ sequenceDiagram
 - [x] Role Filter Parameter - กรองพนักงานตาม role (สำหรับ Manager dropdown)
 - [x] Manager Dropdown Server-side Search - ค้นหา Manager ผ่าน API พร้อม debounce
 - [x] LDAP Sync Attribute Mapping:
-  - `whenCreated` → วันที่เริ่มงาน (startDate)
+  - `whenCreated` → วันที่เริ่มงาน (startDate) - อัปเดตทั้ง INSERT และ UPDATE
   - `department` → แผนก
   - `company` → บริษัท (Sonic→SONIC, Grandlink→GRANDLINK, Sonic-Autologis→SONIC-AUTOLOGIS)
 
