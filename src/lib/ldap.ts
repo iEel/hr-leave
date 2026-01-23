@@ -8,6 +8,9 @@ export interface LdapUserEntry {
     givenName?: string;
     sn?: string;
     employeeID?: string;
+    whenCreated?: string;   // วันที่เริ่มงาน
+    department?: string;    // แผนก
+    company?: string;       // บริษัท
 }
 
 /**
@@ -142,7 +145,10 @@ export async function searchLdapUsers(customFilter?: string): Promise<LdapUserEn
                 'displayName',
                 'givenName',
                 'sn',
-                'employeeID'
+                'employeeID',
+                'whenCreated',
+                'department',
+                'company'
             ],
             paged: true, // Handle large directories
             sizeLimit: 1000 // Safety limit
@@ -157,6 +163,9 @@ export async function searchLdapUsers(customFilter?: string): Promise<LdapUserEn
             givenName: getLdapString(entry.givenName),
             sn: getLdapString(entry.sn),
             employeeID: getLdapString(entry.employeeID),
+            whenCreated: getLdapString(entry.whenCreated),
+            department: getLdapString(entry.department),
+            company: getLdapString(entry.company),
         })).filter(u => !!u.sAMAccountName); // Filter out entries without sAMAccountName
     } catch (error) {
         console.error('[LDAP] Search error:', error);

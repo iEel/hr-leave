@@ -30,11 +30,19 @@ IF NOT EXISTS (SELECT 1 FROM Companies)
 BEGIN
     INSERT INTO Companies (code, name, shortName, color) VALUES
     ('SONIC', N'บริษัท โซนิค อินเตอร์เฟรท จำกัด', 'Sonic', '#3B82F6'),
-    ('GRANDLINK', N'บริษัท แกรนด์ลิงค์ ลอจิสติคส์ จำกัด', 'Grandlink', '#22C55E');
-    PRINT '✅ Seeded default companies (SONIC, GRANDLINK)';
+    ('GRANDLINK', N'บริษัท แกรนด์ลิงค์ ลอจิสติคส์ จำกัด', 'Grandlink', '#22C55E'),
+    ('SONIC-AUTOLOGIS', N'บริษัท โซนิค ออโต้โลจิส จำกัด', 'Sonic Autologis', '#F97316');
+    PRINT '✅ Seeded default companies (SONIC, GRANDLINK, SONIC-AUTOLOGIS)';
 END
 ELSE
 BEGIN
+    -- Add SONIC-AUTOLOGIS if not exists
+    IF NOT EXISTS (SELECT 1 FROM Companies WHERE code = 'SONIC-AUTOLOGIS')
+    BEGIN
+        INSERT INTO Companies (code, name, shortName, color) 
+        VALUES ('SONIC-AUTOLOGIS', N'บริษัท โซนิค ออโต้โลจิส จำกัด', 'Sonic Autologis', '#F97316');
+        PRINT '✅ Added SONIC-AUTOLOGIS company';
+    END
     PRINT 'Companies already has data, skipping seed';
 END
 GO

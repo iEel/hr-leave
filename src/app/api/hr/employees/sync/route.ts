@@ -62,24 +62,58 @@ export async function POST(req: Request) {
                 // MAPPING REQUIREMENTS:
                 // รหัสพนักงาน (employeeId) --> employeeID (AD)
                 // อีเมล (email) --> mail (AD)
+                // วันที่เริ่มงาน (startDate) --> whenCreated (AD)
+                // แผนก (department) --> department (AD)
+                // บริษัท (company) --> company (AD) with mapping
 
                 const adEmployeeID = user.employeeID ? String(user.employeeID).trim() : null;
                 const adMail = user.mail ? String(user.mail).trim() : null;
+                const adDepartment = user.department ? String(user.department).trim() : 'General';
+                const adCompany = user.company ? String(user.company).trim() : '';
+                const adWhenCreated = user.whenCreated; // Format: "20240115123000.0Z"
 
                 // Use AD employeeID if present, otherwise fallback to sAMAccountName
                 employeeId = (adEmployeeID || user.sAMAccountName).toUpperCase();
 
                 // Use AD mail if present, otherwise fallback to generated email
-                email = adMail || `${user.sAMAccountName}@sonic.co.th`; // Updated default domain to be more realistic if needed, or keep generic?
-                // User didn't specify default domain, but previous was @example.com. 
-                // I'll stick to @example.com or maybe infer? 
-                // Let's keep @example.com to avoid breaking diff significantly, 
-                // OR better, ask? No, I'll stick to @example.com for now as it was there.
-                // Actually, the example showed panuwat-p@example.com in the screenshot.
                 email = adMail || `${user.sAMAccountName}@example.com`;
 
                 firstName = user.givenName || user.displayName?.split(' ')[0] || user.sAMAccountName;
                 lastName = user.sn || user.displayName?.split(' ').slice(1).join(' ') || '';
+
+                // Map company from AD to system company code
+                const companyMapping: Record<string, string> = {
+                    'Sonic': 'SONIC',
+                    'sonic': 'SONIC',
+                    'SONIC': 'SONIC',
+                    'Grandlink': 'GRANDLINK',
+                    'grandlink': 'GRANDLINK',
+                    'GRANDLINK': 'GRANDLINK',
+                    'Sonic-Autologis': 'SONIC-AUTOLOGIS',
+                    'sonic-autologis': 'SONIC-AUTOLOGIS',
+                    'SONIC-AUTOLOGIS': 'SONIC-AUTOLOGIS',
+                };
+                const mappedCompany = companyMapping[adCompany] || 'SONIC'; // Default to SONIC
+
+                // Parse whenCreated (format: "20240115123000.0Z" or "2024-01-15T12:30:00Z")
+                let startDate = new Date();
+                if (adWhenCreated) {
+                    if (adWhenCreated.includes('T')) {
+                        // ISO format
+                        startDate = new Date(adWhenCreated);
+                    } else if (adWhenCreated.length >= 14) {
+                        // AD format: "20240115123000.0Z"
+                        const year = adWhenCreated.substring(0, 4);
+                        const month = adWhenCreated.substring(4, 6);
+                        const day = adWhenCreated.substring(6, 8);
+                        startDate = new Date(`${year}-${month}-${day}`);
+                    }
+                }
+
+                // Store mapped values for later use
+                (user as any)._mappedCompany = mappedCompany;
+                (user as any)._mappedDepartment = adDepartment;
+                (user as any)._mappedStartDate = startDate;
             }
 
             if (!employeeId) continue;
@@ -96,15 +130,23 @@ export async function POST(req: Request) {
                 // CASE: Insert New User
                 const hashedPassword = await bcrypt.hash('password123', 10); // Default password
 
+                // Get mapped values for LDAP users
+                const company = (user as any)._mappedCompany || 'SONIC';
+                const department = (user as any)._mappedDepartment || 'General';
+                const startDateValue = (user as any)._mappedStartDate || new Date();
+
                 await execute(
                     `INSERT INTO Users (employeeId, email, password, firstName, lastName, role, company, department, gender, startDate, isActive, isADUser, adUsername, authProvider, createdAt)
-                     VALUES (@id, @email, @pass, @first, @last, 'EMPLOYEE', 'SONIC', 'General', 'M', GETDATE(), @isActive, 1, @adUser, @provider, GETDATE())`,
+                     VALUES (@id, @email, @pass, @first, @last, 'EMPLOYEE', @company, @department, 'M', @startDate, @isActive, 1, @adUser, @provider, GETDATE())`,
                     {
                         id: employeeId,
                         email: email,
                         pass: hashedPassword,
                         first: firstName,
                         last: lastName,
+                        company: company,
+                        department: department,
+                        startDate: startDateValue,
                         isActive: isActive ? 1 : 0,
                         adUser: user.sAMAccountName || user.onPremisesSamAccountName || '',
                         provider: source === 'azure' ? 'AZURE' : 'AD'
@@ -114,11 +156,18 @@ export async function POST(req: Request) {
             } else if (updateExisting) {
                 // CASE: Update Existing - also update adStatus based on enabled/disabled
                 const adStatus = isActive ? 'ACTIVE' : 'DISABLED';
+
+                // Get mapped values for LDAP users
+                const company = (user as any)._mappedCompany || undefined; // undefined = don't update
+                const department = (user as any)._mappedDepartment || undefined;
+
                 await execute(
                     `UPDATE Users 
                      SET firstName = @first, lastName = @last, email = @email, isActive = @isActive,
                          isADUser = 1, adUsername = @adUser, authProvider = @provider,
-                         adStatus = @adStatus, deletedAt = NULL
+                         adStatus = @adStatus, deletedAt = NULL,
+                         department = COALESCE(@department, department),
+                         company = COALESCE(@company, company)
                      WHERE employeeId = @id`,
                     {
                         id: employeeId,
@@ -128,7 +177,9 @@ export async function POST(req: Request) {
                         isActive: isActive ? 1 : 0,
                         adUser: user.sAMAccountName || user.onPremisesSamAccountName || '',
                         provider: source === 'azure' ? 'AZURE' : 'AD',
-                        adStatus: adStatus
+                        adStatus: adStatus,
+                        department: department || null,
+                        company: company || null
                     }
                 );
                 updatedCount++;
