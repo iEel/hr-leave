@@ -74,6 +74,8 @@
     - `/api/admin/archive-users`: Archive ผู้ใช้ที่ถูกลบ > 1 ปี
     - `/api/admin/purge-archived`: Purge ข้อมูลที่ Archive > 3 ปี
     - `/api/cron/ad-sync`: Cron endpoint สำหรับ Scheduled AD Sync
+    - `/api/hr/year-end/preview`: Preview ประมวลผลสิ้นปี
+    - `/api/hr/year-end/execute`: Execute ประมวลผลสิ้นปี + Carry-over
 
 ---
 

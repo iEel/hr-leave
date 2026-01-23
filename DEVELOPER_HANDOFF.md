@@ -302,7 +302,7 @@ sequenceDiagram
 - [x] `/hr/employees` - จัดการพนักงาน (CRUD, Import/Export Excel, LDAP Sync, Edit Gender/StartDate)
 - [x] `/hr/holidays` - จัดการวันหยุด (Public, Special per company)
 - [x] `/hr/settings` - ตั้งค่าโควตาวันลา (Auto-sync to active balances)
-- [ ] `/hr/year-end` - ประมวลผลสิ้นปี (Reset/Carry-over)
+- [x] `/hr/year-end` - ประมวลผลสิ้นปี (Preview, Execute, Carry-over)
 - [ ] `/hr/analytics` - Charts, Company comparison
 - [ ] `/hr/reports` - ออกรายงาน
 
@@ -351,7 +351,15 @@ sequenceDiagram
 | `scripts/migrate-ad-lifecycle.ts` | Migration script |
 | `scripts/scheduled-ad-sync.ts` | Cron script for Task Scheduler |
 
-### 📄 Key Components
+### � Year-End Processing
+
+| File | Purpose |
+|------|---------|
+| `api/hr/year-end/preview/route.ts` | Preview ประมวลผลสิ้นปี |
+| `api/hr/year-end/execute/route.ts` | Execute + Carry-over |
+| `app/(dashboard)/hr/year-end/page.tsx` | UI หน้าประมวลผลสิ้นปี |
+
+### �📄 Key Components
 
 | File | Purpose |
 |------|---------|
