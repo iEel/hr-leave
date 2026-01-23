@@ -69,6 +69,7 @@ const hrNavItems: NavItem[] = [
 const adminNavItems: NavItem[] = [
     { href: '/admin/auth-settings', label: 'ตั้งค่า Authentication', icon: <Shield className="w-5 h-5" />, roles: [UserRole.ADMIN] },
     { href: '/admin/rate-limit', label: 'Rate Limiting', icon: <Shield className="w-5 h-5" />, roles: [UserRole.ADMIN] },
+    { href: '/admin/user-lifecycle', label: 'AD User Lifecycle', icon: <Users className="w-5 h-5" />, roles: [UserRole.ADMIN] },
 ];
 
 export function Sidebar() {

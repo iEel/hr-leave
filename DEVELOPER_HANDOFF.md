@@ -367,6 +367,7 @@ sequenceDiagram
 | `/leave/history` | `app/(dashboard)/leave/history/page.tsx` | ประวัติการลา |
 | `/profile` | `app/(dashboard)/profile/page.tsx` | โปรไฟล์ |
 | `/approvals` | `app/(dashboard)/approvals/page.tsx` | หน้าอนุมัติ |
+| `/admin/user-lifecycle` | `app/(dashboard)/admin/user-lifecycle/page.tsx` | Archive/Purge AD Users |
 
 ---
 
