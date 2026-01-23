@@ -24,20 +24,28 @@ export async function GET(request: NextRequest) {
         const page = parseInt(searchParams.get('page') || '1');
         const limit = parseInt(searchParams.get('limit') || '10');
         const search = searchParams.get('search') || '';
+        const roleFilter = searchParams.get('role') || ''; // Filter by role (comma-separated: MANAGER,HR,ADMIN)
         const offset = (page - 1) * limit;
 
         const pool = await getPool();
 
+        // Build role filter condition
+        const roles = roleFilter ? roleFilter.split(',').map(r => r.trim().toUpperCase()) : [];
+        const roleCondition = roles.length > 0
+            ? `AND u.role IN (${roles.map((_, i) => `@role${i}`).join(',')})`
+            : '';
+
         // Count total for pagination
         const countQuery = `
             SELECT COUNT(*) as total
-            FROM Users
-            WHERE (firstName LIKE @search OR lastName LIKE @search OR employeeId LIKE @search)
+            FROM Users u
+            WHERE (u.firstName LIKE @search OR u.lastName LIKE @search OR u.employeeId LIKE @search)
+            ${roleCondition}
         `;
 
-        const countResult = await pool.request()
-            .input('search', `%${search}%`)
-            .query(countQuery);
+        const countRequest = pool.request().input('search', `%${search}%`);
+        roles.forEach((role, i) => countRequest.input(`role${i}`, role));
+        const countResult = await countRequest.query(countQuery);
 
         const total = countResult.recordset[0].total;
 
@@ -51,16 +59,18 @@ export async function GET(request: NextRequest) {
             FROM Users u
             LEFT JOIN Users head ON u.departmentHeadId = head.id
             WHERE (u.firstName LIKE @search OR u.lastName LIKE @search OR u.employeeId LIKE @search)
+            ${roleCondition}
             ORDER BY u.employeeId ASC
             OFFSET @offset ROWS
             FETCH NEXT @limit ROWS ONLY
         `;
 
-        const result = await pool.request()
+        const dataRequest = pool.request()
             .input('search', `%${search}%`)
             .input('offset', offset)
-            .input('limit', limit)
-            .query(dataQuery);
+            .input('limit', limit);
+        roles.forEach((role, i) => dataRequest.input(`role${i}`, role));
+        const result = await dataRequest.query(dataQuery);
 
         return NextResponse.json({
             success: true,

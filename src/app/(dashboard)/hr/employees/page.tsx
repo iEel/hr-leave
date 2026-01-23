@@ -125,11 +125,11 @@ export default function EmployeeManagementPage() {
         }
     };
 
-    // Fetch potential managers (all users for simplicity, or filtered)
+    // Fetch potential managers (MANAGER, HR, ADMIN roles only)
     const fetchManagers = async () => {
         try {
-            // Fetch all for dropdown (simple version, ideally should have a dedicated endpoint or filter)
-            const res = await fetch(`/api/hr/employees?limit=100`);
+            // Fetch only users with managerial roles for the dropdown
+            const res = await fetch(`/api/hr/employees?limit=500&role=MANAGER,HR,ADMIN`);
             const data = await res.json();
             if (data.success) {
                 setManagers(data.data);

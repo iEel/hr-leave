@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 23 มกราคม 2026 (เพิ่ม AD Lifecycle Management)  
+> 📅 อัปเดตล่าสุด: 23 มกราคม 2026 (เพิ่ม Role Filter ใน Employees API)  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -314,6 +314,7 @@ sequenceDiagram
 - [x] POST `/api/leave/cancel` - ยกเลิกใบลา
 - [x] Overlap Check - ตรวจสอบวันซ้ำ
 - [x] Working Days Calculation - หักวันหยุดอัตโนมัติ
+- [x] Role Filter Parameter - กรองพนักงานตาม role (สำหรับ Manager dropdown)
 
 ### 🔲 Phase 6: Advanced Features
 - [x] File Upload (ใบรับรองแพทย์) - `/api/upload/medical`
