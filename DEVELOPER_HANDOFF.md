@@ -300,6 +300,7 @@ sequenceDiagram
 
 ### 🔲 Phase 4: HR Features
 - [x] `/hr/employees` - จัดการพนักงาน (CRUD, Import/Export Excel, LDAP Sync, Edit Gender/StartDate)
+- [x] `/hr/companies` - จัดการบริษัท (Dynamic CRUD, Color picker)
 - [x] `/hr/holidays` - จัดการวันหยุด (Public, Special per company)
 - [x] `/hr/settings` - ตั้งค่าโควตาวันลา (Auto-sync to active balances)
 - [x] `/hr/year-end` - ประมวลผลสิ้นปี (Preview, Execute, Carry-over)
