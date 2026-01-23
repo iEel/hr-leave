@@ -18,7 +18,10 @@ export type AuditAction =
     | 'UPDATE_SETTINGS'
     | 'YEAR_END_PROCESS'
     | 'IMPORT_EMPLOYEES'
-    | 'EXPORT_EMPLOYEES';
+    | 'EXPORT_EMPLOYEES'
+    | 'CREATE_COMPANY'
+    | 'UPDATE_COMPANY'
+    | 'DELETE_COMPANY';
 
 export type TargetTable =
     | 'Users'
@@ -26,7 +29,8 @@ export type TargetTable =
     | 'PublicHolidays'
     | 'LeaveQuotaSettings'
     | 'LeaveBalances'
-    | 'SystemSettings';
+    | 'SystemSettings'
+    | 'Companies';
 
 interface AuditLogParams {
     userId: number;
@@ -93,7 +97,10 @@ export function getActionDisplayName(action: AuditAction): string {
         'UPDATE_SETTINGS': 'แก้ไขการตั้งค่า',
         'YEAR_END_PROCESS': 'ประมวลผลสิ้นปี',
         'IMPORT_EMPLOYEES': 'Import พนักงาน',
-        'EXPORT_EMPLOYEES': 'Export พนักงาน'
+        'EXPORT_EMPLOYEES': 'Export พนักงาน',
+        'CREATE_COMPANY': 'เพิ่มบริษัท',
+        'UPDATE_COMPANY': 'แก้ไขบริษัท',
+        'DELETE_COMPANY': 'ลบบริษัท'
     };
     return names[action] || action;
 }
