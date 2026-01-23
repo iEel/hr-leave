@@ -64,6 +64,7 @@ export interface User {
     isActive: boolean;
     createdAt: Date;
     updatedAt: Date;
+    isHRStaff?: boolean;
 }
 
 // Leave Request Interface

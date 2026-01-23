@@ -103,7 +103,7 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const {
             employeeId, email, password, firstName, lastName,
-            role, company, department, gender, startDate, departmentHeadId
+            role, company, department, gender, startDate, departmentHeadId, isHRStaff
         } = body;
 
         // Validation
@@ -139,13 +139,14 @@ export async function POST(request: NextRequest) {
             .input('gender', gender || 'M')
             .input('startDate', startDate)
             .input('departmentHeadId', departmentHeadId || null)
+            .input('isHRStaff', isHRStaff ? 1 : 0)
             .query(`
                 INSERT INTO Users (
                     employeeId, email, password, firstName, lastName, 
-                    role, company, department, gender, startDate, isActive, departmentHeadId
+                    role, company, department, gender, startDate, isActive, departmentHeadId, isHRStaff
                 ) VALUES (
                     @employeeId, @email, @password, @firstName, @lastName, 
-                    @role, @company, @department, @gender, @startDate, 1, @departmentHeadId
+                    @role, @company, @department, @gender, @startDate, 1, @departmentHeadId, @isHRStaff
                 )
             `);
 
@@ -177,7 +178,7 @@ export async function PUT(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { id, firstName, lastName, role, company, department, isActive, gender, startDate, departmentHeadId } = body;
+        const { id, firstName, lastName, role, company, department, isActive, gender, startDate, departmentHeadId, isHRStaff } = body;
 
         if (!id) {
             return NextResponse.json({ error: 'Missing user ID' }, { status: 400 });
@@ -196,6 +197,7 @@ export async function PUT(request: NextRequest) {
             .input('gender', gender)
             .input('startDate', startDate)
             .input('departmentHeadId', departmentHeadId || null)
+            .input('isHRStaff', isHRStaff ? 1 : 0)
             .query(`
                 UPDATE Users
                 SET firstName = @firstName,
@@ -207,6 +209,7 @@ export async function PUT(request: NextRequest) {
                     gender = @gender,
                     startDate = @startDate,
                     departmentHeadId = @departmentHeadId,
+                    isHRStaff = @isHRStaff,
                     updatedAt = GETDATE()
                 WHERE id = @id
             `);
@@ -217,7 +220,7 @@ export async function PUT(request: NextRequest) {
             action: 'UPDATE_EMPLOYEE',
             targetTable: 'Users',
             targetId: id,
-            newValue: { firstName, lastName, role, company, department, isActive, gender, startDate }
+            newValue: { firstName, lastName, role, company, department, isActive, gender, startDate, isHRStaff }
         });
 
         return NextResponse.json({ success: true, message: 'Employee updated successfully' });

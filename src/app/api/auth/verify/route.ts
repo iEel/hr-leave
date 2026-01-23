@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
             company: user.company,
             department: user.department,
             departmentHeadId: user.departmentHeadId,
+            isHRStaff: (user as any).isHRStaff || false,
         });
     } catch (error) {
         console.error('Auth verify error:', error);

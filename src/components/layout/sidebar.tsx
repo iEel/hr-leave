@@ -102,6 +102,7 @@ export function Sidebar() {
     }, [session?.user?.id]);
 
     const userRole = session?.user?.role as UserRole;
+    const isHRStaff = (session?.user as any)?.isHRStaff === true;
 
     const canAccess = (roles?: UserRole[]) => {
         if (!roles) return true;
@@ -169,8 +170,8 @@ export function Sidebar() {
                     </div>
                 )}
 
-                {/* HR Section */}
-                {(userRole === UserRole.HR || userRole === UserRole.ADMIN) && (
+                {/* HR Section - แสดงถ้า isHRStaff=true หรือ ADMIN */}
+                {(isHRStaff || userRole === UserRole.ADMIN) && (
                     <div className="pt-4">
                         <button
                             onClick={() => setIsHrExpanded(!isHrExpanded)}
@@ -182,7 +183,7 @@ export function Sidebar() {
                         {isHrExpanded && (
                             <div className="space-y-1 mt-1">
                                 {hrNavItems
-                                    .filter((item) => canAccess(item.roles))
+                                    .filter((item) => canAccess(item.roles) || isHRStaff)
                                     .map((item) => (
                                         <NavLink key={item.href} item={item} />
                                     ))}

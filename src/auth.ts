@@ -21,6 +21,7 @@ declare module 'next-auth' {
         departmentHeadId: number | null;
         isADUser?: boolean;
         authProvider?: string;
+        isHRStaff?: boolean;
     }
 
     interface Session {
@@ -38,6 +39,7 @@ declare module 'next-auth/jwt' {
         departmentHeadId: number | null;
         isADUser?: boolean;
         authProvider?: string;
+        isHRStaff?: boolean;
     }
 }
 
@@ -204,6 +206,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 token.departmentHeadId = user.departmentHeadId;
                 token.isADUser = user.isADUser;
                 token.authProvider = user.authProvider;
+                token.isHRStaff = user.isHRStaff;
             }
             return token;
         },
@@ -217,6 +220,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 session.user.departmentHeadId = token.departmentHeadId;
                 session.user.isADUser = token.isADUser;
                 session.user.authProvider = token.authProvider;
+                session.user.isHRStaff = token.isHRStaff;
             }
             return session;
         },

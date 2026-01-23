@@ -78,7 +78,8 @@ export default function EmployeeManagementPage() {
         gender: 'M',
         startDate: new Date().toISOString().split('T')[0],
         isActive: true,
-        departmentHeadId: ''
+        departmentHeadId: '',
+        isHRStaff: false
     });
     const [newPassword, setNewPassword] = useState('');
     const [formError, setFormError] = useState('');
@@ -293,7 +294,8 @@ export default function EmployeeManagementPage() {
             gender: 'M', // Default or fetch if needed
             startDate: employee.startDate ? employee.startDate.split('T')[0] : '',
             isActive: employee.isActive,
-            departmentHeadId: employee.departmentHeadId ? employee.departmentHeadId.toString() : ''
+            departmentHeadId: employee.departmentHeadId ? employee.departmentHeadId.toString() : '',
+            isHRStaff: (employee as any).isHRStaff || false
         });
         setIsEditModalOpen(true);
     };
@@ -1044,6 +1046,20 @@ export default function EmployeeManagementPage() {
                                                 />
                                                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                                                     {formData.isActive ? '✅ Active' : '❌ Inactive'}
+                                                </span>
+                                            </label>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">HR Staff</label>
+                                            <label className="flex items-center gap-3 cursor-pointer bg-gray-50 dark:bg-gray-900 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 w-full">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={formData.isHRStaff}
+                                                    onChange={e => setFormData({ ...formData, isHRStaff: e.target.checked })}
+                                                    className="w-5 h-5 rounded text-purple-600 focus:ring-purple-500"
+                                                />
+                                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                                    {formData.isHRStaff ? '👔 เข้าถึงเมนู HR' : '❌ ไม่ใช่ HR Staff'}
                                                 </span>
                                             </label>
                                         </div>

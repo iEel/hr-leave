@@ -188,6 +188,7 @@ npm run dev
 - `authProvider`: VARCHAR - LOCAL, AD, AZURE
 - `adStatus`: NVARCHAR - ACTIVE, DISABLED, AD_DELETED, ARCHIVED
 - `deletedAt`: DATETIME2 - Timestamp เมื่อถูกลบจาก AD
+- `isHRStaff`: BIT - Flag แยกสิทธิ์ HR (1=เข้าถึงเมนู HR/Admin, 0=ตาม Role ปกติ)
 
 ### Key Columns ใน LeaveRequests:
 - `timeSlot`: FULL_DAY, HALF_MORNING, HALF_AFTERNOON
