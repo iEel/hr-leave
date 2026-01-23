@@ -156,7 +156,7 @@ export async function PUT(request: NextRequest) {
 
 /**
  * DELETE /api/hr/companies
- * ลบบริษัท (soft delete)
+ * ลบบริษัทถาวร (Hard Delete) - ต้องไม่มีพนักงานสังกัดอยู่
  */
 export async function DELETE(request: NextRequest) {
     try {
@@ -174,37 +174,49 @@ export async function DELETE(request: NextRequest) {
 
         const pool = await getPool();
 
+        // Get company info for audit log
+        const companyResult = await pool.request()
+            .input('id', id)
+            .query(`SELECT code, name FROM Companies WHERE id = @id`);
+
+        if (companyResult.recordset.length === 0) {
+            return NextResponse.json({ error: 'ไม่พบบริษัทนี้ในระบบ' }, { status: 404 });
+        }
+
+        const company = companyResult.recordset[0];
+
         // Check if company has users
         const usersCheck = await pool.request()
-            .input('id', id)
-            .query(`
-                SELECT c.code, (SELECT COUNT(*) FROM Users WHERE company = c.code) as userCount
-                FROM Companies c WHERE c.id = @id
-            `);
+            .input('code', company.code)
+            .query(`SELECT COUNT(*) as userCount FROM Users WHERE company = @code`);
 
-        if (usersCheck.recordset.length > 0 && usersCheck.recordset[0].userCount > 0) {
+        const userCount = usersCheck.recordset[0].userCount;
+
+        if (userCount > 0) {
             return NextResponse.json({
-                error: `ไม่สามารถลบได้ มีพนักงาน ${usersCheck.recordset[0].userCount} คน ในบริษัทนี้`
+                error: `ไม่สามารถลบได้ มีพนักงาน ${userCount} คน สังกัดอยู่ในบริษัทนี้`
             }, { status: 400 });
         }
 
-        // Soft delete
+        // Hard delete - ลบถาวร
         await pool.request()
             .input('id', id)
-            .query(`UPDATE Companies SET isActive = 0, updatedAt = GETDATE() WHERE id = @id`);
+            .query(`DELETE FROM Companies WHERE id = @id`);
 
         // Audit log
         await logAudit({
             userId: parseInt(session.user.id),
             action: 'DELETE_COMPANY',
             targetTable: 'Companies',
-            targetId: parseInt(id)
+            targetId: parseInt(id),
+            oldValue: { code: company.code, name: company.name }
         });
 
-        return NextResponse.json({ success: true, message: 'ลบบริษัทสำเร็จ' });
+        return NextResponse.json({ success: true, message: `ลบบริษัท ${company.code} สำเร็จ` });
 
     } catch (error) {
         console.error('Error deleting company:', error);
         return NextResponse.json({ error: 'Failed to delete company' }, { status: 500 });
     }
 }
+
