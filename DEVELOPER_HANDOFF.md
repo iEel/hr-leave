@@ -359,6 +359,25 @@ sequenceDiagram
 | `api/hr/year-end/execute/route.ts` | Execute + Carry-over |
 | `app/(dashboard)/hr/year-end/page.tsx` | UI หน้าประมวลผลสิ้นปี |
 
+### 📧 Email Approval System
+
+| File | Purpose |
+|------|---------|
+| `lib/email.ts` | ส่งอีเมลแจ้ง Manager (Nodemailer) |
+| `lib/tokens.ts` | สร้าง/ตรวจสอบ JWT Token (7 วัน) |
+| `api/email/action/route.ts` | Magic Link Approve/Reject API |
+| `app/action/[action]/page.tsx` | UI หน้า Approve/Reject |
+
+**Magic Link Flow:**
+1. พนักงานขอลา → ส่งอีเมลหา Manager
+2. Manager กดปุ่ม Approve/Reject ในอีเมล
+3. ระบบตรวจสอบ token และอัพเดทสถานะ
+4. แจ้งเตือนพนักงานผลการอนุมัติ
+
+**Environment Variables:**
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`
+- `JWT_SECRET` (สำหรับ Magic Link Token)
+
 ### �📄 Key Components
 
 | File | Purpose |
