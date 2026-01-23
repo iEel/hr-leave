@@ -416,8 +416,9 @@ sequenceDiagram
 | File | Purpose |
 |------|---------|
 | `src/components/layout/sidebar.tsx` | เมนูหลัก (Role-based) |
-| `src/components/layout/topbar.tsx` | Header + Notifications |
+| `src/components/layout/topbar.tsx` | Header + Notifications + Sound Toggle |
 | `src/components/providers.tsx` | SessionProvider wrapper |
+| `src/hooks/useNotificationSound.ts` | เสียงแจ้งเตือน (Web Audio API) |
 
 ### 📃 Pages
 

@@ -2,10 +2,11 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { Bell, Search, Check, Loader2 } from 'lucide-react';
+import { Bell, Search, Check, Loader2, Volume2, VolumeX } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { ThemeToggle } from '../ui/ThemeToggle';
 import { useToast } from '../ui/Toast';
+import { useNotificationSound } from '@/hooks/useNotificationSound';
 
 interface Notification {
     id: number;
@@ -26,6 +27,7 @@ export function Topbar() {
     const [isLoading, setIsLoading] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
     const toast = useToast();
+    const { soundEnabled, toggleSound, playSound } = useNotificationSound();
     const prevNotificationsRef = useRef<number[]>([]);
     const isFirstFetchRef = useRef(true);
 
@@ -44,7 +46,10 @@ export function Topbar() {
                         (n: Notification) => !n.isRead && !prevIds.includes(n.id)
                     );
 
-                    // Show toast for each new notification
+                    // Play sound and show toast for new notifications
+                    if (newUnreadNotifications.length > 0) {
+                        playSound();
+                    }
                     newUnreadNotifications.forEach((notification: Notification) => {
                         toast.info(`📬 ${notification.title}: ${notification.message}`, 5000);
                     });
@@ -154,7 +159,20 @@ export function Topbar() {
                 </div>
 
                 {/* Right side - Notifications & User */}
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                    {/* Sound Toggle */}
+                    <button
+                        onClick={toggleSound}
+                        className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                        title={soundEnabled ? 'ปิดเสียงแจ้งเตือน' : 'เปิดเสียงแจ้งเตือน'}
+                    >
+                        {soundEnabled ? (
+                            <Volume2 className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+                        ) : (
+                            <VolumeX className="w-5 h-5 text-gray-400" />
+                        )}
+                    </button>
+
                     {/* Notification Bell */}
                     <div className="relative">
                         <button
