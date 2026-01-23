@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 23 มกราคม 2026 (เพิ่ม isHRStaff + Employee Search Filters)  
+> 📅 อัปเดตล่าสุด: 23 มกราคม 2026 (เพิ่ม PWA Support)  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -336,7 +336,8 @@ sequenceDiagram
 ### 🔲 Phase 6: Advanced Features
 - [x] File Upload (ใบรับรองแพทย์) - `/api/upload/medical`
 - [x] Email Notifications - ส่งอีเมลแจ้ง Manager
-- [ ] Audit Logs - บันทึกทุกกิจกรรม
+- [x] **PWA Support** - ติดตั้งเป็น App บน Mobile ได้ (manifest.json, Service Worker)
+- [ ] Audit Logs UI - หน้าดู logs กิจกรรม
 - [ ] Delegate Approver - มอบหมายคนแทน
 - [ ] LINE Notify Integration (optional)
 - [ ] Calendar iCal Export (optional)
@@ -395,6 +396,20 @@ sequenceDiagram
 **Environment Variables:**
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`
 - `JWT_SECRET` (สำหรับ Magic Link Token)
+
+### 📱 PWA (Progressive Web App)
+
+| File | Purpose |
+|------|---------|
+| `public/manifest.json` | ข้อมูล App (ชื่อ, ไอคอน, สี theme) |
+| `public/sw.js` | Service Worker (caching, offline support) |
+| `public/icons/icon-192x192.png` | App icon 192x192 |
+| `public/icons/icon-512x512.png` | App icon 512x512 |
+| `src/app/layout.tsx` | PWA meta tags + SW registration |
+
+**การติดตั้ง:**
+- **Android**: Chrome → Menu → "ติดตั้งแอป"
+- **iOS**: Safari → Share → "Add to Home Screen"
 
 ### �📄 Key Components
 
