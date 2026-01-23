@@ -164,6 +164,7 @@ export async function POST(req: Request) {
                 // Get mapped values for LDAP users
                 const company = (user as any)._mappedCompany || undefined; // undefined = don't update
                 const department = (user as any)._mappedDepartment || undefined;
+                const startDateValue = (user as any)._mappedStartDate || undefined;
 
                 await execute(
                     `UPDATE Users 
@@ -171,7 +172,8 @@ export async function POST(req: Request) {
                          isADUser = 1, adUsername = @adUser, authProvider = @provider,
                          adStatus = @adStatus, deletedAt = NULL,
                          department = COALESCE(@department, department),
-                         company = COALESCE(@company, company)
+                         company = COALESCE(@company, company),
+                         startDate = COALESCE(@startDate, startDate)
                      WHERE employeeId = @id`,
                     {
                         id: employeeId,
@@ -183,7 +185,8 @@ export async function POST(req: Request) {
                         provider: source === 'azure' ? 'AZURE' : 'AD',
                         adStatus: adStatus,
                         department: department || null,
-                        company: company || null
+                        company: company || null,
+                        startDate: startDateValue || null
                     }
                 );
                 updatedCount++;
