@@ -1,6 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
+> 📅 อัปเดตล่าสุด: 23 มกราคม 2026 (เพิ่ม AD Lifecycle Management)  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -174,7 +175,17 @@ npm run dev
 | `AuditLogs` | บันทึกกิจกรรม |
 | `LeaveQuotaSettings` | ตั้งค่าโควตาวันลา |
 | `DelegateApprovers` | ผู้รักษาการแทน |
-| `SystemSettings` | ตั้งค่าระบบ (เช่น Rate Limits) |
+| `SystemSettings` | ตั้งค่าระบบ (เช่น Rate Limits, Auth Mode) |
+| `UsersArchive` | เก็บข้อมูลพนักงานที่ถูก Archive (AD Lifecycle) |
+| `LeaveBalancesArchive` | เก็บยอดวันลาของพนักงานที่ถูก Archive |
+| `LeaveRequestsArchive` | เก็บใบลาของพนักงานที่ถูก Archive |
+
+### Key Columns ใน Users (AD Lifecycle):
+- `isADUser`: BIT - ระบุว่าเป็น AD User หรือไม่
+- `adUsername`: NVARCHAR - Username ใน AD
+- `authProvider`: VARCHAR - LOCAL, AD, AZURE
+- `adStatus`: NVARCHAR - ACTIVE, DISABLED, AD_DELETED, ARCHIVED
+- `deletedAt`: DATETIME2 - Timestamp เมื่อถูกลบจาก AD
 
 ### Key Columns ใน LeaveRequests:
 - `timeSlot`: FULL_DAY, HALF_MORNING, HALF_AFTERNOON
@@ -216,6 +227,18 @@ sequenceDiagram
 - **Logic**: `src/auth.ts` and `src/lib/ldap.ts` fetch settings from DB at runtime.
 - **Priority**: Database Settings > .env Setup (Fallback).
 - **Benefit**: Change Auth Mode (Local/LDAP/Hybrid) via UI without restarting server.
+
+### AD User Lifecycle Management:
+| สถานะใน AD | isActive | adStatus | deletedAt |
+|------------|----------|----------|-----------|
+| Enabled | 1 | `ACTIVE` | NULL |
+| Disabled | 0 | `DISABLED` | NULL |
+| Deleted | 0 | `AD_DELETED` | timestamp |
+
+**Data Retention Policy:**
+- 0-1 ปี: เก็บเป็น `AD_DELETED`
+- 1-3 ปี: Archive ไปตาราง Archive
+- > 3 ปี: Purge ลบถาวร
 
 ### RBAC (middleware.ts):
 | Route | Allowed Roles |
@@ -260,6 +283,16 @@ sequenceDiagram
 - [x] Thai language throughout
 - [x] Responsive design (Mobile sidebar toggle)
 - [x] Loading states, Animations
+- [x] Toast Notifications (Real-time feedback)
+
+### ✅ Phase 4.5: AD Integration
+- [x] Local AD Sync (LDAP)
+- [x] Azure AD Sync (Graph API)
+- [x] AD User Lifecycle Management
+- [x] AD Status Tracking (Active/Disabled/Deleted)
+- [x] Archive API (`/api/admin/archive-users`)
+- [x] Purge API (`/api/admin/purge-archived`)
+- [x] Email Notifications (Leave request → Manager)
 
 ---
 
@@ -273,18 +306,18 @@ sequenceDiagram
 - [ ] `/hr/analytics` - Charts, Company comparison
 - [ ] `/hr/reports` - ออกรายงาน
 
-### 🔲 Phase 5: API Integration
-- [ ] POST `/api/leaves` - สร้างใบลาจริง (ตอนนี้ simulate)
-- [ ] GET `/api/leaves/history` - ดึงประวัติจาก DB
-- [ ] POST `/api/leaves/:id/approve` - อนุมัติจริง
-- [ ] POST `/api/leaves/:id/reject` - ไม่อนุมัติจริง
-- [ ] DELETE `/api/leaves/:id` - ยกเลิกใบลา
-- [ ] Overlap Check - ตรวจสอบวันซ้ำ
-- [ ] Working Days Calculation - หักวันหยุดอัตโนมัติ
+### ✅ Phase 5: API Integration (DONE)
+- [x] POST `/api/leave/request` - สร้างใบลา
+- [x] GET `/api/leave/history` - ดึงประวัติจาก DB
+- [x] POST `/api/leave/approve` - อนุมัติ
+- [x] POST `/api/leave/reject` - ไม่อนุมัติ
+- [x] POST `/api/leave/cancel` - ยกเลิกใบลา
+- [x] Overlap Check - ตรวจสอบวันซ้ำ
+- [x] Working Days Calculation - หักวันหยุดอัตโนมัติ
 
 ### 🔲 Phase 6: Advanced Features
-- [ ] Notifications API (แทน hardcoded)
-- [ ] File Upload (ใบรับรองแพทย์)
+- [x] File Upload (ใบรับรองแพทย์) - `/api/upload/medical`
+- [x] Email Notifications - ส่งอีเมลแจ้ง Manager
 - [ ] Audit Logs - บันทึกทุกกิจกรรม
 - [ ] Delegate Approver - มอบหมายคนแทน
 - [ ] LINE Notify Integration (optional)
@@ -298,12 +331,23 @@ sequenceDiagram
 
 | File | Purpose |
 |------|---------|
-| `src/auth.ts` | NextAuth config, Demo users fallback |
+| `src/auth.ts` | NextAuth config, AD/LDAP integration |
 | `src/middleware.ts` | Auth guard + RBAC |
 | `src/lib/db.ts` | Database connection (Singleton) |
+| `src/lib/ldap.ts` | LDAP/AD connection helper |
+| `src/lib/azure-graph.ts` | Azure AD Graph API |
 | `src/types/index.ts` | All TypeScript types |
 | `src/lib/rate-limiter.ts` | Rate Limiting Logic |
 | `.env` | Environment variables |
+
+### 🔐 AD Lifecycle Management
+
+| File | Purpose |
+|------|---------|
+| `api/hr/employees/sync/route.ts` | AD Sync (Local + Azure) |
+| `api/admin/archive-users/route.ts` | Archive deleted users > 1 year |
+| `api/admin/purge-archived/route.ts` | Permanent delete > 3 years |
+| `scripts/migrate-ad-lifecycle.ts` | Migration script |
 
 ### 📄 Key Components
 

@@ -112,11 +112,13 @@ export async function POST(req: Request) {
                 );
                 addedCount++;
             } else if (updateExisting) {
-                // CASE: Update Existing
+                // CASE: Update Existing - also update adStatus based on enabled/disabled
+                const adStatus = isActive ? 'ACTIVE' : 'DISABLED';
                 await execute(
                     `UPDATE Users 
                      SET firstName = @first, lastName = @last, email = @email, isActive = @isActive,
-                         isADUser = 1, adUsername = @adUser, authProvider = @provider
+                         isADUser = 1, adUsername = @adUser, authProvider = @provider,
+                         adStatus = @adStatus, deletedAt = NULL
                      WHERE employeeId = @id`,
                     {
                         id: employeeId,
@@ -125,15 +127,17 @@ export async function POST(req: Request) {
                         last: lastName,
                         isActive: isActive ? 1 : 0,
                         adUser: user.sAMAccountName || user.onPremisesSamAccountName || '',
-                        provider: source === 'azure' ? 'AZURE' : 'AD'
+                        provider: source === 'azure' ? 'AZURE' : 'AD',
+                        adStatus: adStatus
                     }
                 );
                 updatedCount++;
             }
         }
 
-        // 3. Deactivate Users not found in AD (Soft Delete)
+        // 3. Mark Users not found in AD as AD_DELETED (Soft Delete with status tracking)
         // Only for users marked as isADUser = 1
+        let deletedCount = 0;
         const syncedEmployeeIds = rawUsers
             .map(u => {
                 if (source === 'azure') {
@@ -156,11 +160,14 @@ export async function POST(req: Request) {
                 params[`id${i}`] = id;
             });
 
-            // Note: Deactivating users who ARE AD Users but NOT in the current Sync List
-            await execute(
-                `UPDATE Users SET isActive = 0 
+            // Mark users NOT in AD as AD_DELETED with timestamp
+            // Only update if not already marked as AD_DELETED (to preserve original deletedAt)
+            deletedCount = await execute(
+                `UPDATE Users 
+                 SET isActive = 0, adStatus = 'AD_DELETED', deletedAt = CASE WHEN deletedAt IS NULL THEN GETDATE() ELSE deletedAt END
                  WHERE isADUser = 1 
                  AND authProvider = '${source === 'azure' ? 'AZURE' : 'AD'}'
+                 AND adStatus != 'AD_DELETED'
                  AND employeeId NOT IN (${placeholders})`,
                 params
             );
@@ -172,6 +179,7 @@ export async function POST(req: Request) {
                 totalFound: rawUsers.length,
                 added: addedCount,
                 updated: updatedCount,
+                markedDeleted: deletedCount,
                 source: source || 'ldap'
             }
         });

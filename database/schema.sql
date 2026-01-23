@@ -32,6 +32,8 @@ BEGIN
         isADUser BIT NOT NULL DEFAULT 0,
         adUsername NVARCHAR(100) NULL,
         authProvider VARCHAR(20) DEFAULT 'LOCAL', -- LOCAL, AD, AZURE
+        adStatus NVARCHAR(20) DEFAULT 'ACTIVE', -- ACTIVE, DISABLED, AD_DELETED, ARCHIVED
+        deletedAt DATETIME2 NULL, -- Timestamp when deleted from AD
         createdAt DATETIME2 NOT NULL DEFAULT GETDATE(),
         updatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
         CONSTRAINT FK_Users_DepartmentHead FOREIGN KEY (departmentHeadId) REFERENCES Users(id)
