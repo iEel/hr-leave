@@ -80,6 +80,30 @@ DB_PASSWORD=your-complex-password
 NEXTAUTH_SECRET=your-random-generated-secret-key
 NEXTAUTH_URL=http://your-server-ip-or-domain
 TZ=Asia/Bangkok
+
+# === AD/LDAP Sync Configuration ===
+# Local LDAP (On-premises AD)
+LDAP_URL=ldap://your-ad-server.domain.com
+LDAP_BASE_DN=DC=domain,DC=com
+LDAP_BIND_DN=CN=ServiceAccount,OU=ServiceAccounts,DC=domain,DC=com
+LDAP_BIND_PASSWORD=your-ldap-password
+LDAP_USER_FILTER=(objectClass=user)
+
+# Azure AD (Microsoft Entra ID)
+AZURE_TENANT_ID=your-tenant-id
+AZURE_CLIENT_ID=your-client-id
+AZURE_CLIENT_SECRET=your-client-secret
+
+# Scheduled AD Sync
+CRON_SECRET=your-super-secret-cron-key-32-chars
+
+# Email (SMTP)
+SMTP_HOST=smtp.office365.com
+SMTP_PORT=587
+SMTP_USER=noreply@your-domain.com
+SMTP_PASS=your-smtp-password
+JWT_SECRET=your-jwt-secret-for-magic-links
+NEXT_PUBLIC_APP_URL=https://your-domain.com
 ```
 
 *(กด Ctrl+X, กด Y, กด Enter เพื่อบันทึก)*
@@ -199,3 +223,61 @@ npm run build
 # 4. Restart PM2
 pm2 restart hr-leave
 ```
+
+---
+
+## 🔄 ตั้งค่า AD Sync (Active Directory)
+
+### ขั้นตอนแรก: Run Migration Script
+
+```bash
+cd /var/www/hr-leave
+npx tsx scripts/migrate-ad-lifecycle.ts
+```
+
+### ตั้งค่า Scheduled AD Sync (Cron)
+
+```bash
+# สร้าง shell script
+sudo nano /opt/scripts/ad-sync.sh
+```
+
+ใส่เนื้อหา:
+```bash
+#!/bin/bash
+cd /var/www/hr-leave
+/usr/bin/npx tsx scripts/scheduled-ad-sync.ts azure >> /var/log/ad-sync.log 2>&1
+```
+
+ทำให้ execute ได้และตั้ง cron:
+```bash
+sudo chmod +x /opt/scripts/ad-sync.sh
+
+# เปิด crontab
+crontab -e
+
+# เพิ่มบรรทัด (sync ทุกวัน 6:00 AM)
+0 6 * * * /opt/scripts/ad-sync.sh
+```
+
+### ตรวจสอบ Log
+```bash
+tail -f /var/log/ad-sync.log
+```
+
+---
+
+## 📊 Azure AD App Registration
+
+หากใช้ Azure AD ต้องสร้าง App Registration ใน Azure Portal:
+
+1. ไปที่ **Azure Portal** → **Microsoft Entra ID** → **App Registrations**
+2. กด **New Registration** → ตั้งชื่อ (เช่น HR Leave Sync)
+3. หลังสร้างเสร็จ จดค่า:
+   - **Application (client) ID** → `AZURE_CLIENT_ID`
+   - **Directory (tenant) ID** → `AZURE_TENANT_ID`
+4. ไปที่ **Certificates & secrets** → **New client secret** → จดค่า → `AZURE_CLIENT_SECRET`
+5. ไปที่ **API permissions** → **Add permission** → **Microsoft Graph** → **Application permissions**:
+   - `User.Read.All`
+   - `Directory.Read.All`
+6. กด **Grant admin consent**
