@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
 import SearchableSelect from '@/components/ui/SearchableSelect';
+import ManagerSearchSelect from '@/components/ui/ManagerSearchSelect';
 import DepartmentCombobox from '@/components/ui/DepartmentCombobox';
 import { formatLeaveDays } from '@/lib/leave-utils';
 
@@ -876,8 +877,7 @@ export default function EmployeeManagementPage() {
                                         </div>
                                         <div>
                                             <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">หัวหน้างาน</label>
-                                            <SearchableSelect
-                                                options={managerOptions}
+                                            <ManagerSearchSelect
                                                 value={formData.departmentHeadId}
                                                 onChange={(val) => setFormData({ ...formData, departmentHeadId: val ? String(val) : '' })}
                                                 placeholder="-- ค้นหาหัวหน้างาน --"
@@ -1077,8 +1077,7 @@ export default function EmployeeManagementPage() {
                                         </div>
                                         <div>
                                             <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">หัวหน้างาน</label>
-                                            <SearchableSelect
-                                                options={managerOptions}
+                                            <ManagerSearchSelect
                                                 value={formData.departmentHeadId}
                                                 onChange={(val) => setFormData({ ...formData, departmentHeadId: val ? String(val) : '' })}
                                                 placeholder="-- ค้นหาหัวหน้างาน --"
@@ -1236,8 +1235,7 @@ export default function EmployeeManagementPage() {
                                         <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
                                             โอนไปยังหัวหน้างานใหม่
                                         </label>
-                                        <SearchableSelect
-                                            options={managerOptions.filter(m => m.id !== selectedEmployee?.id)}
+                                        <ManagerSearchSelect
                                             value={transferTargetId}
                                             onChange={(val) => setTransferTargetId(val)}
                                             placeholder="-- เลือกหัวหน้างานใหม่ (หรือยกเลิกหัวหน้า) --"
