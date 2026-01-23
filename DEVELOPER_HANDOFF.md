@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 23 มกราคม 2026 (เพิ่ม Role Filter ใน Employees API)  
+> 📅 อัปเดตล่าสุด: 23 มกราคม 2026 (เพิ่ม Dynamic Company Management, LDAP Sync Mapping)  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -27,6 +27,7 @@
 **ระบบจัดการการลางาน (HR Leave Management System)** สำหรับ:
 - บริษัท โซนิค อินเตอร์เฟรท จำกัด (SONIC)
 - บริษัท แกรนด์ลิงค์ ลอจิสติคส์ จำกัด (GRANDLINK)
+- บริษัท โซนิค ออโต้โลจิส จำกัด (SONIC-AUTOLOGIS)
 
 ### Features หลัก:
 - ✅ Login ด้วยรหัสพนักงาน
@@ -179,6 +180,7 @@ npm run dev
 | `UsersArchive` | เก็บข้อมูลพนักงานที่ถูก Archive (AD Lifecycle) |
 | `LeaveBalancesArchive` | เก็บยอดวันลาของพนักงานที่ถูก Archive |
 | `LeaveRequestsArchive` | เก็บใบลาของพนักงานที่ถูก Archive |
+| `Companies` | ข้อมูลบริษัท (Dynamic CRUD, Color picker) |
 
 ### Key Columns ใน Users (AD Lifecycle):
 - `isADUser`: BIT - ระบุว่าเป็น AD User หรือไม่
@@ -316,6 +318,11 @@ sequenceDiagram
 - [x] Overlap Check - ตรวจสอบวันซ้ำ
 - [x] Working Days Calculation - หักวันหยุดอัตโนมัติ
 - [x] Role Filter Parameter - กรองพนักงานตาม role (สำหรับ Manager dropdown)
+- [x] Manager Dropdown Server-side Search - ค้นหา Manager ผ่าน API พร้อม debounce
+- [x] LDAP Sync Attribute Mapping:
+  - `whenCreated` → วันที่เริ่มงาน (startDate)
+  - `department` → แผนก
+  - `company` → บริษัท (Sonic→SONIC, Grandlink→GRANDLINK, Sonic-Autologis→SONIC-AUTOLOGIS)
 
 ### 🔲 Phase 6: Advanced Features
 - [x] File Upload (ใบรับรองแพทย์) - `/api/upload/medical`
