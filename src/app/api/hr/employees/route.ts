@@ -25,6 +25,8 @@ export async function GET(request: NextRequest) {
         const limit = parseInt(searchParams.get('limit') || '10');
         const search = searchParams.get('search') || '';
         const roleFilter = searchParams.get('role') || ''; // Filter by role (comma-separated: MANAGER,HR,ADMIN)
+        const departmentFilter = searchParams.get('department') || ''; // Filter by department name
+        const companyFilter = searchParams.get('company') || ''; // Filter by company code
         const offset = (page - 1) * limit;
 
         const pool = await getPool();
@@ -35,16 +37,26 @@ export async function GET(request: NextRequest) {
             ? `AND u.role IN (${roles.map((_, i) => `@role${i}`).join(',')})`
             : '';
 
+        // Build department filter condition
+        const departmentCondition = departmentFilter ? 'AND u.department = @department' : '';
+
+        // Build company filter condition
+        const companyCondition = companyFilter ? 'AND u.company = @company' : '';
+
         // Count total for pagination
         const countQuery = `
             SELECT COUNT(*) as total
             FROM Users u
-            WHERE (u.firstName LIKE @search OR u.lastName LIKE @search OR u.employeeId LIKE @search)
+            WHERE (u.firstName LIKE @search OR u.lastName LIKE @search OR u.employeeId LIKE @search OR u.department LIKE @search)
             ${roleCondition}
+            ${departmentCondition}
+            ${companyCondition}
         `;
 
         const countRequest = pool.request().input('search', `%${search}%`);
         roles.forEach((role, i) => countRequest.input(`role${i}`, role));
+        if (departmentFilter) countRequest.input('department', departmentFilter);
+        if (companyFilter) countRequest.input('company', companyFilter);
         const countResult = await countRequest.query(countQuery);
 
         const total = countResult.recordset[0].total;
@@ -58,8 +70,10 @@ export async function GET(request: NextRequest) {
                    CONVERT(varchar, u.createdAt, 23) as createdAt
             FROM Users u
             LEFT JOIN Users head ON u.departmentHeadId = head.id
-            WHERE (u.firstName LIKE @search OR u.lastName LIKE @search OR u.employeeId LIKE @search)
+            WHERE (u.firstName LIKE @search OR u.lastName LIKE @search OR u.employeeId LIKE @search OR u.department LIKE @search)
             ${roleCondition}
+            ${departmentCondition}
+            ${companyCondition}
             ORDER BY u.employeeId ASC
             OFFSET @offset ROWS
             FETCH NEXT @limit ROWS ONLY
@@ -70,6 +84,8 @@ export async function GET(request: NextRequest) {
             .input('offset', offset)
             .input('limit', limit);
         roles.forEach((role, i) => dataRequest.input(`role${i}`, role));
+        if (departmentFilter) dataRequest.input('department', departmentFilter);
+        if (companyFilter) dataRequest.input('company', companyFilter);
         const result = await dataRequest.query(dataQuery);
 
         return NextResponse.json({

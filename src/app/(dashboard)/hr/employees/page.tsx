@@ -57,6 +57,8 @@ export default function EmployeeManagementPage() {
     const [departments, setDepartments] = useState<string[]>([]); // For dropdown
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [departmentFilter, setDepartmentFilter] = useState('');
+    const [companyFilter, setCompanyFilter] = useState('');
     const [page, setPage] = useState(1);
     const [pagination, setPagination] = useState({ totalPages: 1, total: 0 });
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -115,7 +117,10 @@ export default function EmployeeManagementPage() {
     const fetchEmployees = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`/api/hr/employees?page=${page}&limit=10&search=${search}`);
+            let url = `/api/hr/employees?page=${page}&limit=10&search=${search}`;
+            if (departmentFilter) url += `&department=${encodeURIComponent(departmentFilter)}`;
+            if (companyFilter) url += `&company=${encodeURIComponent(companyFilter)}`;
+            const res = await fetch(url);
             const data = await res.json();
             if (data.success) {
                 setEmployees(data.data);
@@ -156,7 +161,12 @@ export default function EmployeeManagementPage() {
 
     useEffect(() => {
         fetchEmployees();
-    }, [page, search]);
+    }, [page, search, departmentFilter, companyFilter]);
+
+    // Fetch departments on mount for filter dropdown
+    useEffect(() => {
+        fetchDepartments();
+    }, []);
 
     useEffect(() => {
         if (isAddModalOpen || isEditModalOpen) {
@@ -598,21 +608,54 @@ export default function EmployeeManagementPage() {
                     </div>
                 </div>
 
-                {/* Search & Stats */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 mb-6 flex flex-col md:flex-row gap-4">
-                    <div className="relative flex-1">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                        <input
-                            type="text"
-                            placeholder="ค้นหาชื่อ, รหัสพนักงาน..."
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-900 dark:text-white"
-                        />
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Users className="w-4 h-4" />
-                        <span>ทั้งหมด {pagination.total} คน</span>
+                {/* Search & Filters */}
+                <div className="bg-white dark:bg-gray-800 rounded-2xl p-4 shadow-sm border border-gray-100 dark:border-gray-700 mb-6">
+                    <div className="flex flex-col md:flex-row gap-4">
+                        {/* Search Input */}
+                        <div className="relative flex-1">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                            <input
+                                type="text"
+                                placeholder="ค้นหาชื่อ, รหัสพนักงาน, แผนก..."
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-900 dark:text-white"
+                            />
+                        </div>
+
+                        {/* Department Filter */}
+                        <div className="w-full md:w-48">
+                            <select
+                                value={departmentFilter}
+                                onChange={(e) => { setDepartmentFilter(e.target.value); setPage(1); }}
+                                className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-900 dark:text-white text-sm"
+                            >
+                                <option value="">ทุกแผนก</option>
+                                {departments.map(dept => (
+                                    <option key={dept} value={dept}>{dept}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Company Filter */}
+                        <div className="w-full md:w-48">
+                            <select
+                                value={companyFilter}
+                                onChange={(e) => { setCompanyFilter(e.target.value); setPage(1); }}
+                                className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 dark:bg-gray-900 dark:text-white text-sm"
+                            >
+                                <option value="">ทุกบริษัท</option>
+                                <option value="SONIC">SONIC</option>
+                                <option value="GRANDLINK">GRANDLINK</option>
+                                <option value="SONIC-AUTOLOGIS">SONIC-AUTOLOGIS</option>
+                            </select>
+                        </div>
+
+                        {/* Stats */}
+                        <div className="flex items-center gap-2 text-sm text-gray-500 whitespace-nowrap">
+                            <Users className="w-4 h-4" />
+                            <span>ทั้งหมด {pagination.total} คน</span>
+                        </div>
                     </div>
                 </div>
 

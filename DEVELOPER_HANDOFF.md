@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 23 มกราคม 2026 (แก้ไข LDAP Sync startDate UPDATE)  
+> 📅 อัปเดตล่าสุด: 23 มกราคม 2026 (เพิ่ม isHRStaff + Employee Search Filters)  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -250,6 +250,13 @@ sequenceDiagram
 | `/approvals/*` | MANAGER, HR, ADMIN |
 | `/department/*` | MANAGER, HR, ADMIN |
 
+### HR Staff Permission Logic (`isHRStaff`):
+ระบบมีการแยกสิทธิ์ HR ออกจาก Role หลัก เพื่อให้พนักงานทั่วไป (Role: EMPLOYEE/MANAGER) สามารถช่วยงาน HR ได้โดยไม่ต้องเปลี่ยน Role หลัก
+1. **Database**: Column `isHRStaff` (BIT) ในตาราง `Users`
+2. **Frontend**: มี toggle "HR Staff" ในหน้าจัดการพนักงาน
+3. **Middleware**: Bypass role check สำหรับ route `/hr/*` ถ้ามี flag `isHRStaff`
+4. **API**: ทุก API ของ HR (`/api/hr/*`) จะตรวจสอบทั้ง Role และ flag `isHRStaff`
+
 ---
 
 ## 7. สิ่งที่ทำเสร็จแล้ว
@@ -302,7 +309,8 @@ sequenceDiagram
 ## 8. สิ่งที่ยังต้องทำ
 
 ### 🔲 Phase 4: HR Features
-- [x] `/hr/employees` - จัดการพนักงาน (CRUD, Import/Export Excel, LDAP Sync, Edit Gender/StartDate)
+- [x] **HR Staff Role Separation** - แยกสิทธิ์ HR ให้พนักงานทั่วไปได้ (`isHRStaff` flag)
+- [x] `/hr/employees` - จัดการพนักงาน (CRUD, Import/Export Excel, LDAP Sync, Edit Gender/StartDate, กรองตามแผนก/บริษัท)
 - [x] `/hr/companies` - จัดการบริษัท (Dynamic CRUD, Color picker)
 - [x] `/hr/holidays` - จัดการวันหยุด (Public, Special per company)
 - [x] `/hr/settings` - ตั้งค่าโควตาวันลา (Auto-sync to active balances)
