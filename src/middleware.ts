@@ -37,7 +37,13 @@ export async function middleware(request: NextRequest) {
     for (const [route, allowedRoles] of Object.entries(roleBasedRoutes)) {
         if (pathname.startsWith(route)) {
             const userRole = token.role as string;
-            if (!userRole || !allowedRoles.includes(userRole)) {
+            const isHRStaff = (token as any).isHRStaff === true;
+
+            // Allow if role is authorized OR (is HR route AND user is HR staff)
+            const isAuthorized = allowedRoles.includes(userRole) ||
+                (route === '/hr' && isHRStaff);
+
+            if (!userRole || !isAuthorized) {
                 // Redirect to dashboard if not authorized
                 return NextResponse.redirect(new URL('/dashboard', request.url));
             }

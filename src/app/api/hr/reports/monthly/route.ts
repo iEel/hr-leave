@@ -9,7 +9,9 @@ import { getPool } from '@/lib/db';
 export async function GET(request: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN')) {
+        // Allow if role is HR/ADMIN OR user has isHRStaff flag
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 

@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
         const dataQuery = `
             SELECT u.id, u.employeeId, u.email, u.firstName, u.lastName, 
                    u.role, u.company, u.department, u.startDate, u.isActive,
-                   u.departmentHeadId,
+                   u.departmentHeadId, u.isHRStaff,
                    head.firstName + ' ' + head.lastName as departmentHeadName,
                    CONVERT(varchar, u.createdAt, 23) as createdAt
             FROM Users u

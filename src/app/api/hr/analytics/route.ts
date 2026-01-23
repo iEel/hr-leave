@@ -13,8 +13,9 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const role = session.user.role;
-        if (role !== 'HR' && role !== 'ADMIN') {
+        // Allow if role is HR/ADMIN OR user has isHRStaff flag
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 

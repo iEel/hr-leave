@@ -15,8 +15,10 @@ export async function GET(request: NextRequest) {
         }
 
         // Check HR/Admin role
+        // Check HR/Admin role OR isHRStaff
         const role = session.user.role;
-        if (role !== 'HR' && role !== 'ADMIN') {
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (role !== 'HR' && role !== 'ADMIN' && !isHRStaff) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 
@@ -61,7 +63,8 @@ export async function POST(request: NextRequest) {
         }
 
         const role = session.user.role;
-        if (role !== 'HR' && role !== 'ADMIN') {
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (role !== 'HR' && role !== 'ADMIN' && !isHRStaff) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 
@@ -126,7 +129,8 @@ export async function PUT(request: NextRequest) {
         }
 
         const role = session.user.role;
-        if (role !== 'HR' && role !== 'ADMIN') {
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (role !== 'HR' && role !== 'ADMIN' && !isHRStaff) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 
@@ -189,7 +193,8 @@ export async function DELETE(request: NextRequest) {
         }
 
         const role = session.user.role;
-        if (role !== 'HR' && role !== 'ADMIN') {
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (role !== 'HR' && role !== 'ADMIN' && !isHRStaff) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 

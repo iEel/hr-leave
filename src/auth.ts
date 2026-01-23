@@ -91,7 +91,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                         department: user.department,
                         departmentHeadId: user.departmentHeadId,
                         isADUser: true,
-                        authProvider: 'AZURE'
+                        authProvider: 'AZURE',
+                        isHRStaff: (user as any).isHRStaff || false
                     };
                 }
             })
@@ -142,7 +143,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                                 department: user.department,
                                 departmentHeadId: user.departmentHeadId,
                                 isADUser: true,
-                                authProvider: 'LDAP'
+                                authProvider: 'LDAP',
+                                isHRStaff: (user as any).isHRStaff || false
                             };
                         }
                     } catch (ldapError) {
