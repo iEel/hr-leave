@@ -70,7 +70,7 @@ export async function POST(req: Request) {
                 const adMail = user.mail ? String(user.mail).trim() : null;
                 const adDepartment = user.department ? String(user.department).trim() : 'General';
                 const adCompany = user.company ? String(user.company).trim() : '';
-                const adWhenCreated = user.whenCreated; // Format: "20240115123000.0Z"
+                const adWhenCreated = user.whenCreated;
 
                 // Use AD employeeID if present, otherwise fallback to sAMAccountName
                 employeeId = (adEmployeeID || user.sAMAccountName).toUpperCase();
@@ -96,36 +96,21 @@ export async function POST(req: Request) {
                 const mappedCompany = companyMapping[adCompany] || 'SONIC'; // Default to SONIC
 
                 // Parse whenCreated 
-                // Format examples:
-                // - Thai: "5/2/2567 15:38:30 SE Asia Standard Time" (พ.ศ. 2567 = ค.ศ. 2024)
-                // - AD Generalized: "20240115123000.0Z"
-                // - ISO: "2024-01-15T12:30:00Z"
-                let startDate = new Date();
+                // Format: AD Generalized Time "YYYYMMDDHHmmss.0Z" e.g. "20161013040340.0Z"
+                let startDate: Date | null = null;
                 if (adWhenCreated) {
                     const whenCreatedStr = String(adWhenCreated).trim();
 
-                    if (whenCreatedStr.includes('SE Asia') || whenCreatedStr.includes('/')) {
-                        // Thai format: "5/2/2567 15:38:30 SE Asia Standard Time"
-                        // Parse: day/month/buddhistYear time timezone
-                        const parts = whenCreatedStr.split(' ')[0]; // Get "5/2/2567"
-                        const dateParts = parts.split('/');
-                        if (dateParts.length >= 3) {
-                            const day = parseInt(dateParts[0], 10);
-                            const month = parseInt(dateParts[1], 10);
-                            const buddhistYear = parseInt(dateParts[2], 10);
-                            // Convert Buddhist year to Gregorian (พ.ศ. - 543 = ค.ศ.)
-                            const gregorianYear = buddhistYear > 2500 ? buddhistYear - 543 : buddhistYear;
-                            startDate = new Date(gregorianYear, month - 1, day);
+                    // AD Generalized Time format: "20161013040340.0Z"
+                    if (whenCreatedStr.length >= 14) {
+                        const year = parseInt(whenCreatedStr.substring(0, 4), 10);
+                        const month = parseInt(whenCreatedStr.substring(4, 6), 10);
+                        const day = parseInt(whenCreatedStr.substring(6, 8), 10);
+
+                        if (year > 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+                            startDate = new Date(year, month - 1, day);
+                            console.log(`[LDAP Sync] User ${user.sAMAccountName} - Parsed startDate: ${startDate.toISOString().split('T')[0]} (from ${whenCreatedStr})`);
                         }
-                    } else if (whenCreatedStr.includes('T')) {
-                        // ISO format: "2024-01-15T12:30:00Z"
-                        startDate = new Date(whenCreatedStr);
-                    } else if (whenCreatedStr.length >= 14 && !whenCreatedStr.includes('/')) {
-                        // AD Generalized Time format: "20240115123000.0Z"
-                        const year = whenCreatedStr.substring(0, 4);
-                        const month = whenCreatedStr.substring(4, 6);
-                        const day = whenCreatedStr.substring(6, 8);
-                        startDate = new Date(`${year}-${month}-${day}`);
                     }
                 }
 
