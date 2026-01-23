@@ -53,6 +53,7 @@
 - [x] **Formatting**: แสดงผลวันลาแบบ "X วัน Y ชม." (เช่น 1 วัน 4 ชม.)
 - [x] **AD User Lifecycle**: จัดการผู้ใช้ที่ถูกลบจาก AD (Archive หลัง 1 ปี, Purge หลัง 3 ปี)
 - [x] **AD Lifecycle UI**: หน้า `/admin/user-lifecycle` สำหรับ Archive/Purge
+- [x] **Scheduled AD Sync**: Cron API + Script สำหรับ Auto Sync ตามเวลา
 
 ### 2. ปรับปรุง UI/UX
 - [x] **Dark Mode**: รองรับธีมมืด/สว่างทั้งระบบ
@@ -72,6 +73,7 @@
     - `/api/hr/employees/sync`: Sync ผู้ใช้จาก AD (Local/Azure)
     - `/api/admin/archive-users`: Archive ผู้ใช้ที่ถูกลบ > 1 ปี
     - `/api/admin/purge-archived`: Purge ข้อมูลที่ Archive > 3 ปี
+    - `/api/cron/ad-sync`: Cron endpoint สำหรับ Scheduled AD Sync
 
 ---
 

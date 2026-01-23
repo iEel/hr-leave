@@ -347,7 +347,9 @@ sequenceDiagram
 | `api/hr/employees/sync/route.ts` | AD Sync (Local + Azure) |
 | `api/admin/archive-users/route.ts` | Archive deleted users > 1 year |
 | `api/admin/purge-archived/route.ts` | Permanent delete > 3 years |
+| `api/cron/ad-sync/route.ts` | Cron endpoint for scheduled sync |
 | `scripts/migrate-ad-lifecycle.ts` | Migration script |
+| `scripts/scheduled-ad-sync.ts` | Cron script for Task Scheduler |
 
 ### 📄 Key Components
 
