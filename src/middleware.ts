@@ -60,9 +60,12 @@ export const config = {
          * - _next/static (static files)
          * - _next/image (image optimization files)
          * - favicon.ico (favicon file)
-         * - public folder
-         * - api routes that don't need auth check
+         * - icons folder (PWA icons)
+         * - manifest.json (PWA manifest)
+         * - sw.js (Service Worker)
+         * - uploads folder (uploaded files)
+         * - api/auth routes
          */
-        '/((?!_next/static|_next/image|favicon.ico|public|api/auth).*)',
+        '/((?!_next/static|_next/image|favicon.ico|icons|manifest.json|sw.js|uploads|api/auth).*)',
     ],
 };

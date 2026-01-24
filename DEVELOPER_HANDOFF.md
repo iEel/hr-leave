@@ -424,6 +424,15 @@ sequenceDiagram
 - **Android**: Chrome → Menu → "ติดตั้งแอป"
 - **iOS**: Safari → Share → "Add to Home Screen"
 
+**⚠️ Middleware Configuration (24 ม.ค. 2026):**
+เพื่อให้ PWA ทำงานได้ถูกต้อง ต้อง exclude paths ต่อไปนี้จาก auth middleware:
+- `/icons` - PWA Icons
+- `/manifest.json` - PWA Manifest
+- `/sw.js` - Service Worker
+- `/uploads` - Uploaded files
+
+ดู config ใน `src/middleware.ts` → `matcher` array
+
 ### �📄 Key Components
 
 | File | Purpose |
