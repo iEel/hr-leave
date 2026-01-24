@@ -97,6 +97,7 @@ export async function POST(req: Request) {
 
                 // Parse whenCreated 
                 // Format: AD Generalized Time "YYYYMMDDHHmmss.0Z" e.g. "20161013040340.0Z"
+                // Note: AD stores time in UTC (Z = Zulu time)
                 let startDate: Date | null = null;
                 if (adWhenCreated) {
                     const whenCreatedStr = String(adWhenCreated).trim();
@@ -106,10 +107,16 @@ export async function POST(req: Request) {
                         const year = parseInt(whenCreatedStr.substring(0, 4), 10);
                         const month = parseInt(whenCreatedStr.substring(4, 6), 10);
                         const day = parseInt(whenCreatedStr.substring(6, 8), 10);
+                        const hour = parseInt(whenCreatedStr.substring(8, 10), 10) || 0;
+                        const minute = parseInt(whenCreatedStr.substring(10, 12), 10) || 0;
+                        const second = parseInt(whenCreatedStr.substring(12, 14), 10) || 0;
 
                         if (year > 1900 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-                            startDate = new Date(year, month - 1, day);
-                            console.log(`[LDAP Sync] User ${user.sAMAccountName} - Parsed startDate: ${startDate.toISOString().split('T')[0]} (from ${whenCreatedStr})`);
+                            // Create UTC date first, then let JS convert to local timezone
+                            const utcDate = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+                            // Extract local date (for Thai timezone UTC+7)
+                            startDate = utcDate;
+                            console.log(`[LDAP Sync] User ${user.sAMAccountName} - Parsed startDate: ${startDate.toLocaleDateString('th-TH')} (from UTC: ${whenCreatedStr})`);
                         }
                     }
                 }

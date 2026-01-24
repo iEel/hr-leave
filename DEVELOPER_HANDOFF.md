@@ -293,6 +293,7 @@ sequenceDiagram
 - [x] **AD User Auth Security** - บล็อก AD Users ไม่ให้ login ด้วย local password
 - [x] **Random Password for AD Sync** - ป้องกัน brute force
 - [x] **SQL Injection Fix** - Parameterized queries ใน AD Sync routes
+- [x] **AD Start Date Timezone Fix** - แปลง whenCreated (UTC) → local timezone ก่อนบันทึก
 
 ### ✅ Phase 2.7: Work Schedule & Working Saturdays
 - [x] **Work Schedule Settings UI** (`/hr/work-schedule`)
