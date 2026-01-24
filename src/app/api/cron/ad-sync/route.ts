@@ -111,7 +111,9 @@ export async function POST(req: Request) {
             `, { id: employeeId, email: email });
 
             if (existingUser.length === 0) {
-                const hashedPassword = await bcrypt.hash('password123', 10);
+                // Generate random password for AD users - they authenticate via AD only, never local
+                const randomPassword = require('crypto').randomBytes(32).toString('hex');
+                const hashedPassword = await bcrypt.hash(randomPassword, 10);
                 const adStatus = isActive ? 'ACTIVE' : 'DISABLED';
                 await execute(`
                     INSERT INTO Users (employeeId, email, password, firstName, lastName, role, company, department, gender, startDate, isActive, isADUser, adUsername, authProvider, adStatus, createdAt)
@@ -176,10 +178,10 @@ export async function POST(req: Request) {
                 UPDATE Users 
                 SET isActive = 0, adStatus = 'AD_DELETED', deletedAt = CASE WHEN deletedAt IS NULL THEN GETDATE() ELSE deletedAt END
                 WHERE isADUser = 1 
-                AND authProvider = '${source === 'azure' ? 'AZURE' : 'AD'}'
+                AND authProvider = @provider
                 AND adStatus != 'AD_DELETED'
                 AND employeeId NOT IN (${placeholders})
-            `, params);
+            `, { ...params, provider: source === 'azure' ? 'AZURE' : 'AD' });
         }
 
         const summary = `Added: ${addedCount}, Updated: ${updatedCount}, Deleted: ${deletedCount}`;

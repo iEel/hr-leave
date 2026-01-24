@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 23 มกราคม 2026 (เพิ่ม PWA Support)  
+> 📅 อัปเดตล่าสุด: 24 มกราคม 2026 (Security Fixes: AD Authentication)  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -231,6 +231,16 @@ sequenceDiagram
 - **Priority**: Database Settings > .env Setup (Fallback).
 - **Benefit**: Change Auth Mode (Local/LDAP/Hybrid) via UI without restarting server.
 
+### AD User Authentication Security (24 ม.ค. 2026):
+**ปัญหาที่แก้ไข**: AD Users ที่ Sync เข้ามาเคยมีรหัสผ่าน `password123` และสามารถ bypass LDAP ได้
+
+**การแก้ไข**:
+1. **Block Local Password for AD Users** (`api/auth/verify/route.ts`)
+   - ถ้า `authProvider = 'LDAP'` หรือ `'AZURE'` → return 403, บังคับ login ผ่าน AD เท่านั้น
+2. **Random Password for AD Sync** (`api/cron/ad-sync/route.ts`, `api/hr/employees/sync/route.ts`)
+   - ใช้ `crypto.randomBytes(32)` แทน hardcoded `password123`
+3. **SQL Injection Fix** - เปลี่ยน string interpolation เป็น parameterized query (`@provider`)
+
 ### AD User Lifecycle Management:
 | สถานะใน AD | isActive | adStatus | deletedAt |
 |------------|----------|----------|-----------|
@@ -279,6 +289,9 @@ sequenceDiagram
 - [x] Rate Limiting (Token Bucket Algorithm)
 - [x] Admin Settings UI (`/admin/rate-limit`)
 - [x] Login Protection
+- [x] **AD User Auth Security** - บล็อก AD Users ไม่ให้ login ด้วย local password
+- [x] **Random Password for AD Sync** - ป้องกัน brute force
+- [x] **SQL Injection Fix** - Parameterized queries ใน AD Sync routes
 
 ### ✅ Phase 3: Core Pages
 - [x] Dashboard - แสดงยอดวันลา, ประวัติล่าสุด, วันหยุด

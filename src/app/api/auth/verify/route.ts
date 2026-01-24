@@ -52,7 +52,16 @@ export async function POST(request: NextRequest) {
 
         const user = users[0];
 
-        // Verify password using bcrypt
+        // Block AD users from using local password - they must authenticate via LDAP/Azure
+        const userAuthProvider = (user as any).authProvider;
+        if (userAuthProvider === 'LDAP' || userAuthProvider === 'AZURE') {
+            return NextResponse.json(
+                { message: 'บัญชีนี้เชื่อมต่อกับ Active Directory กรุณา Login ผ่านระบบ AD' },
+                { status: 403 }
+            );
+        }
+
+        // Verify password using bcrypt (only for LOCAL users)
         const isValidPassword = await bcrypt.compare(password, user.password);
 
         if (!isValidPassword) {

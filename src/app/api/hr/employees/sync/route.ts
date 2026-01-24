@@ -132,7 +132,9 @@ export async function POST(req: Request) {
 
             if (existingUser.length === 0) {
                 // CASE: Insert New User
-                const hashedPassword = await bcrypt.hash('password123', 10); // Default password
+                // Generate random password for AD users - they authenticate via AD only, never local
+                const randomPassword = require('crypto').randomBytes(32).toString('hex');
+                const hashedPassword = await bcrypt.hash(randomPassword, 10);
 
                 // Get mapped values for LDAP users
                 const company = (user as any)._mappedCompany || 'SONIC';
@@ -224,10 +226,10 @@ export async function POST(req: Request) {
                 `UPDATE Users 
                  SET isActive = 0, adStatus = 'AD_DELETED', deletedAt = CASE WHEN deletedAt IS NULL THEN GETDATE() ELSE deletedAt END
                  WHERE isADUser = 1 
-                 AND authProvider = '${source === 'azure' ? 'AZURE' : 'AD'}'
+                 AND authProvider = @provider
                  AND adStatus != 'AD_DELETED'
                  AND employeeId NOT IN (${placeholders})`,
-                params
+                { ...params, provider: source === 'azure' ? 'AZURE' : 'AD' }
             );
         }
 
