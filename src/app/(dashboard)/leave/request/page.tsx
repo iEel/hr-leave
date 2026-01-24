@@ -87,6 +87,16 @@ export default function LeaveRequestPage() {
         sickCertThreshold: 3
     });
 
+    // Working Saturdays State
+    interface WorkingSaturdayData {
+        date: string;
+        startTime: string;
+        endTime: string;
+        workHours: number;
+    }
+    const [workingSaturdays, setWorkingSaturdays] = useState<WorkingSaturdayData[]>([]);
+    const [workHoursPerDay, setWorkHoursPerDay] = useState(7.5);
+
     // Fetch rules on mount
     useEffect(() => {
         const fetchRules = async () => {
@@ -98,12 +108,43 @@ export default function LeaveRequestPage() {
                         setLeaveRules(data.rules);
                     }
                 }
+
+                // Fetch work schedule settings
+                const scheduleRes = await fetch('/api/hr/work-schedule');
+                if (scheduleRes.ok) {
+                    const scheduleData = await scheduleRes.json();
+                    if (scheduleData.success) {
+                        setWorkHoursPerDay(scheduleData.settings.workHoursPerDay || 7.5);
+                    }
+                }
             } catch (error) {
                 console.error('Failed to fetch leave rules', error);
             }
         };
         fetchRules();
     }, []);
+
+    // Fetch working saturdays when dates change
+    useEffect(() => {
+        const fetchWorkingSaturdays = async () => {
+            if (!startDate || !endDate) {
+                setWorkingSaturdays([]);
+                return;
+            }
+            try {
+                const res = await fetch(`/api/working-saturdays/range?startDate=${startDate}&endDate=${endDate}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success) {
+                        setWorkingSaturdays(data.workingSaturdays || []);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to fetch working saturdays', error);
+            }
+        };
+        fetchWorkingSaturdays();
+    }, [startDate, endDate]);
 
     // Calculate leave days when dates/times change
     useEffect(() => {
@@ -113,7 +154,7 @@ export default function LeaveRequestPage() {
                 const validation = validateTimeRange(startTime, endTime);
                 if (validation.isValid) {
                     const result = calculateHourlyDuration(startTime, endTime);
-                    const days = hoursToDays(result.netHours);
+                    const days = hoursToDays(result.netHours, workHoursPerDay);
                     setCalculatedDays(days);
                     setHourlyInfo({
                         netHours: result.netHours,
@@ -128,7 +169,7 @@ export default function LeaveRequestPage() {
                 setHourlyInfo(null);
             }
         } else {
-            // Day/Half-day mode calculation
+            // Day/Half-day mode calculation with working Saturdays support
             if (startDate && endDate) {
                 const start = new Date(startDate);
                 const end = new Date(endDate);
@@ -137,12 +178,39 @@ export default function LeaveRequestPage() {
                     let days = 0;
                     const current = new Date(start);
 
+                    // Create a map of working saturdays for quick lookup
+                    const workingSatMap = new Map<string, number>();
+                    for (const ws of workingSaturdays) {
+                        workingSatMap.set(ws.date, ws.workHours);
+                    }
+
                     while (current <= end) {
                         const dayOfWeek = current.getDay();
-                        // Exclude weekends (0 = Sunday, 6 = Saturday)
-                        if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-                            days++;
+                        // Use local date format to avoid UTC timezone shift
+                        const year = current.getFullYear();
+                        const month = String(current.getMonth() + 1).padStart(2, '0');
+                        const day = String(current.getDate()).padStart(2, '0');
+                        const dateStr = `${year}-${month}-${day}`;
+
+                        // Sunday - always skip
+                        if (dayOfWeek === 0) {
+                            current.setDate(current.getDate() + 1);
+                            continue;
                         }
+
+                        // Saturday - check if working Saturday
+                        if (dayOfWeek === 6) {
+                            const satWorkHours = workingSatMap.get(dateStr);
+                            if (satWorkHours) {
+                                // Calculate partial day based on Saturday work hours
+                                days += satWorkHours / workHoursPerDay;
+                            }
+                            current.setDate(current.getDate() + 1);
+                            continue;
+                        }
+
+                        // Regular weekday (Mon-Fri)
+                        days++;
                         current.setDate(current.getDate() + 1);
                     }
 
@@ -151,7 +219,8 @@ export default function LeaveRequestPage() {
                         days = days > 0 ? days - 0.5 : 0;
                     }
 
-                    setCalculatedDays(days);
+                    // Round to 2 decimal places
+                    setCalculatedDays(Math.round(days * 100) / 100);
                 } else {
                     setCalculatedDays(0);
                 }
@@ -160,7 +229,7 @@ export default function LeaveRequestPage() {
             }
             setHourlyInfo(null);
         }
-    }, [startDate, endDate, timeSlot, isHourlyMode, startTime, endTime]);
+    }, [startDate, endDate, timeSlot, isHourlyMode, startTime, endTime, workingSaturdays, workHoursPerDay]);
 
     // Sync endDate with startDate for hourly mode (same day only)
     useEffect(() => {
@@ -168,6 +237,27 @@ export default function LeaveRequestPage() {
             setEndDate(startDate);
         }
     }, [isHourlyMode, startDate]);
+
+    // Check if leave is Saturday-only (to disable half-day options)
+    const isSaturdayOnlyLeave = (() => {
+        if (!startDate || !endDate) return false;
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        // Check if all days in range are Saturdays
+        const current = new Date(start);
+        while (current <= end) {
+            if (current.getDay() !== 6) return false; // Not Saturday
+            current.setDate(current.getDate() + 1);
+        }
+        return true;
+    })();
+
+    // Reset to FULL_DAY if Saturday-only and half-day was selected
+    useEffect(() => {
+        if (isSaturdayOnlyLeave && (timeSlot === 'HALF_MORNING' || timeSlot === 'HALF_AFTERNOON')) {
+            setTimeSlot('FULL_DAY');
+        }
+    }, [isSaturdayOnlyLeave, timeSlot]);
 
     // Get today's date in YYYY-MM-DD format
     const today = new Date().toISOString().split('T')[0];
@@ -442,24 +532,41 @@ export default function LeaveRequestPage() {
                                 ช่วงเวลา
                             </label>
                             <div className="flex gap-3">
-                                {dayTimeSlots.map((slot) => (
-                                    <button
-                                        key={slot.value}
-                                        type="button"
-                                        onClick={() => setTimeSlot(slot.value)}
-                                        className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all ${timeSlot === slot.value
-                                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                                            : 'border-gray-200 dark:border-gray-700'
-                                            }`}
-                                    >
-                                        <span className={`block font-medium ${timeSlot === slot.value ? 'text-blue-600' : 'text-gray-600 dark:text-gray-400'
-                                            }`}>
-                                            {slot.label}
-                                        </span>
-                                        <span className="text-xs text-gray-400">{slot.desc}</span>
-                                    </button>
-                                ))}
+                                {dayTimeSlots.map((slot) => {
+                                    const isHalfDay = slot.value === 'HALF_MORNING' || slot.value === 'HALF_AFTERNOON';
+                                    const isDisabled = isHalfDay && isSaturdayOnlyLeave;
+
+                                    return (
+                                        <button
+                                            key={slot.value}
+                                            type="button"
+                                            onClick={() => !isDisabled && setTimeSlot(slot.value)}
+                                            disabled={isDisabled}
+                                            className={`flex-1 py-3 px-4 rounded-xl border-2 transition-all ${isDisabled
+                                                ? 'border-gray-200 dark:border-gray-700 opacity-50 cursor-not-allowed'
+                                                : timeSlot === slot.value
+                                                    ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                                                    : 'border-gray-200 dark:border-gray-700'
+                                                }`}
+                                        >
+                                            <span className={`block font-medium ${isDisabled
+                                                ? 'text-gray-400'
+                                                : timeSlot === slot.value
+                                                    ? 'text-blue-600'
+                                                    : 'text-gray-600 dark:text-gray-400'
+                                                }`}>
+                                                {slot.label}
+                                            </span>
+                                            <span className="text-xs text-gray-400">{slot.desc}</span>
+                                        </button>
+                                    );
+                                })}
                             </div>
+                            {isSaturdayOnlyLeave && (
+                                <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                                    ⚠️ วันเสาร์ไม่รองรับครึ่งวัน กรุณาใช้ "ระบุชั่วโมง" แทน
+                                </p>
+                            )}
                         </div>
                     )}
 
@@ -509,7 +616,7 @@ export default function LeaveRequestPage() {
                                 <Info className="w-5 h-5 text-blue-600 flex-shrink-0" />
                                 <div>
                                     <p className="text-blue-700 dark:text-blue-300 font-medium">
-                                        จำนวนที่ลา: <strong>{formatLeaveDays(calculatedDays)}</strong>
+                                        จำนวนที่ลา: <strong>{formatLeaveDays(calculatedDays, workHoursPerDay)}</strong>
                                         {hourlyInfo && (
                                             <span className="text-sm font-normal ml-2">
                                                 ({hourlyInfo.netHours} ชั่วโมง)

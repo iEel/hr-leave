@@ -69,10 +69,12 @@ export function calculateHourlyDuration(startTime: string, endTime: string): {
 }
 
 /**
- * แปลงชั่วโมงเป็นวัน (หาร 8)
+ * แปลงชั่วโมงเป็นวัน
+ * @param hours จำนวนชั่วโมง
+ * @param workHoursPerDay ชั่วโมงทำงานต่อวัน (default: 7.5)
  */
-export function hoursToDays(hours: number): number {
-    return hours / STANDARD_WORK_HOURS;
+export function hoursToDays(hours: number, workHoursPerDay: number = 7.5): number {
+    return hours / workHoursPerDay;
 }
 
 /**
@@ -80,33 +82,34 @@ export function hoursToDays(hours: number): number {
  * เช่น 5.75 -> "5 วัน 6 ชั่วโมง"
  * เช่น 5.125 -> "5 วัน 1 ชั่วโมง"
  * เช่น 0.0625 -> "30 นาที"
+ * @param days จำนวนวัน (เลขทศนิยม)
+ * @param workHoursPerDay ชั่วโมงทำงานต่อวัน (default: 7.5)
  */
-export function formatLeaveDays(days: number): string {
+export function formatLeaveDays(days: number, workHoursPerDay: number = 7.5): string {
     if (days === 0) return '0 วัน';
 
-    const wholeDays = Math.floor(days);
-    const fractionalDays = days - wholeDays;
+    // แปลงเป็นนาทีทั้งหมดก่อนเพื่อหลีกเลี่ยง floating point issues
+    const totalMinutes = Math.round(days * workHoursPerDay * 60);
+    const totalHours = totalMinutes / 60;
 
-    // แปลงเศษส่วนวันเป็นชั่วโมง
-    const hours = fractionalDays * STANDARD_WORK_HOURS;
-    const wholeHours = Math.floor(hours);
-    const fractionalHours = hours - wholeHours;
-
-    // แปลงเศษส่วนชั่วโมงเป็นนาที
-    const minutes = Math.round(fractionalHours * 60);
+    // คำนวณวันและชั่วโมงที่เหลือ
+    const dys = Math.floor(totalHours / workHoursPerDay);
+    const remainingHours = totalHours - (dys * workHoursPerDay);
+    const hrs = Math.floor(remainingHours);
+    const mins = Math.round((remainingHours - hrs) * 60);
 
     const parts: string[] = [];
 
-    if (wholeDays > 0) {
-        parts.push(`${wholeDays} วัน`);
+    if (dys > 0) {
+        parts.push(`${dys} วัน`);
     }
 
-    if (wholeHours > 0) {
-        parts.push(`${wholeHours} ชม.`);
+    if (hrs > 0) {
+        parts.push(`${hrs} ชม.`);
     }
 
-    if (minutes > 0) {
-        parts.push(`${minutes} นาที`);
+    if (mins > 0) {
+        parts.push(`${mins} นาที`);
     }
 
     return parts.length > 0 ? parts.join(' ') : '0 วัน';

@@ -41,17 +41,31 @@ export function formatThaiDate(date: Date | string): string {
 }
 
 /**
- * Calculate net working days (excluding weekends and holidays)
+ * Working Saturday data structure
+ */
+export interface WorkingSaturdayData {
+    date: string;          // yyyy-MM-dd
+    startTime: string;     // HH:mm
+    endTime: string;       // HH:mm
+    workHours: number;     // hours of work on that Saturday
+}
+
+/**
+ * Calculate net working days (excluding weekends and holidays, including working Saturdays)
  * @param startDate Start date of leave
  * @param endDate End date of leave
  * @param holidays Array of holiday dates
  * @param timeSlot Time slot (FULL_DAY, HALF_MORNING, HALF_AFTERNOON)
+ * @param workingSaturdays Array of working Saturday data (optional)
+ * @param workHoursPerDay Standard work hours per day (default: 7.5)
  */
 export function calculateNetWorkingDays(
     startDate: Date,
     endDate: Date,
     holidays: Date[],
-    timeSlot: TimeSlot = TimeSlot.FULL_DAY
+    timeSlot: TimeSlot = TimeSlot.FULL_DAY,
+    workingSaturdays: WorkingSaturdayData[] = [],
+    workHoursPerDay: number = 7.5
 ): number {
     // Get all days in the range
     const allDays = eachDayOfInterval({
@@ -62,25 +76,51 @@ export function calculateNetWorkingDays(
     // Convert holidays to string for easy comparison
     const holidayStrings = holidays.map((h) => format(startOfDay(h), 'yyyy-MM-dd'));
 
-    // Filter out weekends and holidays
-    const workingDays = allDays.filter((day) => {
+    // Create map of working Saturdays for quick lookup
+    const workingSaturdayMap = new Map<string, WorkingSaturdayData>();
+    for (const ws of workingSaturdays) {
+        workingSaturdayMap.set(ws.date, ws);
+    }
+
+    let totalDays = 0;
+
+    // Calculate for each day
+    for (const day of allDays) {
         const dayStr = format(day, 'yyyy-MM-dd');
+        const dayOfWeek = day.getDay(); // 0=Sun, 6=Sat
         const isHoliday = holidayStrings.includes(dayStr);
-        return !isWeekend(day) && !isHoliday;
-    });
 
-    // Calculate total days based on time slot
-    let totalDays = workingDays.length;
+        // Skip holidays
+        if (isHoliday) continue;
 
-    // If half day, subtract 0.5
+        // Sunday - always skip
+        if (dayOfWeek === 0) continue;
+
+        // Saturday - check if it's a working Saturday
+        if (dayOfWeek === 6) {
+            const workingSat = workingSaturdayMap.get(dayStr);
+            if (workingSat) {
+                // Calculate partial day based on Saturday work hours
+                const satDayValue = workingSat.workHours / workHoursPerDay;
+                totalDays += satDayValue;
+            }
+            // If not a working Saturday, skip it
+            continue;
+        }
+
+        // Regular weekday (Mon-Fri) - count as 1 day
+        totalDays += 1;
+    }
+
+    // If half day, subtract 0.5 (only applies to single day leaves)
     if (timeSlot === TimeSlot.HALF_MORNING || timeSlot === TimeSlot.HALF_AFTERNOON) {
-        // Half day only applies to single day leaves
-        if (workingDays.length === 1) {
-            totalDays = 0.5;
+        if (allDays.length === 1 && totalDays > 0) {
+            totalDays = totalDays * 0.5;
         }
     }
 
-    return totalDays;
+    // Round to 2 decimal places
+    return Math.round(totalDays * 100) / 100;
 }
 
 /**

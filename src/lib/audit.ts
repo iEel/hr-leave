@@ -21,7 +21,9 @@ export type AuditAction =
     | 'EXPORT_EMPLOYEES'
     | 'CREATE_COMPANY'
     | 'UPDATE_COMPANY'
-    | 'DELETE_COMPANY';
+    | 'DELETE_COMPANY'
+    | 'CREATE_WORKING_SATURDAY'
+    | 'DELETE_WORKING_SATURDAY';
 
 export type TargetTable =
     | 'Users'
@@ -30,7 +32,8 @@ export type TargetTable =
     | 'LeaveQuotaSettings'
     | 'LeaveBalances'
     | 'SystemSettings'
-    | 'Companies';
+    | 'Companies'
+    | 'WorkingSaturdays';
 
 interface AuditLogParams {
     userId: number;
@@ -100,7 +103,9 @@ export function getActionDisplayName(action: AuditAction): string {
         'EXPORT_EMPLOYEES': 'Export พนักงาน',
         'CREATE_COMPANY': 'เพิ่มบริษัท',
         'UPDATE_COMPANY': 'แก้ไขบริษัท',
-        'DELETE_COMPANY': 'ลบบริษัท'
+        'DELETE_COMPANY': 'ลบบริษัท',
+        'CREATE_WORKING_SATURDAY': 'เพิ่มวันเสาร์ทำงาน',
+        'DELETE_WORKING_SATURDAY': 'ลบวันเสาร์ทำงาน'
     };
     return names[action] || action;
 }
