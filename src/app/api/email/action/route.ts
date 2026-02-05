@@ -3,6 +3,7 @@ import { getPool } from '@/lib/db';
 import { verifyApprovalToken } from '@/lib/tokens';
 import { logAudit } from '@/lib/audit';
 import { notifyLeaveApproval } from '@/lib/notifications';
+import { sendLeaveApprovalEmail } from '@/lib/email';
 
 /**
  * POST /api/email/action
@@ -93,13 +94,24 @@ export async function POST(request: NextRequest) {
         });
 
         // 5. Send Notification to Employee
-        // Fetch necessary data for notification if not available
+        // Fetch necessary data for notification and email
         const leaveDetails = await pool.request()
             .input('leaveId', leaveId)
-            .query(`SELECT userId, leaveType, CONVERT(varchar, startDatetime, 23) as startDate FROM LeaveRequests WHERE id = @leaveId`);
+            .query(`
+                SELECT lr.userId, lr.leaveType, lr.usageAmount,
+                       CONVERT(varchar, lr.startDatetime, 23) as startDate,
+                       CONVERT(varchar, lr.endDatetime, 23) as endDate,
+                       u.email as employeeEmail,
+                       u.firstName + ' ' + u.lastName as employeeName
+                FROM LeaveRequests lr
+                JOIN Users u ON lr.userId = u.id
+                WHERE lr.id = @leaveId
+            `);
 
         if (leaveDetails.recordset.length > 0) {
-            const { userId, leaveType, startDate } = leaveDetails.recordset[0];
+            const { userId, leaveType, startDate, endDate, usageAmount, employeeEmail, employeeName } = leaveDetails.recordset[0];
+
+            // In-app notification
             await notifyLeaveApproval(
                 userId,
                 leaveId,
@@ -108,6 +120,23 @@ export async function POST(request: NextRequest) {
                 startDate,
                 rejectionReason
             );
+
+            // Email notification
+            if (employeeEmail) {
+                await sendLeaveApprovalEmail(
+                    employeeEmail,
+                    employeeName,
+                    {
+                        id: leaveId,
+                        type: leaveType,
+                        startDate: startDate,
+                        endDate: endDate,
+                        days: usageAmount,
+                    },
+                    action === 'APPROVE',
+                    rejectionReason
+                );
+            }
         }
 
         return NextResponse.json({ success: true, status: newStatus });

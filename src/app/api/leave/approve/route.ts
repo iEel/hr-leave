@@ -3,6 +3,7 @@ import { auth } from '@/auth';
 import { getPool } from '@/lib/db';
 import { notifyLeaveApproval } from '@/lib/notifications';
 import { logAudit } from '@/lib/audit';
+import { sendLeaveApprovalEmail } from '@/lib/email';
 
 /**
  * POST /api/leave/approve
@@ -56,14 +57,18 @@ export async function POST(request: NextRequest) {
 
         const pool = await getPool();
 
-        // Get the leave request
+        // Get the leave request with employee details
         const leaveResult = await pool.request()
             .input('leaveId', leaveId)
             .query(`
-                SELECT id, userId, leaveType, usageAmount, status,
-                       CONVERT(varchar, startDatetime, 23) as startDate
-                FROM LeaveRequests
-                WHERE id = @leaveId
+                SELECT lr.id, lr.userId, lr.leaveType, lr.usageAmount, lr.status,
+                       CONVERT(varchar, lr.startDatetime, 23) as startDate,
+                       CONVERT(varchar, lr.endDatetime, 23) as endDate,
+                       u.email as employeeEmail,
+                       u.firstName + ' ' + u.lastName as employeeName
+                FROM LeaveRequests lr
+                JOIN Users u ON lr.userId = u.id
+                WHERE lr.id = @leaveId
             `);
 
         if (leaveResult.recordset.length === 0) {
@@ -117,7 +122,7 @@ export async function POST(request: NextRequest) {
                 `);
         }
 
-        // Send notification to the employee
+        // Send in-app notification to the employee
         await notifyLeaveApproval(
             leave.userId,
             leaveId,
@@ -126,6 +131,23 @@ export async function POST(request: NextRequest) {
             leave.startDate,
             rejectionReason
         );
+
+        // Send email notification to the employee
+        if (leave.employeeEmail) {
+            await sendLeaveApprovalEmail(
+                leave.employeeEmail,
+                leave.employeeName,
+                {
+                    id: leaveId,
+                    type: leave.leaveType,
+                    startDate: leave.startDate,
+                    endDate: leave.endDate,
+                    days: leave.usageAmount,
+                },
+                action === 'APPROVE',
+                rejectionReason
+            );
+        }
 
         // Audit log
         await logAudit({

@@ -413,16 +413,16 @@ sequenceDiagram
 
 | File | Purpose |
 |------|---------|
-| `lib/email.ts` | ส่งอีเมลแจ้ง Manager (Nodemailer) |
+| `lib/email.ts` | `sendLeaveRequestEmail()` แจ้ง Manager, `sendLeaveApprovalEmail()` แจ้งพนักงาน |
 | `lib/tokens.ts` | สร้าง/ตรวจสอบ JWT Token (7 วัน) |
 | `api/email/action/route.ts` | Magic Link Approve/Reject API |
 | `app/action/[action]/page.tsx` | UI หน้า Approve/Reject |
 
 **Magic Link Flow:**
-1. พนักงานขอลา → ส่งอีเมลหา Manager
+1. พนักงานขอลา → ส่งอีเมลหา Manager (Magic Link)
 2. Manager กดปุ่ม Approve/Reject ในอีเมล
 3. ระบบตรวจสอบ token และอัพเดทสถานะ
-4. แจ้งเตือนพนักงานผลการอนุมัติ
+4. **ส่งอีเมลแจ้งพนักงานผลการอนุมัติ** (✅ แสดงสถานะสีเขียว/แดง + เหตุผลถ้าปฏิเสธ)
 
 **Environment Variables:**
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`
