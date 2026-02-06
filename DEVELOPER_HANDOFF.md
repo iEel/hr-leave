@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 24 มกราคม 2026 (Phase 2.7: Work Schedule & Working Saturdays)  
+> 📅 อัปเดตล่าสุด: 6 กุมภาพันธ์ 2026 (Phase 6: Audit Logs + HR Staff Permission Fix)  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -257,9 +257,10 @@ sequenceDiagram
 ### RBAC (middleware.ts):
 | Route | Allowed Roles |
 |-------|---------------|
-| `/hr/*` | HR, ADMIN |
+| `/hr/*` | HR, ADMIN, isHRStaff |
 | `/approvals/*` | MANAGER, HR, ADMIN |
 | `/department/*` | MANAGER, HR, ADMIN |
+| `/admin/*` | ADMIN only |
 
 ### HR Staff Permission Logic (`isHRStaff`):
 ระบบมีการแยกสิทธิ์ HR ออกจาก Role หลัก เพื่อให้พนักงานทั่วไป (Role: EMPLOYEE/MANAGER) สามารถช่วยงาน HR ได้โดยไม่ต้องเปลี่ยน Role หลัก
@@ -364,11 +365,11 @@ sequenceDiagram
   - `department` → แผนก
   - `company` → บริษัท (Sonic→SONIC, Grandlink→GRANDLINK, Sonic-Autologis→SONIC-AUTOLOGIS)
 
-### 🔲 Phase 6: Advanced Features
+### ✅ Phase 6: Advanced Features
 - [x] File Upload (ใบรับรองแพทย์) - `/api/upload/medical`
-- [x] Email Notifications - ส่งอีเมลแจ้ง Manager
+- [x] Email Notifications - ส่งอีเมลแจ้ง Manager + พนักงาน
 - [x] **PWA Support** - ติดตั้งเป็น App บน Mobile ได้ (manifest.json, Service Worker)
-- [ ] Audit Logs UI - หน้าดู logs กิจกรรม
+- [x] **Audit Logs UI** - `/admin/audit-logs` (ADMIN only) ดู logs กิจกรรมทั้งหมด
 - [ ] Delegate Approver - มอบหมายคนแทน
 - [ ] LINE Notify Integration (optional)
 - [ ] Calendar iCal Export (optional)
