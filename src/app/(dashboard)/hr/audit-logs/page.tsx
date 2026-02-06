@@ -112,13 +112,15 @@ export default function AuditLogsPage() {
     }, [page, actionFilter, dateFrom, dateTo]);
 
     const formatDate = (dateStr: string) => {
-        return new Date(dateStr).toLocaleString('th-TH', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
+        // API returns datetime string as Bangkok time (formatted in SQL)
+        // Just parse and reformat for display
+        const [datePart, timePart] = dateStr.split(' ');
+        const [year, month, day] = datePart.split('-');
+        const thaiMonths = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.',
+            'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+        const monthName = thaiMonths[parseInt(month)];
+        const timeDisplay = timePart?.substring(0, 5) || ''; // HH:mm
+        return `${parseInt(day)} ${monthName} ${year} ${timeDisplay}`;
     };
 
     return (

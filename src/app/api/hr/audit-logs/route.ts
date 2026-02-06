@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
                 al.oldValue,
                 al.newValue,
                 al.ipAddress,
-                al.createdAt
+                FORMAT(al.createdAt, 'yyyy-MM-dd HH:mm:ss') as createdAt
             FROM AuditLogs al
             LEFT JOIN Users u ON al.userId = u.id
             WHERE ${whereClause}
