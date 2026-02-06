@@ -290,7 +290,7 @@ export default function AuditLogsPage() {
             {/* Detail Modal */}
             {selectedLog && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedLog(null)}>
-                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                             รายละเอียด Log #{selectedLog.id}
                         </h3>
