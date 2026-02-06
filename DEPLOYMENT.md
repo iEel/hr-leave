@@ -228,41 +228,80 @@ pm2 restart hr-leave
 
 ## 🔄 ตั้งค่า AD Sync (Active Directory)
 
-### ขั้นตอนแรก: Run Migration Script
+### วิธีที่ 1: ใช้ Cron + curl (แนะนำ)
 
+**ทดสอบก่อน:**
 ```bash
-cd /var/www/hr-leave
-npx tsx scripts/migrate-ad-lifecycle.ts
+curl -X POST http://localhost:3002/api/cron/ad-sync \
+  -H "Content-Type: application/json" \
+  -H "x-cron-secret: default-cron-secret-change-me" \
+  -d '{"source":"ldap"}'
 ```
 
-### ตั้งค่า Scheduled AD Sync (Cron)
+ผลลัพธ์ที่ควรจะได้:
+```json
+{"success":true,"summary":{"totalFound":346,"added":0,"updated":346,"markedDeleted":0,"source":"ldap"}}
+```
+
+**ตั้ง Cron Job (Sync ทุกวัน 06:00 น.):**
+```bash
+crontab -e
+```
+
+เพิ่มบรรทัด:
+```
+0 6 * * * curl -s -X POST http://localhost:3002/api/cron/ad-sync -H "Content-Type: application/json" -H "x-cron-secret: default-cron-secret-change-me" -d '{"source":"ldap"}' >> /var/log/hr-adsync.log 2>&1
+```
+
+**ตรวจสอบว่า Cron ถูกบันทึก:**
+```bash
+crontab -l
+```
+
+**ดู Log:**
+```bash
+tail -f /var/log/hr-adsync.log
+```
+
+### ตัวเลือก Source
+| Source | คำอธิบาย |
+|--------|---------|
+| `ldap` | Local Active Directory (On-premises) |
+| `azure` | Azure AD / Microsoft Entra ID |
+
+### ตัวเลือกเวลา Cron
+| เวลา | Cron Expression |
+|------|-----------------|
+| ทุกวัน 06:00 | `0 6 * * *` |
+| ทุก 6 ชม. | `0 */6 * * *` |
+| ทุกวันจันทร์-ศุกร์ 07:00 | `0 7 * * 1-5` |
+
+### วิธีที่ 2: ใช้ Shell Script (ทางเลือก)
 
 ```bash
 # สร้าง shell script
+sudo mkdir -p /opt/scripts
 sudo nano /opt/scripts/ad-sync.sh
 ```
 
 ใส่เนื้อหา:
 ```bash
 #!/bin/bash
-cd /var/www/hr-leave
-/usr/bin/npx tsx scripts/scheduled-ad-sync.ts azure >> /var/log/ad-sync.log 2>&1
+curl -s -X POST http://localhost:3002/api/cron/ad-sync \
+  -H "Content-Type: application/json" \
+  -H "x-cron-secret: default-cron-secret-change-me" \
+  -d '{"source":"ldap"}' >> /var/log/hr-adsync.log 2>&1
 ```
 
-ทำให้ execute ได้และตั้ง cron:
+ทำให้ execute ได้:
 ```bash
 sudo chmod +x /opt/scripts/ad-sync.sh
 
-# เปิด crontab
+# ตั้ง cron
 crontab -e
 
-# เพิ่มบรรทัด (sync ทุกวัน 6:00 AM)
+# เพิ่มบรรทัด
 0 6 * * * /opt/scripts/ad-sync.sh
-```
-
-### ตรวจสอบ Log
-```bash
-tail -f /var/log/ad-sync.log
 ```
 
 ---
