@@ -86,7 +86,7 @@ export async function POST(request: NextRequest) {
                     .input('date', startDate)
                     .query(`
                         SELECT id FROM WorkingSaturdays 
-                        WHERE saturdayDate = @date
+                        WHERE date = @date
                     `);
 
                 if (saturdayCheck.recordset.length === 0) {
