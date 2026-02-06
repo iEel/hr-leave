@@ -382,6 +382,7 @@ sequenceDiagram
   - Auto-start สำหรับ first-time users
   - Help button ใน Sidebar (ดูคู่มือแนะนำ)
   - LocalStorage tracking (tour-employee-completed, tour-manager-completed)
+  - **Mobile Fix**: Auto-skip tour on mobile devices (< 768px)
 - [x] **USER_GUIDE.md** - คู่มือการใช้งานภาษาไทย
 - [x] **Weekend Validation for Hourly Leave**
   - บล็อกการลาวันอาทิตย์ (วันหยุด)
