@@ -67,6 +67,37 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // === WEEKEND VALIDATION FOR HOURLY LEAVE ===
+        if (isHourly) {
+            const start = new Date(startDate);
+            const dayOfWeek = start.getDay(); // 0 = Sunday, 6 = Saturday
+
+            // Rule 1: Sunday is always non-working day
+            if (dayOfWeek === 0) {
+                return NextResponse.json(
+                    { error: 'ไม่สามารถลาวันอาทิตย์ได้ เนื่องจากเป็นวันหยุด' },
+                    { status: 400 }
+                );
+            }
+
+            // Rule 2: Saturday must be in WorkingSaturdays table
+            if (dayOfWeek === 6) {
+                const saturdayCheck = await pool.request()
+                    .input('date', startDate)
+                    .query(`
+                        SELECT id FROM WorkingSaturdays 
+                        WHERE saturdayDate = @date
+                    `);
+
+                if (saturdayCheck.recordset.length === 0) {
+                    return NextResponse.json(
+                        { error: 'ไม่สามารถลาวันเสาร์นี้ได้ เนื่องจากไม่ใช่วันทำงาน' },
+                        { status: 400 }
+                    );
+                }
+            }
+        }
+
         // === VACATION LEAVE SPECIAL RULES ===
         if (leaveType === 'VACATION') {
             // Get user's start date
