@@ -52,7 +52,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN')) {
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 
@@ -108,7 +109,8 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN')) {
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 

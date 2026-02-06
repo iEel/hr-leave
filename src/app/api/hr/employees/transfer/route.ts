@@ -14,9 +14,10 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // Only HR/Admin can transfer subordinates
+        // Only HR/Admin/HRStaff can transfer subordinates
         const role = session.user.role;
-        if (role !== 'HR' && role !== 'ADMIN') {
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (role !== 'HR' && role !== 'ADMIN' && !isHRStaff) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 

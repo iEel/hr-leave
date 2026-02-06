@@ -14,7 +14,8 @@ export async function GET(request: NextRequest) {
         }
 
         const userRole = session.user.role;
-        if (userRole !== 'HR' && userRole !== 'ADMIN') {
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (userRole !== 'HR' && userRole !== 'ADMIN' && !isHRStaff) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 

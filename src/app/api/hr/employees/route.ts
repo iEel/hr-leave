@@ -16,7 +16,8 @@ export async function GET(request: NextRequest) {
         }
 
         const role = session.user.role;
-        if (role !== 'HR' && role !== 'ADMIN') {
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (role !== 'HR' && role !== 'ADMIN' && !isHRStaff) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 
@@ -112,14 +113,15 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN')) {
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 
         const body = await request.json();
         const {
             employeeId, email, password, firstName, lastName,
-            role, company, department, gender, startDate, departmentHeadId, isHRStaff
+            role, company, department, gender, startDate, departmentHeadId, isHRStaff: newIsHRStaff
         } = body;
 
         // Validation
@@ -155,7 +157,7 @@ export async function POST(request: NextRequest) {
             .input('gender', gender || 'M')
             .input('startDate', startDate)
             .input('departmentHeadId', departmentHeadId || null)
-            .input('isHRStaff', isHRStaff ? 1 : 0)
+            .input('isHRStaff', newIsHRStaff ? 1 : 0)
             .query(`
                 INSERT INTO Users (
                     employeeId, email, password, firstName, lastName, 
@@ -189,12 +191,13 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN')) {
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 
         const body = await request.json();
-        const { id, firstName, lastName, role, company, department, isActive, gender, startDate, departmentHeadId, isHRStaff } = body;
+        const { id, firstName, lastName, role, company, department, isActive, gender, startDate, departmentHeadId, isHRStaff: newIsHRStaff } = body;
 
         if (!id) {
             return NextResponse.json({ error: 'Missing user ID' }, { status: 400 });
@@ -213,7 +216,7 @@ export async function PUT(request: NextRequest) {
             .input('gender', gender)
             .input('startDate', startDate)
             .input('departmentHeadId', departmentHeadId || null)
-            .input('isHRStaff', isHRStaff ? 1 : 0)
+            .input('isHRStaff', newIsHRStaff ? 1 : 0)
             .query(`
                 UPDATE Users
                 SET firstName = @firstName,
@@ -236,7 +239,7 @@ export async function PUT(request: NextRequest) {
             action: 'UPDATE_EMPLOYEE',
             targetTable: 'Users',
             targetId: id,
-            newValue: { firstName, lastName, role, company, department, isActive, gender, startDate, isHRStaff }
+            newValue: { firstName, lastName, role, company, department, isActive, gender, startDate, isHRStaff: newIsHRStaff }
         });
 
         return NextResponse.json({ success: true, message: 'Employee updated successfully' });
@@ -254,7 +257,8 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
     try {
         const session = await auth();
-        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN')) {
+        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 
