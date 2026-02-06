@@ -22,9 +22,11 @@ import {
     Building2,
     ChevronDown,
     CalendarClock,
+    HelpCircle,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { UserRole } from '@/types';
+import { useTour } from '@/hooks/useTour';
 
 interface UserProfile {
     firstName: string;
@@ -127,6 +129,8 @@ export function Sidebar() {
         );
     };
 
+    const { startTour } = useTour();
+
     const SidebarContent = () => (
         <div className="flex flex-col h-full">
             {/* Logo */}
@@ -223,6 +227,13 @@ export function Sidebar() {
                         <p className="text-xs text-gray-500 truncate">{profile?.employeeId || session?.user?.employeeId}</p>
                     </div>
                 </div>
+                <button
+                    onClick={() => startTour()}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 mb-2 rounded-xl text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                >
+                    <HelpCircle className="w-5 h-5" />
+                    <span className="font-medium">ดูคู่มือแนะนำ</span>
+                </button>
                 <button
                     onClick={async () => {
                         try {

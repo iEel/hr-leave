@@ -205,6 +205,7 @@ export default async function DashboardPage() {
                 </div>
                 <Link
                     href="/leave/request"
+                    data-tour="request-leave-btn"
                     className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl hover:from-blue-500 hover:to-indigo-500 transition-all"
                 >
                     <CalendarDays className="w-5 h-5" />
@@ -213,7 +214,7 @@ export default async function DashboardPage() {
             </div>
 
             {/* Stats Cards - Leave Balances */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-tour="dashboard-balance">
                 {displayBalances.length > 0 ? displayBalances.map((balance) => (
                     <div
                         key={balance.type}
@@ -277,7 +278,7 @@ export default async function DashboardPage() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Recent Leave Requests */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700" data-tour="leave-history">
                     <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <Clock className="w-5 h-5 text-blue-600" />
@@ -328,7 +329,7 @@ export default async function DashboardPage() {
                 </div>
 
                 {/* Upcoming Holidays */}
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700" data-tour="upcoming-holidays">
                     <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex items-center gap-3">
                         <TrendingUp className="w-5 h-5 text-green-600" />
                         <h2 className="font-semibold text-gray-900 dark:text-white">วันหยุดที่กำลังจะมาถึง</h2>
