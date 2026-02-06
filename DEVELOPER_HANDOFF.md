@@ -386,7 +386,12 @@ sequenceDiagram
 - [x] **Weekend Validation for Hourly Leave**
   - บล็อกการลาวันอาทิตย์ (วันหยุด)
   - ตรวจสอบวันเสาร์กับตาราง WorkingSaturdays
-  - แสดงข้อความ error ภาษาไทยชัดเจน
+  - แก้ไข column name bug (`saturdayDate` → `date`)
+- [x] **Complete Holiday Validation**
+  - **Hourly**: บล็อกทุกวันหยุด (อาทิตย์, เสาร์ไม่ทำงาน, วันหยุดนักขัตฤกษ์)
+  - **Full-day/Half-day 1 วัน**: บล็อกถ้าเป็นวันหยุด + แสดงชื่อวันหยุด
+  - **Full-day/Half-day หลายวัน**: อนุญาต แต่หักวันหยุดออกจากการคำนวณ
+  - API: เพิ่ม date range support ใน `/api/holidays`
 
 ---
 
