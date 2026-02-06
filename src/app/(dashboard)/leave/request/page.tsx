@@ -96,6 +96,7 @@ export default function LeaveRequestPage() {
     }
     const [workingSaturdays, setWorkingSaturdays] = useState<WorkingSaturdayData[]>([]);
     const [workHoursPerDay, setWorkHoursPerDay] = useState(7.5);
+    const [publicHolidays, setPublicHolidays] = useState<{ date: string }[]>([]);
 
     // Fetch rules on mount
     useEffect(() => {
@@ -146,6 +147,28 @@ export default function LeaveRequestPage() {
         fetchWorkingSaturdays();
     }, [startDate, endDate]);
 
+    // Fetch public holidays when dates change
+    useEffect(() => {
+        const fetchPublicHolidays = async () => {
+            if (!startDate || !endDate) {
+                setPublicHolidays([]);
+                return;
+            }
+            try {
+                const res = await fetch(`/api/holidays?startDate=${startDate}&endDate=${endDate}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.success) {
+                        setPublicHolidays(data.holidays || []);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to fetch public holidays', error);
+            }
+        };
+        fetchPublicHolidays();
+    }, [startDate, endDate]);
+
     // Calculate leave days when dates/times change
     useEffect(() => {
         if (isHourlyMode) {
@@ -169,7 +192,7 @@ export default function LeaveRequestPage() {
                 setHourlyInfo(null);
             }
         } else {
-            // Day/Half-day mode calculation with working Saturdays support
+            // Day/Half-day mode calculation with working Saturdays and Public Holidays support
             if (startDate && endDate) {
                 const start = new Date(startDate);
                 const end = new Date(endDate);
@@ -184,6 +207,12 @@ export default function LeaveRequestPage() {
                         workingSatMap.set(ws.date, ws.workHours);
                     }
 
+                    // Create a set of public holidays for quick lookup
+                    const holidaySet = new Set<string>();
+                    for (const h of publicHolidays) {
+                        holidaySet.add(h.date);
+                    }
+
                     while (current <= end) {
                         const dayOfWeek = current.getDay();
                         // Use local date format to avoid UTC timezone shift
@@ -191,6 +220,12 @@ export default function LeaveRequestPage() {
                         const month = String(current.getMonth() + 1).padStart(2, '0');
                         const day = String(current.getDate()).padStart(2, '0');
                         const dateStr = `${year}-${month}-${day}`;
+
+                        // Public Holiday - always skip
+                        if (holidaySet.has(dateStr)) {
+                            current.setDate(current.getDate() + 1);
+                            continue;
+                        }
 
                         // Sunday - always skip
                         if (dayOfWeek === 0) {
@@ -229,7 +264,7 @@ export default function LeaveRequestPage() {
             }
             setHourlyInfo(null);
         }
-    }, [startDate, endDate, timeSlot, isHourlyMode, startTime, endTime, workingSaturdays, workHoursPerDay]);
+    }, [startDate, endDate, timeSlot, isHourlyMode, startTime, endTime, workingSaturdays, publicHolidays, workHoursPerDay]);
 
     // Sync endDate with startDate for hourly mode (same day only)
     useEffect(() => {
