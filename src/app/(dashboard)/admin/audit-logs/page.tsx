@@ -123,6 +123,43 @@ export default function AuditLogsPage() {
         return `${parseInt(day)} ${monthName} ${year} ${timeDisplay}`;
     };
 
+    // Convert UTC timestamps in JSON to Bangkok time
+    const convertTimestampsInJson = (jsonStr: string): any => {
+        try {
+            const obj = JSON.parse(jsonStr);
+
+            // Recursively convert timestamp fields
+            const convertObject = (item: any): any => {
+                if (!item || typeof item !== 'object') return item;
+
+                if (Array.isArray(item)) {
+                    return item.map(convertObject);
+                }
+
+                const result: any = {};
+                for (const [key, value] of Object.entries(item)) {
+                    // Check if it's a timestamp field (ISO 8601 format with Z)
+                    if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(value)) {
+                        // Convert UTC to Bangkok time
+                        const utcDate = new Date(value);
+                        const bangkokTime = new Date(utcDate.getTime() + (7 * 60 * 60 * 1000));
+                        result[key] = bangkokTime.toISOString().replace('T', ' ').replace('Z', '').substring(0, 19) + ' (Bangkok)';
+                    } else if (typeof value === 'object') {
+                        result[key] = convertObject(value);
+                    } else {
+                        result[key] = value;
+                    }
+                }
+                return result;
+            };
+
+            return convertObject(obj);
+        } catch (e) {
+            return JSON.parse(jsonStr); // Fallback to original if conversion fails
+        }
+    };
+
+
     return (
         <div className="animate-fade-in">
             {/* Header */}
@@ -313,7 +350,7 @@ export default function AuditLogsPage() {
                                 <div>
                                     <p className="text-sm font-medium text-red-600 mb-1">ข้อมูลเดิม:</p>
                                     <pre className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg text-xs overflow-x-auto">
-                                        {JSON.stringify(JSON.parse(selectedLog.oldValue), null, 2)}
+                                        {JSON.stringify(convertTimestampsInJson(selectedLog.oldValue), null, 2)}
                                     </pre>
                                 </div>
                             )}
@@ -322,7 +359,7 @@ export default function AuditLogsPage() {
                                 <div>
                                     <p className="text-sm font-medium text-green-600 mb-1">ข้อมูลใหม่:</p>
                                     <pre className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg text-xs overflow-x-auto">
-                                        {JSON.stringify(JSON.parse(selectedLog.newValue), null, 2)}
+                                        {JSON.stringify(convertTimestampsInJson(selectedLog.newValue), null, 2)}
                                     </pre>
                                 </div>
                             )}
