@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 6 กุมภาพันธ์ 2026 (Phase 6: Audit Logs + HR Staff Permission Fix)  
+> 📅 อัปเดตล่าสุด: 6 กุมภาพันธ์ 2026 (Phase 7: User Guide + Weekend Validation)  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -55,6 +55,7 @@
 | Password Hash | bcryptjs |
 | Icons | Lucide React |
 | Date Utils | date-fns, date-fns-tz |
+| User Guide | driver.js (Interactive Tour) |
 | Charts | Recharts (ติดตั้งแล้ว ยังไม่ใช้) |
 | Excel | xlsx (ติดตั้งแล้ว ยังไม่ใช้) |
 
@@ -373,6 +374,19 @@ sequenceDiagram
 - [ ] Delegate Approver - มอบหมายคนแทน
 - [ ] LINE Notify Integration (optional)
 - [ ] Calendar iCal Export (optional)
+
+### ✅ Phase 7: User Experience & Validation (6 ก.พ. 2026)
+- [x] **Interactive User Guide** (driver.js)
+  - Tour สำหรับพนักงาน (4 steps: Balance, Request, History, Holidays)
+  - Tour สำหรับ Manager (4 steps: Balance, Approvals, Pending, Team)
+  - Auto-start สำหรับ first-time users
+  - Help button ใน Sidebar (ดูคู่มือแนะนำ)
+  - LocalStorage tracking (tour-employee-completed, tour-manager-completed)
+- [x] **USER_GUIDE.md** - คู่มือการใช้งานภาษาไทย
+- [x] **Weekend Validation for Hourly Leave**
+  - บล็อกการลาวันอาทิตย์ (วันหยุด)
+  - ตรวจสอบวันเสาร์กับตาราง WorkingSaturdays
+  - แสดงข้อความ error ภาษาไทยชัดเจน
 
 ---
 
