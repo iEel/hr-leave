@@ -91,7 +91,7 @@ export default function AuditLogsPage() {
                 ...(dateTo && { dateTo })
             });
 
-            const res = await fetch(`/api/hr/audit-logs?${params}`);
+            const res = await fetch(`/api/admin/audit-logs?${params}`);
             const data = await res.json();
 
             if (data.success) {

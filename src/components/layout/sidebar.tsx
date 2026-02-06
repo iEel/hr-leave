@@ -64,7 +64,6 @@ const hrNavItems: NavItem[] = [
     { href: '/hr/settings', label: 'ตั้งค่าระบบ', icon: <Settings className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
     { href: '/hr/year-end', label: 'ประมวลผลสิ้นปี', icon: <CalendarClock className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
     { href: '/hr/analytics', label: 'วิเคราะห์ข้อมูล', icon: <BarChart3 className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
-    { href: '/hr/audit-logs', label: 'Audit Logs', icon: <Shield className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
     { href: '/hr/reports', label: 'รายงาน', icon: <FileText className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
 ];
 
@@ -72,6 +71,7 @@ const adminNavItems: NavItem[] = [
     { href: '/admin/auth-settings', label: 'ตั้งค่า Authentication', icon: <Shield className="w-5 h-5" />, roles: [UserRole.ADMIN] },
     { href: '/admin/rate-limit', label: 'Rate Limiting', icon: <Shield className="w-5 h-5" />, roles: [UserRole.ADMIN] },
     { href: '/admin/user-lifecycle', label: 'AD User Lifecycle', icon: <Users className="w-5 h-5" />, roles: [UserRole.ADMIN] },
+    { href: '/admin/audit-logs', label: 'Audit Logs', icon: <Shield className="w-5 h-5" />, roles: [UserRole.ADMIN] },
 ];
 
 export function Sidebar() {
