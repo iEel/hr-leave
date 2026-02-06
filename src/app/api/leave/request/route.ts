@@ -96,6 +96,41 @@ export async function POST(request: NextRequest) {
                     );
                 }
             }
+
+            // Rule 3: Public Holiday check
+            const holidayCheck = await pool.request()
+                .input('date', startDate)
+                .query(`
+                    SELECT name FROM PublicHolidays 
+                    WHERE date = @date
+                `);
+
+            if (holidayCheck.recordset.length > 0) {
+                const holidayName = holidayCheck.recordset[0].name;
+                return NextResponse.json(
+                    { error: `ไม่สามารถลาได้ เนื่องจากเป็นวันหยุด: ${holidayName}` },
+                    { status: 400 }
+                );
+            }
+        }
+
+        // === PUBLIC HOLIDAY VALIDATION FOR FULL-DAY/HALF-DAY LEAVE ===
+        // Block if single day leave falls on a public holiday
+        if (!isHourly && startDate === endDate) {
+            const holidayCheck = await pool.request()
+                .input('date', startDate)
+                .query(`
+                    SELECT name FROM PublicHolidays 
+                    WHERE date = @date
+                `);
+
+            if (holidayCheck.recordset.length > 0) {
+                const holidayName = holidayCheck.recordset[0].name;
+                return NextResponse.json(
+                    { error: `ไม่สามารถลาได้ เนื่องจากเป็นวันหยุด: ${holidayName}` },
+                    { status: 400 }
+                );
+            }
         }
 
         // === VACATION LEAVE SPECIAL RULES ===
