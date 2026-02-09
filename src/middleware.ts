@@ -6,9 +6,10 @@ import { getToken } from 'next-auth/jwt';
 const publicRoutes = ['/login', '/api/auth', '/action', '/api/email', '/api/cron'];
 
 // Role-based route access control
+// Note: /approvals is accessible by all authenticated users
+// because delegates (any role) also need access. The API handles authorization.
 const roleBasedRoutes: Record<string, string[]> = {
     '/hr': ['HR', 'ADMIN'],
-    '/approvals': ['MANAGER', 'HR', 'ADMIN'],
     '/department': ['MANAGER', 'HR', 'ADMIN'],
     '/admin': ['ADMIN'],
 };

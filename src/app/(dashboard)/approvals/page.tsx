@@ -23,6 +23,7 @@ import {
     Scissors,
     GraduationCap,
     RefreshCw,
+    UserCheck,
 } from 'lucide-react';
 
 // Leave type config
@@ -53,6 +54,8 @@ interface PendingRequest {
     hasMedicalCert: boolean;
     medicalCertificateFile: string | null;
     createdAt: string;
+    isDelegated?: boolean;
+    originalManagerName?: string | null;
 }
 
 export default function ApprovalsPage() {
@@ -239,6 +242,12 @@ export default function ApprovalsPage() {
                                                 <p className="text-sm text-gray-500">
                                                     {request.employeeId} • {request.department || 'ไม่ระบุ'}
                                                 </p>
+                                                {request.isDelegated && request.originalManagerName && (
+                                                    <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                                        <UserCheck className="w-3 h-3" />
+                                                        แทน {request.originalManagerName}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
 

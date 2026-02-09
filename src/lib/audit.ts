@@ -23,7 +23,9 @@ export type AuditAction =
     | 'UPDATE_COMPANY'
     | 'DELETE_COMPANY'
     | 'CREATE_WORKING_SATURDAY'
-    | 'DELETE_WORKING_SATURDAY';
+    | 'DELETE_WORKING_SATURDAY'
+    | 'CREATE_DELEGATE'
+    | 'CANCEL_DELEGATE';
 
 export type TargetTable =
     | 'Users'
@@ -33,7 +35,8 @@ export type TargetTable =
     | 'LeaveBalances'
     | 'SystemSettings'
     | 'Companies'
-    | 'WorkingSaturdays';
+    | 'WorkingSaturdays'
+    | 'DelegateApprovers';
 
 interface AuditLogParams {
     userId: number;
@@ -105,7 +108,9 @@ export function getActionDisplayName(action: AuditAction): string {
         'UPDATE_COMPANY': 'แก้ไขบริษัท',
         'DELETE_COMPANY': 'ลบบริษัท',
         'CREATE_WORKING_SATURDAY': 'เพิ่มวันเสาร์ทำงาน',
-        'DELETE_WORKING_SATURDAY': 'ลบวันเสาร์ทำงาน'
+        'DELETE_WORKING_SATURDAY': 'ลบวันเสาร์ทำงาน',
+        'CREATE_DELEGATE': 'มอบหมายผู้อนุมัติแทน',
+        'CANCEL_DELEGATE': 'ยกเลิกผู้อนุมัติแทน'
     };
     return names[action] || action;
 }

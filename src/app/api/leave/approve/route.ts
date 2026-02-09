@@ -4,6 +4,7 @@ import { getPool } from '@/lib/db';
 import { notifyLeaveApproval } from '@/lib/notifications';
 import { logAudit } from '@/lib/audit';
 import { sendLeaveApprovalEmail } from '@/lib/email';
+import { isDelegateOf, getDelegatingManagers } from '@/lib/delegate';
 
 /**
  * POST /api/leave/approve
@@ -23,8 +24,12 @@ export async function POST(request: NextRequest) {
         const approverId = Number(session.user.id);
         const userRole = session.user.role;
 
-        // Only managers and HR can approve
-        if (userRole !== 'MANAGER' && userRole !== 'HR' && userRole !== 'ADMIN') {
+        // Check if user is a delegate (any role can be a delegate)
+        const delegatingManagers = await getDelegatingManagers(approverId);
+        const isDelegate = delegatingManagers.length > 0;
+
+        // Only managers, HR, admin, or active delegates can approve
+        if (userRole !== 'MANAGER' && userRole !== 'HR' && userRole !== 'ADMIN' && !isDelegate) {
             return NextResponse.json(
                 { error: 'Permission denied' },
                 { status: 403 }
@@ -65,7 +70,8 @@ export async function POST(request: NextRequest) {
                        CONVERT(varchar, lr.startDatetime, 23) as startDate,
                        CONVERT(varchar, lr.endDatetime, 23) as endDate,
                        u.email as employeeEmail,
-                       u.firstName + ' ' + u.lastName as employeeName
+                       u.firstName + ' ' + u.lastName as employeeName,
+                       u.departmentHeadId
                 FROM LeaveRequests lr
                 JOIN Users u ON lr.userId = u.id
                 WHERE lr.id = @leaveId
@@ -79,6 +85,27 @@ export async function POST(request: NextRequest) {
         }
 
         const leave = leaveResult.recordset[0];
+
+        // Block self-approval
+        if (approverId === leave.userId) {
+            return NextResponse.json(
+                { error: 'ไม่สามารถอนุมัติใบลาของตัวเองได้' },
+                { status: 403 }
+            );
+        }
+
+        // Verify authority for non-HR/ADMIN
+        if (userRole !== 'HR' && userRole !== 'ADMIN') {
+            const isDirectManager = approverId === leave.departmentHeadId;
+            const isDelegateApprover = leave.departmentHeadId ? await isDelegateOf(approverId, leave.departmentHeadId) : false;
+
+            if (!isDirectManager && !isDelegateApprover) {
+                return NextResponse.json(
+                    { error: 'คุณไม่มีสิทธิ์อนุมัติใบลานี้' },
+                    { status: 403 }
+                );
+            }
+        }
 
         if (leave.status !== 'PENDING') {
             return NextResponse.json(

@@ -292,14 +292,14 @@ export async function POST(request: NextRequest) {
             const info = managerResult.recordset[0];
 
             if (info?.managerId) {
-                // 1. System Notification
+                // 1. System Notification to Manager
                 await notifyPendingApproval(
                     info.managerId,
                     info.employeeName,
                     leaveType
                 );
 
-                // 2. Email Notification (Magic Link)
+                // 2. Email Notification to Manager (Magic Link)
                 if (info.managerEmail) {
                     const { sendLeaveRequestEmail } = await import('@/lib/email');
                     await sendLeaveRequestEmail(
@@ -316,6 +316,54 @@ export async function POST(request: NextRequest) {
                         },
                         info.managerId
                     );
+                }
+
+                // 3. Notify Delegates (if any)
+                try {
+                    const { getActiveDelegates } = await import('@/lib/delegate');
+                    const delegateIds = await getActiveDelegates(info.managerId);
+
+                    for (const delegateId of delegateIds) {
+                        // Skip if delegate is the same person who is requesting leave
+                        if (delegateId === userId) continue;
+
+                        // Fetch delegate info
+                        const delegateResult = await pool.request()
+                            .input('delegateId', delegateId)
+                            .query(`SELECT firstName + ' ' + lastName as name, email FROM Users WHERE id = @delegateId AND isActive = 1`);
+
+                        if (delegateResult.recordset.length > 0) {
+                            const delegate = delegateResult.recordset[0];
+
+                            // System Notification
+                            await notifyPendingApproval(
+                                delegateId,
+                                `${info.employeeName} (แทน${info.managerName})`,
+                                leaveType
+                            );
+
+                            // Email with Magic Link
+                            if (delegate.email) {
+                                const { sendLeaveRequestEmail } = await import('@/lib/email');
+                                await sendLeaveRequestEmail(
+                                    delegate.email,
+                                    delegate.name || 'ผู้อนุมัติแทน',
+                                    info.employeeName,
+                                    {
+                                        id: newRequestId,
+                                        type: leaveType,
+                                        startDate: startDate,
+                                        endDate: endDate,
+                                        reason: reason,
+                                        days: usageAmount
+                                    },
+                                    delegateId
+                                );
+                            }
+                        }
+                    }
+                } catch (delegateError) {
+                    console.error('Error notifying delegates:', delegateError);
                 }
             }
         } catch (notifyError) {

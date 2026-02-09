@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 7 กุมภาพันธ์ 2026 (Documentation Sync)  
+> 📅 อัปเดตล่าสุด: 9 กุมภาพันธ์ 2026 (Delegate Approver Feature)  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -35,6 +35,7 @@
 - ✅ ยื่นคำขอลา (8 ประเภท)
 - ✅ ดูประวัติการลา + ยกเลิกใบลา
 - ✅ หัวหน้าอนุมัติ/ไม่อนุมัติ (UI + Magic Link Email)
+- ✅ มอบหมายผู้อนุมัติแทน (Delegate Approver)
 - ✅ HR จัดการพนักงาน
 - ✅ จัดการวันหยุด + วันเสาร์ทำงาน
 - ✅ System Security (Rate Limiting, Audit Logs)
@@ -97,7 +98,8 @@ hr-leave/
 │   │   │   ├── manager/              # หน้าสำหรับ Manager
 │   │   │   │   ├── overview/page.tsx  # ภาพรวมทีม
 │   │   │   │   ├── calendar/page.tsx  # ปฏิทินวันลาทีม
-│   │   │   │   └── team/page.tsx      # รายชื่อสมาชิกทีม
+│   │   │   │   ├── team/page.tsx      # รายชื่อสมาชิกทีม
+│   │   │   │   └── delegates/page.tsx # มอบหมายผู้อนุมัติแทน
 │   │   │   ├── hr/                    # หน้าสำหรับ HR
 │   │   │   │   ├── overview/page.tsx  # ภาพรวม HR
 │   │   │   │   ├── employees/page.tsx # จัดการพนักงาน
@@ -119,6 +121,7 @@ hr-leave/
 │   │   │   │   ├── [...nextauth]/route.ts
 │   │   │   │   ├── verify/route.ts
 │   │   │   │   ├── mode/route.ts      # Auth mode API
+│   │   │   │   ├── delegate-check/route.ts # Delegate status check
 │   │   │   │   └── log/route.ts       # Auth logging
 │   │   │   ├── leave/                 # Leave APIs
 │   │   │   ├── hr/                    # HR APIs (21 routes)
@@ -155,6 +158,7 @@ hr-leave/
 │   │   ├── date-utils.ts              # Timezone, Working days calc
 │   │   ├── leave-utils.ts             # Leave duration formatting
 │   │   ├── audit.ts                   # Audit logging helper
+│   │   ├── delegate.ts                # Delegate approver helpers
 │   │   ├── email.ts                   # Email sending (SMTP)
 │   │   ├── tokens.ts                  # JWT token for Magic Link
 │   │   ├── notifications.ts           # Notification helper
@@ -339,7 +343,7 @@ sequenceDiagram
 | Route | Allowed Roles |
 |-------|---------------|
 | `/hr/*` | HR, ADMIN, isHRStaff |
-| `/approvals/*` | MANAGER, HR, ADMIN |
+| `/approvals/*` | All authenticated (API checks delegate authority) |
 | `/department/*` | MANAGER, HR, ADMIN |
 | `/admin/*` | ADMIN only |
 
@@ -474,8 +478,19 @@ sequenceDiagram
   - **Full-day/Half-day หลายวัน**: อนุญาต แต่หักวันหยุดออกจากการคำนวณ
   - API: เพิ่ม date range support ใน `/api/holidays`
 
+### ✅ Phase 8: Delegate Approver (9 ก.พ. 2026)
+- [x] **Delegate Helper** (`lib/delegate.ts`) - 4 helpers (getActiveDelegates, getDelegatingManagers, isDelegateOf, hasActiveDelegateRole)
+- [x] **Delegate CRUD API** (`/api/manager/delegates`) - GET/POST/DELETE + validation + audit
+- [x] **Delegate Search API** (`/api/manager/delegates/search`) - ค้นหา user สำหรับมอบหมาย
+- [x] **Delegate Check API** (`/api/auth/delegate-check`) - เช็ค delegate status สำหรับ sidebar
+- [x] **Pending Route** - Delegate เห็นใบลาทีมที่ได้รับมอบหมาย + badge `isDelegated`
+- [x] **Approve Route** - บล็อก self-approval + ตรวจ delegate authority
+- [x] **Request Route** - แจ้ง delegate เมื่อมีใบลาใหม่ (notification + Magic Link)
+- [x] **Delegates Page** (`/manager/delegates`) - สร้าง/ดู/ยกเลิก delegate + history
+- [x] **Sidebar** - เมนู "มอบหมายผู้แทน" (Manager) + dynamic "อนุมัติ (แทน)" (EMPLOYEE delegate)
+- [x] **Approvals Badge** - แสดง "แทน ManagerName" สีแอมเบอร์
+
 ### 🔲 สิ่งที่ยังรอ (Remaining)
-- [ ] Delegate Approver - มอบหมายคนแทน (มี Table `DelegateApprovers` แล้ว ยังขาด UI/API)
 - [ ] LINE Notify Integration (optional)
 - [ ] Calendar iCal Export (optional)
 - [ ] Final End-to-End Testing
@@ -527,10 +542,26 @@ sequenceDiagram
 | `app/action/[action]/page.tsx` | UI หน้า Approve/Reject |
 
 **Magic Link Flow:**
-1. พนักงานขอลา → ส่งอีเมลหา Manager (Magic Link)
-2. Manager กดปุ่ม Approve/Reject ในอีเมล
+1. พนักงานขอลา → ส่งอีเมลหา Manager + Delegate (Magic Link)
+2. Manager/Delegate กดปุ่ม Approve/Reject ในอีเมล
 3. ระบบตรวจสอบ token และอัพเดทสถานะ
 4. **ส่งอีเมลแจ้งพนักงานผลการอนุมัติ** (✅ แสดงสถานะสีเขียว/แดง + เหตุผลถ้าปฏิเสธ)
+
+### 👥 Delegate Approver System
+
+| File | Purpose |
+|------|---------|
+| `lib/delegate.ts` | Helper functions (4 ฟังก์ชัน) |
+| `api/manager/delegates/route.ts` | CRUD API (GET/POST/DELETE) + validation + audit |
+| `api/manager/delegates/search/route.ts` | ค้นหา user สำหรับมอบหมาย |
+| `api/auth/delegate-check/route.ts` | เช็ค delegate status สำหรับ dynamic sidebar |
+| `app/(dashboard)/manager/delegates/page.tsx` | UI จัดการผู้แทน |
+
+**Delegate Flow:**
+1. Manager สร้าง delegate → กำหนดคนแทน + ช่วงวันที่
+2. พนักงานขอลา → แจ้ง Manager + Delegate ทั้งคู่
+3. Delegate เห็นใบลาในหน้า Approvals พร้อม badge "แทน ManagerName"
+4. Delegate อนุมัติ/ไม่อนุมัติได้ (ยกเว้นใบลาตัวเอง)
 
 **Environment Variables:**
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`

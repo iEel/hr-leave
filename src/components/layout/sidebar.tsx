@@ -23,6 +23,7 @@ import {
     ChevronDown,
     CalendarClock,
     HelpCircle,
+    UserCheck,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { UserRole } from '@/types';
@@ -54,6 +55,7 @@ const managerNavItems: NavItem[] = [
     { href: '/manager/overview', label: 'ภาพรวมแผนก', icon: <CalendarDays className="w-5 h-5" />, roles: [UserRole.MANAGER, UserRole.HR, UserRole.ADMIN] },
     { href: '/manager/team', label: 'สมาชิกในทีม', icon: <Users className="w-5 h-5" />, roles: [UserRole.MANAGER, UserRole.HR, UserRole.ADMIN] },
     { href: '/manager/calendar', label: 'ปฏิทินทีม', icon: <CalendarClock className="w-5 h-5" />, roles: [UserRole.MANAGER, UserRole.HR, UserRole.ADMIN] },
+    { href: '/manager/delegates', label: 'มอบหมายผู้แทน', icon: <UserCheck className="w-5 h-5" />, roles: [UserRole.MANAGER] },
 ];
 
 const hrNavItems: NavItem[] = [
@@ -84,6 +86,8 @@ export function Sidebar() {
     const [isManagerExpanded, setIsManagerExpanded] = useState(
         pathname.startsWith('/approvals') || pathname.startsWith('/manager')
     );
+    const [isDelegateExpanded, setIsDelegateExpanded] = useState(pathname.startsWith('/approvals'));
+    const [isDelegate, setIsDelegate] = useState(false);
 
     // Fetch profile for name display
     const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -103,6 +107,24 @@ export function Sidebar() {
             fetchProfile();
         }
     }, [session?.user?.id]);
+
+    // Check delegate status for dynamic menu
+    useEffect(() => {
+        const checkDelegate = async () => {
+            try {
+                const res = await fetch('/api/auth/delegate-check');
+                const data = await res.json();
+                if (data.success) {
+                    setIsDelegate(data.isDelegate);
+                }
+            } catch (error) {
+                console.error('Error checking delegate status:', error);
+            }
+        };
+        if (session?.user?.id && session?.user?.role !== 'MANAGER' && session?.user?.role !== 'HR' && session?.user?.role !== 'ADMIN') {
+            checkDelegate();
+        }
+    }, [session?.user?.id, session?.user?.role]);
 
     const userRole = session?.user?.role as UserRole;
     const isHRStaff = (session?.user as any)?.isHRStaff === true;
@@ -170,6 +192,24 @@ export function Sidebar() {
                                     .map((item) => (
                                         <NavLink key={item.href} item={item} />
                                     ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Delegate Section - for non-manager users who are delegates */}
+                {isDelegate && userRole !== UserRole.MANAGER && userRole !== UserRole.HR && userRole !== UserRole.ADMIN && (
+                    <div className="pt-4">
+                        <button
+                            onClick={() => setIsDelegateExpanded(!isDelegateExpanded)}
+                            className="flex items-center justify-between w-full px-4 py-2 text-sm font-semibold text-amber-600 dark:text-amber-400"
+                        >
+                            <span>ผู้อนุมัติแทน</span>
+                            <ChevronDown className={`w-4 h-4 transition-transform ${isDelegateExpanded ? 'rotate-180' : ''}`} />
+                        </button>
+                        {isDelegateExpanded && (
+                            <div className="space-y-1 mt-1">
+                                <NavLink item={{ href: '/approvals', label: 'อนุมัติ (แทน)', icon: <CheckSquare className="w-5 h-5" /> }} />
                             </div>
                         )}
                     </div>
