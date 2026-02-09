@@ -50,6 +50,7 @@ const LEAVE_TYPE_COLORS: Record<string, { bg: string; text: string; border: stri
     ORDINATION: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', border: 'border-yellow-300' },
     STERILIZATION: { bg: 'bg-teal-100 dark:bg-teal-900/30', text: 'text-teal-700 dark:text-teal-300', border: 'border-teal-300' },
     TRAINING: { bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-700 dark:text-indigo-300', border: 'border-indigo-300' },
+    OTHER: { bg: 'bg-slate-100 dark:bg-slate-900/30', text: 'text-slate-700 dark:text-slate-300', border: 'border-slate-300' },
 };
 
 const LEAVE_TYPE_LABELS: Record<string, string> = {
@@ -61,6 +62,7 @@ const LEAVE_TYPE_LABELS: Record<string, string> = {
     ORDINATION: 'ลาบวช',
     STERILIZATION: 'ลาทำหมัน',
     TRAINING: 'ลาฝึกอบรม',
+    OTHER: 'อื่นๆ',
 };
 
 const MONTH_NAMES = [
@@ -219,7 +221,7 @@ export default function TeamCalendarPage() {
 
             {/* Legend */}
             <div className="flex flex-wrap gap-3 mb-4">
-                {Object.entries(LEAVE_TYPE_LABELS).slice(0, 4).map(([type, label]) => {
+                {Object.entries(LEAVE_TYPE_LABELS).map(([type, label]) => {
                     const colors = LEAVE_TYPE_COLORS[type];
                     return (
                         <div key={type} className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${colors.bg} ${colors.text} text-xs font-medium`}>
@@ -266,8 +268,8 @@ export default function TeamCalendarPage() {
                                     {/* Date Number */}
                                     <div className={`flex items-center justify-between mb-1`}>
                                         <span className={`w-7 h-7 flex items-center justify-center rounded-full text-sm font-medium ${isToday(day) ? 'bg-orange-500 text-white' :
-                                                isWeekend(day) ? (idx % 7 === 0 ? 'text-red-500' : 'text-blue-500') :
-                                                    'text-gray-700 dark:text-gray-300'
+                                            isWeekend(day) ? (idx % 7 === 0 ? 'text-red-500' : 'text-blue-500') :
+                                                'text-gray-700 dark:text-gray-300'
                                             }`}>
                                             {day}
                                         </span>
