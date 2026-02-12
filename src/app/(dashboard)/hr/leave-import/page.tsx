@@ -53,17 +53,15 @@ export default function LeaveImportPage() {
     const [rows, setRows] = useState<ImportRow[]>([]);
     const [fileName, setFileName] = useState('');
     const [importing, setImporting] = useState(false);
+    const [dragging, setDragging] = useState(false);
     const [result, setResult] = useState<{
         success: boolean;
         stats: { total: number; success: number; errors: number; skipped: number };
         errorDetails: { row: number; employeeId: string; message: string }[];
     } | null>(null);
 
-    // Parse Excel file
-    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
+    // Process Excel file
+    const processFile = (file: File) => {
         setFileName(file.name);
         setResult(null);
 
@@ -117,6 +115,38 @@ export default function LeaveImportPage() {
             }
         };
         reader.readAsArrayBuffer(file);
+    };
+
+    // Handle file input change
+    const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        processFile(file);
+    };
+
+    // Handle drag & drop
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragging(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragging(false);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragging(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+            processFile(file);
+        } else {
+            alert('กรุณาใช้ไฟล์ .xlsx หรือ .xls เท่านั้น');
+        }
     };
 
     // Parse Excel date (serial number or string)
@@ -256,11 +286,17 @@ export default function LeaveImportPage() {
                 <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 p-12">
                     <label
                         htmlFor="excelUpload"
-                        className="block border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl p-12 text-center cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/10 transition-colors"
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        className={`block border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-colors ${dragging
+                                ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                                : 'border-gray-300 dark:border-gray-600 hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/10'
+                            }`}
                     >
-                        <Upload className="w-16 h-16 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
+                        <Upload className={`w-16 h-16 mx-auto mb-4 ${dragging ? 'text-emerald-500' : 'text-gray-300 dark:text-gray-600'}`} />
                         <p className="text-lg font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                            ลากไฟล์มาวาง หรือคลิกเพื่อเลือก
+                            {dragging ? 'ปล่อยไฟล์ที่นี่' : 'ลากไฟล์มาวาง หรือคลิกเพื่อเลือก'}
                         </p>
                         <p className="text-sm text-gray-400">
                             รองรับไฟล์ .xlsx (Excel) สูงสุด 500 รายการ

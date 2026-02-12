@@ -139,20 +139,19 @@ export async function POST(request: NextRequest) {
                     .input('endDatetime', endDateStr)
                     .input('usageAmount', days)
                     .input('reason', row.reason || 'นำเข้าจากระบบเดิม')
-                    .input('approvedBy', hrUserId)
                     .query(`
                         INSERT INTO LeaveRequests (
                             userId, leaveType, startDatetime, endDatetime,
                             isHourly, startTime, endTime, timeSlot,
                             usageAmount, reason, hasMedicalCertificate, medicalCertificateFile,
-                            status, approvedBy, approvedAt
+                            status
                         )
                         OUTPUT INSERTED.id
                         VALUES (
                             @userId, @leaveType, @startDatetime, @endDatetime,
                             0, NULL, NULL, 'FULL_DAY',
                             @usageAmount, @reason, 0, NULL,
-                            'APPROVED', @approvedBy, GETDATE()
+                            'APPROVED'
                         )
                     `);
 
