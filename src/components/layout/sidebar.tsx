@@ -24,6 +24,7 @@ import {
     CalendarClock,
     HelpCircle,
     UserCheck,
+    FileSpreadsheet,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { UserRole } from '@/types';
@@ -69,6 +70,7 @@ const hrNavItems: NavItem[] = [
     { href: '/hr/year-end', label: 'ประมวลผลสิ้นปี', icon: <CalendarClock className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
     { href: '/hr/analytics', label: 'วิเคราะห์ข้อมูล', icon: <BarChart3 className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
     { href: '/hr/reports', label: 'รายงาน', icon: <FileText className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
+    { href: '/hr/leave-import', label: 'นำเข้าวันลา', icon: <FileSpreadsheet className="w-5 h-5" />, roles: [UserRole.HR, UserRole.ADMIN] },
 ];
 
 const adminNavItems: NavItem[] = [
