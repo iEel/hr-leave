@@ -133,6 +133,31 @@ export async function POST(request: NextRequest) {
                     continue;
                 }
 
+                // --- Check leave balance (skip for OTHER type) ---
+                if (row.leaveType !== 'OTHER') {
+                    const balanceResult = await pool.request()
+                        .input('userId', userId)
+                        .input('leaveType', row.leaveType)
+                        .input('year', leaveYear)
+                        .query(`
+                            SELECT remaining FROM LeaveBalances
+                            WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                        `);
+
+                    if (balanceResult.recordset.length === 0) {
+                        errors.push({ row: rowNum, employeeId: row.employeeId, message: `ไม่พบข้อมูลวันลาประเภท ${row.leaveType} ปี ${leaveYear}` });
+                        errorCount++;
+                        continue;
+                    }
+
+                    const remaining = balanceResult.recordset[0].remaining;
+                    if (remaining < days) {
+                        errors.push({ row: rowNum, employeeId: row.employeeId, message: `วันลาไม่เพียงพอ (เหลือ ${remaining} วัน, ต้องการ ${days} วัน)` });
+                        errorCount++;
+                        continue;
+                    }
+                }
+
                 // --- Determine hourly vs full day ---
                 const isHourly = row.startTime && row.endTime ? 1 : 0;
                 const timeSlot = isHourly ? 'HOURLY' : 'FULL_DAY';
