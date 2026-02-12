@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 9 กุมภาพันธ์ 2026 (Delegate Approver Feature)  
+> 📅 อัปเดตล่าสุด: 12 กุมภาพันธ์ 2026 (Bulk Leave Import + Hourly Leave)  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -32,7 +32,8 @@
 ### Features หลัก:
 - ✅ Login ด้วยรหัสพนักงาน + Biometric (WebAuthn/Passkey)
 - ✅ Dashboard แสดงยอดวันลาคงเหลือ
-- ✅ ยื่นคำขอลา (8 ประเภท)
+- ✅ ยื่นคำขอลา (9 ประเภท รวม OTHER)
+- ✅ นำเข้าวันลาจำนวนมาก (Bulk Leave Import)
 - ✅ ดูประวัติการลา + ยกเลิกใบลา
 - ✅ หัวหน้าอนุมัติ/ไม่อนุมัติ (UI + Magic Link Email)
 - ✅ มอบหมายผู้อนุมัติแทน (Delegate Approver)
@@ -60,7 +61,7 @@
 | Date Utils | date-fns, date-fns-tz |
 | User Guide | driver.js (Interactive Tour) |
 | Charts | Recharts |
-| Excel | xlsx (ติดตั้งแล้ว ยังไม่ใช้) |
+| Excel | xlsx (Bulk Leave Import, Template Download) |
 
 ---
 
@@ -110,7 +111,8 @@ hr-leave/
 │   │   │   │   ├── work-schedule/     # จัดการตารางเวลาทำงาน
 │   │   │   │   ├── year-end/page.tsx  # ประมวลผลสิ้นปี
 │   │   │   │   ├── analytics/page.tsx # กราฟวิเคราะห์สถิติ
-│   │   │   │   └── reports/page.tsx   # รายงาน
+│   │   │   │   ├── reports/page.tsx   # รายงาน
+│   │   │   │   └── leave-import/page.tsx # นำเข้าวันลา (Bulk Import)
 │   │   │   └── admin/                 # หน้าสำหรับ Admin
 │   │   │       ├── audit-logs/page.tsx     # Audit Logs
 │   │   │       ├── auth-settings/page.tsx  # ตั้งค่า Auth Mode
@@ -277,7 +279,10 @@ npm run dev
 - `isHRStaff`: BIT - Flag แยกสิทธิ์ HR (1=เข้าถึงเมนู HR/Admin, 0=ตาม Role ปกติ)
 
 ### Key Columns ใน LeaveRequests:
-- `timeSlot`: FULL_DAY, HALF_MORNING, HALF_AFTERNOON
+- `timeSlot`: FULL_DAY, HALF_MORNING, HALF_AFTERNOON, HOURLY
+- `isHourly`: BIT - ลาระดับชั่วโมง (1=ชั่วโมง, 0=เต็มวัน)
+- `startTime`: VARCHAR - เวลาเริ่ม (HH:MM) สำหรับลารายชั่วโมง
+- `endTime`: VARCHAR - เวลาสิ้นสุด (HH:MM) สำหรับลารายชั่วโมง
 - `usageAmount`: จำนวนวันสุทธิ (หลังหักวันหยุด)
 - `status`: PENDING, APPROVED, REJECTED, CANCELLED
 - `rejectionReason`: เหตุผลที่ไม่อนุมัติ
@@ -490,6 +495,28 @@ sequenceDiagram
 - [x] **Sidebar** - เมนู "มอบหมายผู้แทน" (Manager) + dynamic "อนุมัติ (แทน)" (EMPLOYEE delegate)
 - [x] **Approvals Badge** - แสดง "แทน ManagerName" สีแอมเบอร์
 
+### ✅ Phase 9: Bulk Leave Import (12 ก.พ. 2026)
+- [x] **API** (`/api/hr/leave-import`) - POST นำเข้าวันลาจำนวนมาก
+  - Validate: employeeId, leaveType, dates, days
+  - ตรวจใบลาซ้ำ (skip ถ้าซ้ำ)
+  - ตรวจ Balance ก่อน import (ป้องกันวันลาติดลบ)
+  - Insert เป็น APPROVED + หัก LeaveBalances (ยกเว้น OTHER)
+  - รองรับลาระดับชั่วโมง (startTime/endTime → HOURLY)
+- [x] **Frontend** (`/hr/leave-import`)
+  - Drag & Drop + Click-to-select upload (.xlsx/.xls)
+  - Client-side parsing ด้วย xlsx library
+  - Preview table พร้อม validation status (✅/❌)
+  - Template download พร้อมตัวอย่างข้อมูล (รวมลาชั่วโมง)
+  - คำแนะนำการใช้งานละเอียด (ขั้นตอน, ตารางคอลัมน์, ประเภทลา, หมายเหตุ)
+  - Import summary (สำเร็จ/ข้อผิดพลาด/ข้าม)
+- [x] **Sidebar** - เมนู "นำเข้าวันลา" (FileSpreadsheet icon) ใน HR section
+- [x] **Access Control** - HR/ADMIN/isHRStaff (middleware + API)
+
+### ✅ Bug Fixes (12 ก.พ. 2026)
+- [x] **Interactive User Guide Loop** - แก้ useTour hook ที่ tour รันซ้ำตลอด
+  - สาเหตุ: useEffect dependency `[session]` เปลี่ยน reference ทุก re-render
+  - แก้ไข: ใช้ `session?.user?.role` + `hasStartedRef` + `useCallback`
+
 ### 🔲 สิ่งที่ยังรอ (Remaining)
 - [ ] LINE Notify Integration (optional)
 - [ ] Calendar iCal Export (optional)
@@ -531,6 +558,13 @@ sequenceDiagram
 | `api/hr/year-end/preview/route.ts` | Preview ประมวลผลสิ้นปี |
 | `api/hr/year-end/execute/route.ts` | Execute + Carry-over |
 | `app/(dashboard)/hr/year-end/page.tsx` | UI หน้าประมวลผลสิ้นปี |
+
+### 📥 Bulk Leave Import
+
+| File | Purpose |
+|------|---------|
+| `api/hr/leave-import/route.ts` | API นำเข้าวันลาจำนวนมาก (validate, balance check, insert) |
+| `app/(dashboard)/hr/leave-import/page.tsx` | UI อัพโหลด Excel, Preview, Import |
 
 ### 📧 Email Approval System
 
@@ -633,6 +667,7 @@ sequenceDiagram
 | `/hr/year-end` | `app/(dashboard)/hr/year-end/page.tsx` | ประมวลผลสิ้นปี |
 | `/hr/analytics` | `app/(dashboard)/hr/analytics/page.tsx` | วิเคราะห์สถิติ |
 | `/hr/reports` | `app/(dashboard)/hr/reports/page.tsx` | รายงาน |
+| `/hr/leave-import` | `app/(dashboard)/hr/leave-import/page.tsx` | นำเข้าวันลา (Bulk Import) |
 | `/admin/audit-logs` | `app/(dashboard)/admin/audit-logs/page.tsx` | Audit Logs |
 | `/admin/auth-settings` | `app/(dashboard)/admin/auth-settings/page.tsx` | ตั้งค่า Auth Mode |
 | `/admin/rate-limit` | `app/(dashboard)/admin/rate-limit/page.tsx` | Rate Limiting |
@@ -642,7 +677,7 @@ sequenceDiagram
 
 ## 10. Business Rules
 
-### ประเภทการลา (8 ประเภท):
+### ประเภทการลา (9 ประเภท):
 | Type | ชื่อ | สิทธิ์/ปี | เงื่อนไข |
 |------|------|----------|----------|
 | VACATION | พักร้อน | 6 วัน | ทำงานครบ 1 ปีก่อน |
@@ -653,6 +688,7 @@ sequenceDiagram
 | ORDINATION | ลาบวช | 30 วัน | ทำงานครบ 2 ปีขึ้นไป |
 | STERILIZATION | ทำหมัน | 30 วัน | ต้องมีใบแพทย์ |
 | TRAINING | ฝึกอบรม | 30 วัน | - |
+| OTHER | อื่นๆ | ไม่จำกัด | ไม่หักโควตา |
 
 ### Approval Flow:
 1. พนักงานยื่นใบลา → สถานะ `PENDING`
