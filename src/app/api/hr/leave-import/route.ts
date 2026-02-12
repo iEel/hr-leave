@@ -15,6 +15,8 @@ interface ImportRow {
     endDate: string;
     days: number;
     reason: string;
+    startTime?: string;
+    endTime?: string;
 }
 
 /**
@@ -131,12 +133,22 @@ export async function POST(request: NextRequest) {
                     continue;
                 }
 
+                // --- Determine hourly vs full day ---
+                const isHourly = row.startTime && row.endTime ? 1 : 0;
+                const timeSlot = isHourly ? 'HOURLY' : 'FULL_DAY';
+                const startTime = isHourly ? row.startTime! : null;
+                const endTime = isHourly ? row.endTime! : null;
+
                 // --- Insert leave request (status = APPROVED) ---
                 const insertResult = await pool.request()
                     .input('userId', userId)
                     .input('leaveType', row.leaveType)
                     .input('startDatetime', startDateStr)
                     .input('endDatetime', endDateStr)
+                    .input('isHourly', isHourly)
+                    .input('startTime', startTime)
+                    .input('endTime', endTime)
+                    .input('timeSlot', timeSlot)
                     .input('usageAmount', days)
                     .input('reason', row.reason || 'นำเข้าจากระบบเดิม')
                     .query(`
@@ -149,7 +161,7 @@ export async function POST(request: NextRequest) {
                         OUTPUT INSERTED.id
                         VALUES (
                             @userId, @leaveType, @startDatetime, @endDatetime,
-                            0, NULL, NULL, 'FULL_DAY',
+                            @isHourly, @startTime, @endTime, @timeSlot,
                             @usageAmount, @reason, 0, NULL,
                             'APPROVED'
                         )

@@ -42,6 +42,8 @@ interface ImportRow {
     endDate: string;
     days: number;
     reason: string;
+    startTime: string;
+    endTime: string;
     valid: boolean;
     error?: string;
 }
@@ -80,6 +82,8 @@ export default function LeaveImportPage() {
                     const endDateRaw = row['วันที่สิ้นสุด'] || row['endDate'] || '';
                     const days = Number(row['จำนวนวัน'] || row['days'] || 0);
                     const reason = String(row['เหตุผล'] || row['reason'] || '');
+                    const startTime = String(row['เวลาเริ่ม'] || row['startTime'] || '').trim();
+                    const endTime = String(row['เวลาสิ้นสุด'] || row['endTime'] || '').trim();
 
                     // Parse dates (handle Excel serial numbers and string formats)
                     const startDate = parseExcelDate(startDateRaw);
@@ -106,7 +110,7 @@ export default function LeaveImportPage() {
                         error = 'จำนวนวันต้องมากกว่า 0';
                     }
 
-                    return { employeeId, leaveType, startDate, endDate, days, reason, valid, error };
+                    return { employeeId, leaveType, startDate, endDate, days, reason, startTime, endTime, valid, error };
                 });
 
                 setRows(parsed);
@@ -181,12 +185,13 @@ export default function LeaveImportPage() {
     // Download template
     const downloadTemplate = () => {
         const templateData = [
-            { 'รหัสพนักงาน': 'EMP001', 'ประเภทลา': 'VACATION', 'วันที่เริ่ม': '2026-01-15', 'วันที่สิ้นสุด': '2026-01-16', 'จำนวนวัน': 1, 'เหตุผล': 'พักร้อน' },
-            { 'รหัสพนักงาน': 'EMP002', 'ประเภทลา': 'SICK', 'วันที่เริ่ม': '2026-01-20', 'วันที่สิ้นสุด': '2026-01-20', 'จำนวนวัน': 1, 'เหตุผล': 'ป่วย' },
+            { 'รหัสพนักงาน': 'EMP001', 'ประเภทลา': 'VACATION', 'วันที่เริ่ม': '2026-01-15', 'วันที่สิ้นสุด': '2026-01-16', 'จำนวนวัน': 1, 'เวลาเริ่ม': '', 'เวลาสิ้นสุด': '', 'เหตุผล': 'พักร้อน' },
+            { 'รหัสพนักงาน': 'EMP002', 'ประเภทลา': 'SICK', 'วันที่เริ่ม': '2026-01-20', 'วันที่สิ้นสุด': '2026-01-20', 'จำนวนวัน': 1, 'เวลาเริ่ม': '', 'เวลาสิ้นสุด': '', 'เหตุผล': 'ป่วย' },
+            { 'รหัสพนักงาน': 'EMP003', 'ประเภทลา': 'PERSONAL', 'วันที่เริ่ม': '2026-01-22', 'วันที่สิ้นสุด': '2026-01-22', 'จำนวนวัน': 0.25, 'เวลาเริ่ม': '09:00', 'เวลาสิ้นสุด': '11:00', 'เหตุผล': 'ธุระส่วนตัว' },
         ];
         const ws = XLSX.utils.json_to_sheet(templateData);
         ws['!cols'] = [
-            { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 25 }
+            { wch: 15 }, { wch: 15 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 25 }
         ];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, 'LeaveImport');
@@ -214,6 +219,8 @@ export default function LeaveImportPage() {
                         endDate: r.endDate,
                         days: r.days,
                         reason: r.reason,
+                        startTime: r.startTime || undefined,
+                        endTime: r.endTime || undefined,
                     }))
                 }),
             });
@@ -259,25 +266,119 @@ export default function LeaveImportPage() {
                 </div>
                 <button
                     onClick={downloadTemplate}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold shadow-md hover:shadow-lg hover:from-emerald-400 hover:to-teal-500 hover:scale-105 active:scale-95 transition-all cursor-pointer"
                 >
-                    <Download className="w-4 h-4" />
+                    <Download className="w-5 h-5" />
                     ดาวน์โหลด Template
                 </button>
             </div>
 
             {/* Info */}
-            <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl flex items-start gap-3">
-                <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                <div className="text-sm text-blue-700 dark:text-blue-300">
-                    <p className="font-medium mb-1">วิธีใช้งาน</p>
-                    <ul className="space-y-0.5 text-blue-600 dark:text-blue-400">
-                        <li>1. ดาวน์โหลด Template แล้วกรอกข้อมูล</li>
-                        <li>2. ประเภทลา: VACATION, SICK, PERSONAL, MATERNITY, MILITARY, ORDINATION, STERILIZATION, TRAINING, OTHER</li>
-                        <li>3. วันที่รูปแบบ: YYYY-MM-DD (เช่น 2026-01-15)</li>
-                        <li>4. อัพโหลดไฟล์ → ตรวจสอบ Preview → กดนำเข้า</li>
-                        <li>5. ใบลาจะถูกบันทึกเป็นสถานะ <strong>อนุมัติแล้ว</strong> พร้อมหักวันลาคงเหลือ</li>
-                    </ul>
+            <div className="mb-6 space-y-4">
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl flex items-start gap-3">
+                    <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-blue-700 dark:text-blue-300">
+                        <p className="font-medium mb-2">ขั้นตอนการใช้งาน</p>
+                        <ol className="space-y-1 text-blue-600 dark:text-blue-400 list-decimal list-inside">
+                            <li>กดปุ่ม <strong>&quot;ดาวน์โหลด Template&quot;</strong> เพื่อดาวน์โหลดไฟล์ตัวอย่าง Excel</li>
+                            <li>เปิดไฟล์ Template แล้วกรอกข้อมูลวันลาตามคอลัมน์ที่กำหนด</li>
+                            <li>อัพโหลดไฟล์ Excel โดย <strong>ลากไฟล์มาวาง</strong> หรือ <strong>คลิกเพื่อเลือก</strong></li>
+                            <li>ตรวจสอบข้อมูลในตาราง Preview — แถวที่ ✅ ถูกต้อง / ❌ มีข้อผิดพลาด</li>
+                            <li>กดปุ่ม <strong>&quot;นำเข้า&quot;</strong> เพื่อบันทึกข้อมูล (เฉพาะแถวที่ถูกต้องเท่านั้น)</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl">
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">📋 คอลัมน์ใน Excel</p>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                            <thead>
+                                <tr className="border-b border-gray-200 dark:border-gray-600">
+                                    <th className="py-1.5 px-2 text-left text-gray-500 font-semibold">คอลัมน์</th>
+                                    <th className="py-1.5 px-2 text-left text-gray-500 font-semibold">จำเป็น</th>
+                                    <th className="py-1.5 px-2 text-left text-gray-500 font-semibold">คำอธิบาย</th>
+                                    <th className="py-1.5 px-2 text-left text-gray-500 font-semibold">ตัวอย่าง</th>
+                                </tr>
+                            </thead>
+                            <tbody className="text-gray-600 dark:text-gray-400">
+                                <tr className="border-b border-gray-100 dark:border-gray-700">
+                                    <td className="py-1.5 px-2 font-medium text-gray-800 dark:text-gray-200">รหัสพนักงาน</td>
+                                    <td className="py-1.5 px-2"><span className="text-red-500">✱</span></td>
+                                    <td className="py-1.5 px-2">Employee ID ที่มีอยู่ในระบบ</td>
+                                    <td className="py-1.5 px-2 font-mono">EMP001</td>
+                                </tr>
+                                <tr className="border-b border-gray-100 dark:border-gray-700">
+                                    <td className="py-1.5 px-2 font-medium text-gray-800 dark:text-gray-200">ประเภทลา</td>
+                                    <td className="py-1.5 px-2"><span className="text-red-500">✱</span></td>
+                                    <td className="py-1.5 px-2">รหัสประเภทลา (ภาษาอังกฤษ ตัวพิมพ์ใหญ่)</td>
+                                    <td className="py-1.5 px-2 font-mono">VACATION</td>
+                                </tr>
+                                <tr className="border-b border-gray-100 dark:border-gray-700">
+                                    <td className="py-1.5 px-2 font-medium text-gray-800 dark:text-gray-200">วันที่เริ่ม</td>
+                                    <td className="py-1.5 px-2"><span className="text-red-500">✱</span></td>
+                                    <td className="py-1.5 px-2">รูปแบบ YYYY-MM-DD หรือ DD/MM/YYYY</td>
+                                    <td className="py-1.5 px-2 font-mono">2026-01-15</td>
+                                </tr>
+                                <tr className="border-b border-gray-100 dark:border-gray-700">
+                                    <td className="py-1.5 px-2 font-medium text-gray-800 dark:text-gray-200">วันที่สิ้นสุด</td>
+                                    <td className="py-1.5 px-2"><span className="text-red-500">✱</span></td>
+                                    <td className="py-1.5 px-2">ต้องมากกว่าหรือเท่ากับวันที่เริ่ม</td>
+                                    <td className="py-1.5 px-2 font-mono">2026-01-16</td>
+                                </tr>
+                                <tr className="border-b border-gray-100 dark:border-gray-700">
+                                    <td className="py-1.5 px-2 font-medium text-gray-800 dark:text-gray-200">จำนวนวัน</td>
+                                    <td className="py-1.5 px-2"><span className="text-red-500">✱</span></td>
+                                    <td className="py-1.5 px-2">จำนวนวันลา (รองรับทศนิยม เช่น 0.5, 0.25)</td>
+                                    <td className="py-1.5 px-2 font-mono">1</td>
+                                </tr>
+                                <tr className="border-b border-gray-100 dark:border-gray-700">
+                                    <td className="py-1.5 px-2 font-medium text-gray-800 dark:text-gray-200">เวลาเริ่ม</td>
+                                    <td className="py-1.5 px-2 text-gray-400">—</td>
+                                    <td className="py-1.5 px-2">เฉพาะลาเป็นชั่วโมง รูปแบบ HH:MM</td>
+                                    <td className="py-1.5 px-2 font-mono">09:00</td>
+                                </tr>
+                                <tr className="border-b border-gray-100 dark:border-gray-700">
+                                    <td className="py-1.5 px-2 font-medium text-gray-800 dark:text-gray-200">เวลาสิ้นสุด</td>
+                                    <td className="py-1.5 px-2 text-gray-400">—</td>
+                                    <td className="py-1.5 px-2">เฉพาะลาเป็นชั่วโมง รูปแบบ HH:MM</td>
+                                    <td className="py-1.5 px-2 font-mono">11:00</td>
+                                </tr>
+                                <tr>
+                                    <td className="py-1.5 px-2 font-medium text-gray-800 dark:text-gray-200">เหตุผล</td>
+                                    <td className="py-1.5 px-2 text-gray-400">—</td>
+                                    <td className="py-1.5 px-2">ระบุเหตุผลการลา (ถ้าไม่กรอกจะใส่ &quot;นำเข้าจากระบบเดิม&quot;)</td>
+                                    <td className="py-1.5 px-2">พักร้อนประจำปี</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl">
+                        <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300 mb-2">📌 ประเภทลาที่รองรับ</p>
+                        <div className="grid grid-cols-2 gap-1 text-xs">
+                            {Object.entries(LEAVE_TYPE_LABELS).map(([key, label]) => (
+                                <div key={key} className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                                    <span className="font-mono bg-emerald-100 dark:bg-emerald-900/40 px-1.5 py-0.5 rounded">{key}</span>
+                                    <span className="text-gray-500">= {label}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <div className="p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+                        <p className="text-sm font-medium text-amber-700 dark:text-amber-300 mb-2">⚠️ หมายเหตุสำคัญ</p>
+                        <ul className="space-y-1 text-xs text-amber-600 dark:text-amber-400">
+                            <li>• ใบลาจะถูกบันทึกเป็นสถานะ <strong>อนุมัติแล้ว</strong> โดยอัตโนมัติ</li>
+                            <li>• จำนวนวันจะถูก <strong>หักจากวันลาคงเหลือ</strong> ทันที (ยกเว้นประเภท OTHER)</li>
+                            <li>• ถ้า <strong>กรอกเวลาเริ่ม-สิ้นสุด</strong> ระบบจะบันทึกเป็นลาระดับชั่วโมง</li>
+                            <li>• ถ้า <strong>ไม่กรอกเวลา</strong> ระบบจะบันทึกเป็นลาเต็มวัน</li>
+                            <li>• ระบบจะตรวจสอบ <strong>ใบลาซ้ำ</strong> โดยอัตโนมัติ (ข้ามแถวที่ซ้ำ)</li>
+                            <li>• นำเข้าได้สูงสุด <strong>500 รายการ</strong> ต่อครั้ง</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
 
@@ -290,8 +391,8 @@ export default function LeaveImportPage() {
                         onDragLeave={handleDragLeave}
                         onDrop={handleDrop}
                         className={`block border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-colors ${dragging
-                                ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
-                                : 'border-gray-300 dark:border-gray-600 hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/10'
+                            ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                            : 'border-gray-300 dark:border-gray-600 hover:border-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/10'
                             }`}
                     >
                         <Upload className={`w-16 h-16 mx-auto mb-4 ${dragging ? 'text-emerald-500' : 'text-gray-300 dark:text-gray-600'}`} />
@@ -356,6 +457,7 @@ export default function LeaveImportPage() {
                                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">วันที่เริ่ม</th>
                                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">วันที่สิ้นสุด</th>
                                         <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase">จำนวนวัน</th>
+                                        <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">เวลา</th>
                                         <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">เหตุผล</th>
                                     </tr>
                                 </thead>
@@ -386,6 +488,9 @@ export default function LeaveImportPage() {
                                             <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{row.startDate}</td>
                                             <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{row.endDate}</td>
                                             <td className="px-4 py-3 text-sm text-right text-gray-900 dark:text-white font-medium">{row.days}</td>
+                                            <td className="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                                                {row.startTime && row.endTime ? `${row.startTime}-${row.endTime}` : <span className="text-gray-300">เต็มวัน</span>}
+                                            </td>
                                             <td className="px-4 py-3 text-sm text-gray-500 max-w-[200px] truncate">{row.reason}</td>
                                         </tr>
                                     ))}
