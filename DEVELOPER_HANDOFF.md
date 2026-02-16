@@ -84,6 +84,8 @@ hr-leave/
 │   ├── migrate-ad-lifecycle.ts       # AD Lifecycle migration
 │   ├── scheduled-ad-sync.ts          # Cron script for AD Sync
 │   └── update-prod.ts               # Production update script
+├── tests/                            # E2E test scripts
+│   └── cross-year-leave.test.ts      # Cross-year leave tests (31 cases)
 ├── src/
 │   ├── app/
 │   │   ├── (dashboard)/              # Group สำหรับหน้าที่ต้อง Login
@@ -533,6 +535,8 @@ sequenceDiagram
 - [x] **Cross-Year Refund** - ยกเลิก/ปฏิเสธใบลาข้ามปี คืนยอดถูกปีทุกกรณี
 - [x] **splitLeaveByYear()** - utility function ใน `date-utils.ts`
 - [x] **Migration Script** - `database/migrations/add_cross_year_leave_support.sql`
+- [x] **Year-End Preview Indicator** - แสดงจำนวน auto-created records + อนุญาต execute โดยไม่ต้องกดเขียนทับ
+- [x] **E2E Test Script** - `tests/cross-year-leave.test.ts` (31 test cases ครอบคลุม 5 scenarios)
 
 ### ✅ Bug Fixes (12 ก.พ. 2026)
 - [x] **Interactive User Guide Loop** - แก้ useTour hook ที่ tour รันซ้ำตลอด
@@ -577,9 +581,9 @@ sequenceDiagram
 
 | File | Purpose |
 |------|---------|
-| `api/hr/year-end/preview/route.ts` | Preview ประมวลผลสิ้นปี |
+| `api/hr/year-end/preview/route.ts` | Preview + ตรวจ `isAutoCreated` records |
 | `api/hr/year-end/execute/route.ts` | Execute + Carry-over + Snapshot `used` จาก auto-created records |
-| `app/(dashboard)/hr/year-end/page.tsx` | UI หน้าประมวลผลสิ้นปี |
+| `app/(dashboard)/hr/year-end/page.tsx` | UI + auto-created indicator (banner สีฟ้า) |
 
 ### 🔀 Cross-Year Leave
 
@@ -591,6 +595,12 @@ sequenceDiagram
 | `api/leave/approve/route.ts` | คืนยอดตอน reject จาก split data |
 | `api/email/action/route.ts` | คืนยอดตอน reject (Magic Link) จาก split data |
 | `database/migrations/add_cross_year_leave_support.sql` | Migration script |
+
+### 🧪 E2E Tests
+
+| File | Purpose |
+|------|---------|
+| `tests/cross-year-leave.test.ts` | 31 test cases: splitByYear, balance deduction, refund, year-end overwrite, overlap |
 
 ### 📥 Bulk Leave Import
 
