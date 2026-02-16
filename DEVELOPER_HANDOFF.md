@@ -548,6 +548,20 @@ sequenceDiagram
 - [x] **`logAudit` Transaction Support** - เพิ่ม optional `transaction` param ให้ audit log เข้าร่วม transaction เดียวกัน
 - [x] **Year-End Audit Enhancement** - เพิ่ม `oldValue` (overwritten records, auto-created count, usage preserved) และ `newValue` ที่ detail มากขึ้น (carry-over summary, leave types processed, total employees)
 - [x] **Notification Isolation** — Notifications/Email อยู่นอก transaction เสมอ (ป้องกัน rollback จาก email failure)
+- [x] **Optimistic Locking** — ป้องกัน race condition ด้วย `AND status = 'PENDING'` ใน UPDATE WHERE clause + เช็ค `rowsAffected` → return 409 Conflict
+  - `cancel` — `AND status NOT IN ('CANCELLED','REJECTED')`
+  - `approve` — `AND status = 'PENDING'`
+  - `email/action` — `AND status = 'PENDING'`
+- [x] **Performance Indexes** — เพิ่ม 8 composite indexes จากการวิเคราะห์ query patterns
+  - `LeaveRequests(userId, status) INCLUDE (startDatetime, endDatetime)` — overlap check
+  - `LeaveRequests(userId, createdAt DESC)` — history/pending list
+  - `LeaveRequests(id, status)` — optimistic lock
+  - `Notifications(userId, isRead, createdAt DESC)` — unread count (ทุก page load)
+  - `Users(isActive, company) INCLUDE (department, departmentHeadId)` — HR overview
+  - `DelegateApprovers(managerId, isActive) INCLUDE (delegateUserId, startDate, endDate)` — delegate lookup
+  - `AuditLogs(action, createdAt DESC)` — audit filter
+  - `PublicHolidays(date, company)` — holiday exclusion
+  - Migration: `database/migrations/add_performance_indexes.sql`
 
 ### ✅ Bug Fixes (12 ก.พ. 2026)
 - [x] **Interactive User Guide Loop** - แก้ useTour hook ที่ tour รันซ้ำตลอด
