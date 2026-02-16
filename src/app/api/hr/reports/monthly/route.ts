@@ -77,6 +77,12 @@ export async function GET(request: NextRequest) {
                     ISNULL(SUM(CASE WHEN lr.leaveType = 'VACATION' AND lr.status = 'APPROVED' THEN lr.usageAmount ELSE 0 END), 0) as vacationDays,
                     ISNULL(SUM(CASE WHEN lr.leaveType = 'SICK' AND lr.status = 'APPROVED' THEN lr.usageAmount ELSE 0 END), 0) as sickDays,
                     ISNULL(SUM(CASE WHEN lr.leaveType = 'PERSONAL' AND lr.status = 'APPROVED' THEN lr.usageAmount ELSE 0 END), 0) as personalDays,
+                    ISNULL(SUM(CASE WHEN lr.leaveType = 'MATERNITY' AND lr.status = 'APPROVED' THEN lr.usageAmount ELSE 0 END), 0) as maternityDays,
+                    ISNULL(SUM(CASE WHEN lr.leaveType = 'MILITARY' AND lr.status = 'APPROVED' THEN lr.usageAmount ELSE 0 END), 0) as militaryDays,
+                    ISNULL(SUM(CASE WHEN lr.leaveType = 'ORDINATION' AND lr.status = 'APPROVED' THEN lr.usageAmount ELSE 0 END), 0) as ordinationDays,
+                    ISNULL(SUM(CASE WHEN lr.leaveType = 'STERILIZATION' AND lr.status = 'APPROVED' THEN lr.usageAmount ELSE 0 END), 0) as sterilizationDays,
+                    ISNULL(SUM(CASE WHEN lr.leaveType = 'TRAINING' AND lr.status = 'APPROVED' THEN lr.usageAmount ELSE 0 END), 0) as trainingDays,
+                    ISNULL(SUM(CASE WHEN lr.leaveType = 'OTHER' AND lr.status = 'APPROVED' THEN lr.usageAmount ELSE 0 END), 0) as otherDays,
                     ISNULL(SUM(CASE WHEN lr.status = 'APPROVED' THEN lr.usageAmount ELSE 0 END), 0) as totalLeaveDays
                 FROM Users u
                 LEFT JOIN LeaveRequests lr ON u.id = lr.userId 
@@ -89,7 +95,7 @@ export async function GET(request: NextRequest) {
 
         if (format === 'csv') {
             // Generate CSV
-            const headers = ['รหัสพนักงาน', 'ชื่อ-นามสกุล', 'แผนก', 'บริษัท', 'พักร้อน', 'ลาป่วย', 'ลากิจ', 'รวม'];
+            const headers = ['รหัสพนักงาน', 'ชื่อ-นามสกุล', 'แผนก', 'บริษัท', 'พักร้อน', 'ลาป่วย', 'ลากิจ', 'ลาคลอด', 'เกณฑ์ทหาร', 'ลาบวช', 'ทำหมัน', 'ฝึกอบรม', 'อื่นๆ', 'รวม'];
             const rows = attendanceResult.recordset.map(r => [
                 r.employeeId,
                 `${r.firstName} ${r.lastName}`,
@@ -98,6 +104,12 @@ export async function GET(request: NextRequest) {
                 r.vacationDays,
                 r.sickDays,
                 r.personalDays,
+                r.maternityDays,
+                r.militaryDays,
+                r.ordinationDays,
+                r.sterilizationDays,
+                r.trainingDays,
+                r.otherDays,
                 r.totalLeaveDays
             ]);
 
