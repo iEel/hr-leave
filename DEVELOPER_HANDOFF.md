@@ -578,8 +578,9 @@ sequenceDiagram
 - [x] **Audit Log แสดง Numeric ID** - คอลัมน์รายละเอียดแสดง `Users#1` แทน employeeId
   - แก้ไข: เพิ่ม `targetLabel` CASE expression ใน SQL ครอบคลุมทุก targetTable (Users→employeeId, LeaveRequests→employeeId, PublicHolidays→ชื่อวันหยุด, Companies→ชื่อบริษัท)
 - [x] **Sidebar Scroll Position Reset** - เมนูด้านข้างเลื่อน scroll กลับไปบนสุดทุกครั้งที่คลิกเมนู/ผ่านไปสักพัก
-  - สาเหตุ: `SidebarContent` ประกาศเป็น component function ภายใน `Sidebar` ทำให้ React unmount/remount ทุก re-render
-  - แก้ไข: เปลี่ยนเป็น JSX variable (`const sidebarContent = (...)`) ไม่ให้ remount
+  - สาเหตุ 1: `SidebarContent` ประกาศเป็น component function ภายใน `Sidebar` → แก้เป็น JSX variable
+  - สาเหตุ 2: `NavLink` ประกาศเป็น nested component → React สร้าง type ใหม่ทุก re-render → unmount/remount ทุก link
+  - แก้ไข: ย้าย `NavLink` เป็น top-level component, ส่ง `pathname` + `onClick` เป็น props
 - [x] **AuditLogs Performance Indexes** - เพิ่ม 4 indexes สำหรับ AuditLogs table
   - `IX_AuditLogs_CreatedAt` (createdAt DESC)
   - `IX_AuditLogs_Action_CreatedAt` (action, createdAt DESC)

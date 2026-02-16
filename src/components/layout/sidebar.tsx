@@ -26,7 +26,7 @@ import {
     UserCheck,
     FileSpreadsheet,
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { UserRole } from '@/types';
 import { useTour } from '@/hooks/useTour';
 
@@ -41,6 +41,24 @@ interface NavItem {
     label: string;
     icon: React.ReactNode;
     roles?: UserRole[];
+}
+
+// Extracted outside Sidebar to prevent remount on every re-render
+function NavLink({ item, pathname, onClick }: { item: NavItem; pathname: string; onClick?: () => void }) {
+    const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+    return (
+        <Link
+            href={item.href}
+            onClick={onClick}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isActive
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
+                : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
+                }`}
+        >
+            {item.icon}
+            <span className="font-medium">{item.label}</span>
+        </Link>
+    );
 }
 
 const navItems: NavItem[] = [
@@ -136,22 +154,7 @@ export function Sidebar() {
         return roles.includes(userRole);
     };
 
-    const NavLink = ({ item }: { item: NavItem }) => {
-        const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
-        return (
-            <Link
-                href={item.href}
-                onClick={() => setIsMobileOpen(false)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isActive
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                    : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800'
-                    }`}
-            >
-                {item.icon}
-                <span className="font-medium">{item.label}</span>
-            </Link>
-        );
-    };
+    const closeMobile = useCallback(() => setIsMobileOpen(false), []);
 
     const { startTour } = useTour();
 
@@ -174,7 +177,7 @@ export function Sidebar() {
             <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
                 {/* Main Nav */}
                 {navItems.map((item) => (
-                    <NavLink key={item.href} item={item} />
+                    <NavLink key={item.href} item={item} pathname={pathname} onClick={closeMobile} />
                 ))}
 
                 {/* Manager Section */}
@@ -192,7 +195,7 @@ export function Sidebar() {
                                 {managerNavItems
                                     .filter((item) => canAccess(item.roles))
                                     .map((item) => (
-                                        <NavLink key={item.href} item={item} />
+                                        <NavLink key={item.href} item={item} pathname={pathname} onClick={closeMobile} />
                                     ))}
                             </div>
                         )}
@@ -211,7 +214,7 @@ export function Sidebar() {
                         </button>
                         {isDelegateExpanded && (
                             <div className="space-y-1 mt-1">
-                                <NavLink item={{ href: '/approvals', label: 'อนุมัติ (แทน)', icon: <CheckSquare className="w-5 h-5" /> }} />
+                                <NavLink item={{ href: '/approvals', label: 'อนุมัติ (แทน)', icon: <CheckSquare className="w-5 h-5" /> }} pathname={pathname} onClick={closeMobile} />
                             </div>
                         )}
                     </div>
@@ -232,7 +235,7 @@ export function Sidebar() {
                                 {hrNavItems
                                     .filter((item) => canAccess(item.roles) || isHRStaff)
                                     .map((item) => (
-                                        <NavLink key={item.href} item={item} />
+                                        <NavLink key={item.href} item={item} pathname={pathname} onClick={closeMobile} />
                                     ))}
                             </div>
                         )}
@@ -249,7 +252,7 @@ export function Sidebar() {
                             {adminNavItems
                                 .filter((item) => canAccess(item.roles))
                                 .map((item) => (
-                                    <NavLink key={item.href} item={item} />
+                                    <NavLink key={item.href} item={item} pathname={pathname} onClick={closeMobile} />
                                 ))}
                         </div>
                     </div>
