@@ -50,7 +50,8 @@ export async function POST(request: NextRequest) {
         await transaction.begin();
 
         try {
-            await new sql.Request(transaction)
+            // Update with optimistic lock on PENDING status
+            const updateResult = await new sql.Request(transaction)
                 .input('leaveId', leaveId)
                 .input('approverId', approverId)
                 .input('status', newStatus)
@@ -61,8 +62,16 @@ export async function POST(request: NextRequest) {
                         approverId = @approverId,
                         rejectionReason = @rejectionReason,
                         updatedAt = GETDATE()
-                    WHERE id = @leaveId
+                    WHERE id = @leaveId AND status = 'PENDING'
                 `);
+
+            if (updateResult.rowsAffected[0] === 0) {
+                await transaction.rollback();
+                return NextResponse.json({
+                    error: 'รายการนี้ถูกดำเนินการไปแล้ว (กรุณารีเฟรชหน้า)',
+                    currentStatus: 'ALREADY_PROCESSED'
+                }, { status: 409 });
+            }
 
             // 3. If REJECTED, Refund Balance using year-split data
             if (newStatus === 'REJECTED') {

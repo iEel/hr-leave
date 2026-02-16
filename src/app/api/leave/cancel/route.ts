@@ -81,8 +81,8 @@ export async function POST(request: NextRequest) {
         await transaction.begin();
 
         try {
-            // Update status to CANCELLED
-            await new sql.Request(transaction)
+            // Update status to CANCELLED (with optimistic lock on current status)
+            const updateResult = await new sql.Request(transaction)
                 .input('leaveId', leaveId)
                 .input('status', 'CANCELLED')
                 .input('cancelledBy', userId)
@@ -91,8 +91,16 @@ export async function POST(request: NextRequest) {
                     SET status = @status, 
                         updatedAt = GETDATE(),
                         rejectionReason = 'Cancelled by ' + CAST(@cancelledBy as varchar)
-                    WHERE id = @leaveId
+                    WHERE id = @leaveId AND status NOT IN ('CANCELLED', 'REJECTED')
                 `);
+
+            if (updateResult.rowsAffected[0] === 0) {
+                await transaction.rollback();
+                return NextResponse.json(
+                    { error: 'ใบลาถูกดำเนินการไปแล้ว (กรุณารีเฟรชหน้า)' },
+                    { status: 409 }
+                );
+            }
 
             // Return the used days back to balance using year-split data
             const splitResult = await new sql.Request(transaction)

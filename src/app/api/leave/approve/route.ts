@@ -121,8 +121,8 @@ export async function POST(request: NextRequest) {
         await transaction.begin();
 
         try {
-            // Update the leave request
-            await new sql.Request(transaction)
+            // Update the leave request (with optimistic lock on PENDING status)
+            const updateResult = await new sql.Request(transaction)
                 .input('leaveId', leaveId)
                 .input('status', newStatus)
                 .input('approverId', approverId)
@@ -134,8 +134,16 @@ export async function POST(request: NextRequest) {
                         approvedAt = GETDATE(),
                         rejectionReason = @rejectionReason,
                         updatedAt = GETDATE()
-                    WHERE id = @leaveId
+                    WHERE id = @leaveId AND status = 'PENDING'
                 `);
+
+            if (updateResult.rowsAffected[0] === 0) {
+                await transaction.rollback();
+                return NextResponse.json(
+                    { error: 'ใบลานี้ถูกดำเนินการไปแล้ว (กรุณารีเฟรชหน้า)' },
+                    { status: 409 }
+                );
+            }
 
             // If rejected, return the used days back to balance using year-split data
             if (action === 'REJECT') {
