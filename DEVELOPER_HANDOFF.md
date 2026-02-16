@@ -580,6 +580,16 @@ sequenceDiagram
 - [x] **Sidebar Scroll Position Reset** - เมนูด้านข้างเลื่อน scroll กลับไปบนสุดทุกครั้งที่คลิกเมนู/ผ่านไปสักพัก
   - สาเหตุ: `SidebarContent` ประกาศเป็น component function ภายใน `Sidebar` ทำให้ React unmount/remount ทุก re-render
   - แก้ไข: เปลี่ยนเป็น JSX variable (`const sidebarContent = (...)`) ไม่ให้ remount
+- [x] **AuditLogs Performance Indexes** - เพิ่ม 4 indexes สำหรับ AuditLogs table
+  - `IX_AuditLogs_CreatedAt` (createdAt DESC)
+  - `IX_AuditLogs_Action_CreatedAt` (action, createdAt DESC)
+  - `IX_AuditLogs_UserId_CreatedAt` (userId, createdAt DESC)
+  - `IX_AuditLogs_TargetTable_TargetId` (targetTable, targetId)
+  - Migration: `database/migrations/add_audit_logs_indexes.sql`
+- [x] **AuditLogs Retention Policy** - ลบ Audit Logs เก่ากว่า 12 เดือนอัตโนมัติ
+  - Cron endpoint: `POST /api/cron/audit-cleanup` (ใช้ `x-cron-secret` header)
+  - ลบแบบ batch (5,000 rows/batch) เพื่อหลีกเลี่ยง lock timeout
+  - ตั้ง Task Scheduler: รันทุกเดือนวันที่ 1 เวลา 02:00
 
 ### 🔲 สิ่งที่ยังรอ (Remaining)
 - [ ] LINE Notify Integration (optional)

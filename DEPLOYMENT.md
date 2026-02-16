@@ -306,6 +306,40 @@ crontab -e
 
 ---
 
+## 🧹 ตั้งค่า Audit Log Cleanup (Retention 12 เดือน)
+
+ลบ Audit Logs ที่เก่ากว่า 12 เดือนอัตโนมัติ เพื่อไม่ให้ DB โตเกินไป
+
+### ทดสอบก่อน:
+```bash
+curl -X POST http://localhost:3000/api/cron/audit-cleanup \
+  -H "x-cron-secret: YOUR_CRON_SECRET"
+```
+
+ผลลัพธ์:
+```json
+{"success":true,"message":"Cleaned up 0 audit log records older than 12 months","deleted":0}
+```
+
+### ตั้ง Cron Job (ทุกเดือนวันที่ 1 เวลา 02:00):
+
+**Linux:**
+```bash
+crontab -e
+```
+
+เพิ่มบรรทัด:
+```
+0 2 1 * * curl -s -X POST http://localhost:3000/api/cron/audit-cleanup -H "x-cron-secret: YOUR_CRON_SECRET" >> /var/log/hr-audit-cleanup.log 2>&1
+```
+
+**Windows (Task Scheduler):**
+```
+schtasks /create /tn "HR Audit Cleanup" /tr "curl -s -X POST http://localhost:3000/api/cron/audit-cleanup -H \"x-cron-secret: YOUR_CRON_SECRET\"" /sc monthly /d 1 /st 02:00
+```
+
+---
+
 ## 📊 Azure AD App Registration
 
 หากใช้ Azure AD ต้องสร้าง App Registration ใน Azure Portal:
