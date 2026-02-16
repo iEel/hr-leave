@@ -27,7 +27,7 @@ async function getCronSecret(): Promise<string> {
     } catch (e) {
         console.error('Error fetching cron secret:', e);
     }
-    return process.env.CRON_SECRET || '';
+    return process.env.CRON_SECRET || 'default-cron-secret-change-me';
 }
 
 export async function POST(request: NextRequest) {
