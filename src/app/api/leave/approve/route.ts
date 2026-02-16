@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { getPool } from '@/lib/db';
+import { getPool, sql } from '@/lib/db';
 import { notifyLeaveApproval } from '@/lib/notifications';
 import { logAudit } from '@/lib/audit';
 import { sendLeaveApprovalEmail } from '@/lib/email';
@@ -116,35 +116,56 @@ export async function POST(request: NextRequest) {
 
         const newStatus = action === 'APPROVE' ? 'APPROVED' : 'REJECTED';
 
-        // Update the leave request
-        await pool.request()
-            .input('leaveId', leaveId)
-            .input('status', newStatus)
-            .input('approverId', approverId)
-            .input('rejectionReason', action === 'REJECT' ? rejectionReason : null)
-            .query(`
-                UPDATE LeaveRequests
-                SET status = @status,
-                    approverId = @approverId,
-                    approvedAt = GETDATE(),
-                    rejectionReason = @rejectionReason,
-                    updatedAt = GETDATE()
-                WHERE id = @leaveId
-            `);
+        // === BEGIN TRANSACTION ===
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
 
-        // If rejected, return the used days back to balance using year-split data
-        if (action === 'REJECT') {
-            const splitResult = await pool.request()
+        try {
+            // Update the leave request
+            await new sql.Request(transaction)
                 .input('leaveId', leaveId)
-                .query(`SELECT year, usageAmount FROM LeaveRequestYearSplit WHERE leaveRequestId = @leaveId`);
+                .input('status', newStatus)
+                .input('approverId', approverId)
+                .input('rejectionReason', action === 'REJECT' ? rejectionReason : null)
+                .query(`
+                    UPDATE LeaveRequests
+                    SET status = @status,
+                        approverId = @approverId,
+                        approvedAt = GETDATE(),
+                        rejectionReason = @rejectionReason,
+                        updatedAt = GETDATE()
+                    WHERE id = @leaveId
+                `);
 
-            if (splitResult.recordset.length > 0) {
-                for (const split of splitResult.recordset) {
-                    await pool.request()
+            // If rejected, return the used days back to balance using year-split data
+            if (action === 'REJECT') {
+                const splitResult = await new sql.Request(transaction)
+                    .input('leaveId', leaveId)
+                    .query(`SELECT year, usageAmount FROM LeaveRequestYearSplit WHERE leaveRequestId = @leaveId`);
+
+                if (splitResult.recordset.length > 0) {
+                    for (const split of splitResult.recordset) {
+                        await new sql.Request(transaction)
+                            .input('userId', leave.userId)
+                            .input('leaveType', leave.leaveType)
+                            .input('year', split.year)
+                            .input('usageAmount', split.usageAmount)
+                            .query(`
+                                UPDATE LeaveBalances
+                                SET used = used - @usageAmount,
+                                    remaining = remaining + @usageAmount,
+                                    updatedAt = GETDATE()
+                                WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                            `);
+                    }
+                } else {
+                    // Fallback: use startDate year from the leave record
+                    const leaveYear = new Date(leave.startDate).getFullYear();
+                    await new sql.Request(transaction)
                         .input('userId', leave.userId)
                         .input('leaveType', leave.leaveType)
-                        .input('year', split.year)
-                        .input('usageAmount', split.usageAmount)
+                        .input('year', leaveYear)
+                        .input('usageAmount', leave.usageAmount)
                         .query(`
                             UPDATE LeaveBalances
                             SET used = used - @usageAmount,
@@ -153,59 +174,57 @@ export async function POST(request: NextRequest) {
                             WHERE userId = @userId AND leaveType = @leaveType AND year = @year
                         `);
                 }
-            } else {
-                // Fallback: use startDate year from the leave record
-                const leaveYear = new Date(leave.startDate).getFullYear();
-                await pool.request()
-                    .input('userId', leave.userId)
-                    .input('leaveType', leave.leaveType)
-                    .input('year', leaveYear)
-                    .input('usageAmount', leave.usageAmount)
-                    .query(`
-                        UPDATE LeaveBalances
-                        SET used = used - @usageAmount,
-                            remaining = remaining + @usageAmount,
-                            updatedAt = GETDATE()
-                        WHERE userId = @userId AND leaveType = @leaveType AND year = @year
-                    `);
             }
+
+            // Audit log (inside transaction)
+            await logAudit({
+                userId: approverId,
+                action: action === 'APPROVE' ? 'APPROVE_LEAVE' : 'REJECT_LEAVE',
+                targetTable: 'LeaveRequests',
+                targetId: leaveId,
+                newValue: { leaveType: leave.leaveType, status: newStatus, rejectionReason: rejectionReason || null },
+                transaction
+            });
+
+            await transaction.commit();
+            // === END TRANSACTION ===
+
+        } catch (txError) {
+            await transaction.rollback();
+            throw txError;
         }
 
-        // Send in-app notification to the employee
-        await notifyLeaveApproval(
-            leave.userId,
-            leaveId,
-            action === 'APPROVE',
-            leave.leaveType,
-            leave.startDate,
-            rejectionReason
-        );
-
-        // Send email notification to the employee
-        if (leave.employeeEmail) {
-            await sendLeaveApprovalEmail(
-                leave.employeeEmail,
-                leave.employeeName,
-                {
-                    id: leaveId,
-                    type: leave.leaveType,
-                    startDate: leave.startDate,
-                    endDate: leave.endDate,
-                    days: leave.usageAmount,
-                },
+        // Notifications (outside transaction - non-critical)
+        try {
+            // Send in-app notification to the employee
+            await notifyLeaveApproval(
+                leave.userId,
+                leaveId,
                 action === 'APPROVE',
+                leave.leaveType,
+                leave.startDate,
                 rejectionReason
             );
-        }
 
-        // Audit log
-        await logAudit({
-            userId: approverId,
-            action: action === 'APPROVE' ? 'APPROVE_LEAVE' : 'REJECT_LEAVE',
-            targetTable: 'LeaveRequests',
-            targetId: leaveId,
-            newValue: { leaveType: leave.leaveType, status: newStatus, rejectionReason: rejectionReason || null }
-        });
+            // Send email notification to the employee
+            if (leave.employeeEmail) {
+                await sendLeaveApprovalEmail(
+                    leave.employeeEmail,
+                    leave.employeeName,
+                    {
+                        id: leaveId,
+                        type: leave.leaveType,
+                        startDate: leave.startDate,
+                        endDate: leave.endDate,
+                        days: leave.usageAmount,
+                    },
+                    action === 'APPROVE',
+                    rejectionReason
+                );
+            }
+        } catch (notifyError) {
+            console.error('Error sending notifications:', notifyError);
+        }
 
         return NextResponse.json({
             success: true,

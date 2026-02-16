@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { getPool } from '@/lib/db';
+import { getPool, sql } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 
 /**
@@ -47,29 +47,9 @@ export async function POST(request: NextRequest) {
 
         // Snapshot existing usage before deleting (for auto-created records)
         let existingUsage: Record<string, { used: number }> = {};
+        let overwrittenCount = 0;
 
-        // Delete existing data if force overwrite or all auto-created
-        if (totalCount > 0 && (forceOverwrite || allAutoCreated)) {
-            // Save existing usage amounts (from cross-year leaves taken before year-end)
-            const usageSnapshot = await pool.request()
-                .input('toYear', toYear)
-                .query(`
-                    SELECT userId, leaveType, used 
-                    FROM LeaveBalances 
-                    WHERE year = @toYear AND used > 0
-                `);
-
-            for (const row of usageSnapshot.recordset) {
-                const key = `${row.userId}_${row.leaveType}`;
-                existingUsage[key] = { used: row.used };
-            }
-
-            await pool.request()
-                .input('toYear', toYear)
-                .query(`DELETE FROM LeaveBalances WHERE year = @toYear`);
-        }
-
-        // Get leave quota settings
+        // Get leave quota settings (read-only, outside transaction)
         const quotaResult = await pool.request()
             .query(`
                 SELECT leaveType, defaultDays, allowCarryOver, maxCarryOverDays, minTenureYears
@@ -134,65 +114,126 @@ export async function POST(request: NextRequest) {
         let successCount = 0;
         let errorCount = 0;
         const errors: string[] = [];
+        const carryOverSummary: Record<string, { count: number; totalDays: number }> = {};
 
-        // Process each employee
-        for (const emp of Object.values(employeeData)) {
-            try {
-                // Calculate years of service by end of toYear
-                const yearsOfService = toYear - emp.startDate.getFullYear();
+        // === BEGIN TRANSACTION ===
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
 
-                // Insert new balance for each leave type
-                for (const leaveType of leaveTypes) {
-                    const quota = quotaSettings[leaveType];
+        try {
+            // Delete existing data if force overwrite or all auto-created
+            if (totalCount > 0 && (forceOverwrite || allAutoCreated)) {
+                // Save existing usage amounts (from cross-year leaves taken before year-end)
+                const usageSnapshot = await new sql.Request(transaction)
+                    .input('toYear', toYear)
+                    .query(`
+                        SELECT userId, leaveType, used 
+                        FROM LeaveBalances 
+                        WHERE year = @toYear AND used > 0
+                    `);
 
-                    // Check if employee meets tenure requirement
-                    if (yearsOfService < quota.minTenureYears) {
-                        continue; // Skip this leave type
-                    }
-
-                    const currentRemaining = emp.balances[leaveType] || 0;
-                    const carryOver = quota.allowCarryOver
-                        ? Math.min(currentRemaining, quota.maxCarryOverDays)
-                        : 0;
-
-                    const entitlement = quota.defaultDays;
-
-                    // Check if there was pre-existing usage (from cross-year leaves)
-                    const usageKey = `${emp.userId}_${leaveType}`;
-                    const priorUsed = existingUsage[usageKey]?.used || 0;
-
-                    const remaining = entitlement + carryOver - priorUsed;
-
-                    await pool.request()
-                        .input('userId', emp.userId)
-                        .input('leaveType', leaveType)
-                        .input('year', toYear)
-                        .input('entitlement', entitlement)
-                        .input('carryOver', carryOver)
-                        .input('used', priorUsed)
-                        .input('remaining', remaining)
-                        .query(`
-                            INSERT INTO LeaveBalances (userId, leaveType, year, entitlement, used, remaining, carryOver, isAutoCreated)
-                            VALUES (@userId, @leaveType, @year, @entitlement, @used, @remaining, @carryOver, 0)
-                        `);
+                for (const row of usageSnapshot.recordset) {
+                    const key = `${row.userId}_${row.leaveType}`;
+                    existingUsage[key] = { used: row.used };
                 }
 
-                successCount++;
+                const deleteResult = await new sql.Request(transaction)
+                    .input('toYear', toYear)
+                    .query(`DELETE FROM LeaveBalances WHERE year = @toYear`);
 
-            } catch (empError) {
-                console.error(`Error processing employee ${emp.employeeId}:`, empError);
-                errors.push(`${emp.employeeId}: Processing failed`);
-                errorCount++;
+                overwrittenCount = deleteResult.rowsAffected[0] || 0;
             }
-        }
 
-        // Audit log
-        await logAudit({
-            userId: parseInt(session.user.id),
-            action: 'YEAR_END_PROCESS',
-            targetTable: 'LeaveBalances',
-            newValue: { fromYear, toYear, successCount, errorCount, forceOverwrite }
-        });
+            // Process each employee
+            for (const emp of Object.values(employeeData)) {
+                try {
+                    // Calculate years of service by end of toYear
+                    const yearsOfService = toYear - emp.startDate.getFullYear();
+
+                    // Insert new balance for each leave type
+                    for (const leaveType of leaveTypes) {
+                        const quota = quotaSettings[leaveType];
+
+                        // Check if employee meets tenure requirement
+                        if (yearsOfService < quota.minTenureYears) {
+                            continue; // Skip this leave type
+                        }
+
+                        const currentRemaining = emp.balances[leaveType] || 0;
+                        const carryOver = quota.allowCarryOver
+                            ? Math.min(currentRemaining, quota.maxCarryOverDays)
+                            : 0;
+
+                        const entitlement = quota.defaultDays;
+
+                        // Check if there was pre-existing usage (from cross-year leaves)
+                        const usageKey = `${emp.userId}_${leaveType}`;
+                        const priorUsed = existingUsage[usageKey]?.used || 0;
+
+                        const remaining = entitlement + carryOver - priorUsed;
+
+                        await new sql.Request(transaction)
+                            .input('userId', emp.userId)
+                            .input('leaveType', leaveType)
+                            .input('year', toYear)
+                            .input('entitlement', entitlement)
+                            .input('carryOver', carryOver)
+                            .input('used', priorUsed)
+                            .input('remaining', remaining)
+                            .query(`
+                                INSERT INTO LeaveBalances (userId, leaveType, year, entitlement, used, remaining, carryOver, isAutoCreated)
+                                VALUES (@userId, @leaveType, @year, @entitlement, @used, @remaining, @carryOver, 0)
+                            `);
+
+                        // Track carry-over stats for audit
+                        if (carryOver > 0) {
+                            if (!carryOverSummary[leaveType]) {
+                                carryOverSummary[leaveType] = { count: 0, totalDays: 0 };
+                            }
+                            carryOverSummary[leaveType].count++;
+                            carryOverSummary[leaveType].totalDays += carryOver;
+                        }
+                    }
+
+                    successCount++;
+
+                } catch (empError) {
+                    console.error(`Error processing employee ${emp.employeeId}:`, empError);
+                    errors.push(`${emp.employeeId}: Processing failed`);
+                    errorCount++;
+                }
+            }
+
+            // Enhanced Audit log (inside transaction)
+            await logAudit({
+                userId: parseInt(session.user.id),
+                action: 'YEAR_END_PROCESS',
+                targetTable: 'LeaveBalances',
+                oldValue: overwrittenCount > 0 ? {
+                    overwrittenRecords: overwrittenCount,
+                    autoCreatedOverwritten: autoCreatedCount,
+                    existingUsagePreserved: Object.keys(existingUsage).length
+                } : null,
+                newValue: {
+                    fromYear,
+                    toYear,
+                    totalEmployees: Object.keys(employeeData).length,
+                    successCount,
+                    errorCount,
+                    forceOverwrite,
+                    leaveTypesProcessed: leaveTypes,
+                    carryOverSummary
+                },
+                transaction
+            });
+
+            await transaction.commit();
+            // === END TRANSACTION ===
+
+        } catch (txError) {
+            await transaction.rollback();
+            throw txError;
+        }
 
         return NextResponse.json({
             success: true,

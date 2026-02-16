@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { getPool } from '@/lib/db';
+import { getPool, sql } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { notifyPendingApproval } from '@/lib/notifications';
 
@@ -251,7 +251,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Check balance for each year (skip for OTHER type)
+        // Check balance for each year (skip for OTHER type) — pre-validate before transaction
         if (leaveType !== 'OTHER') {
             for (const [year, amount] of yearSplits) {
                 const balanceCheck = await pool.request()
@@ -264,33 +264,22 @@ export async function POST(request: NextRequest) {
                     `);
 
                 if (balanceCheck.recordset.length === 0) {
-                    // Auto-create balance for this year if not exists
+                    // Check quota exists and has enough days (validate before transaction)
                     const quotaResult = await pool.request()
                         .input('leaveType', leaveType)
                         .query(`SELECT defaultDays FROM LeaveQuotaSettings WHERE leaveType = @leaveType`);
 
-                    if (quotaResult.recordset.length > 0) {
-                        const defaultDays = quotaResult.recordset[0].defaultDays;
-                        await pool.request()
-                            .input('userId', userId)
-                            .input('leaveType', leaveType)
-                            .input('year', year)
-                            .input('entitlement', defaultDays)
-                            .input('remaining', defaultDays)
-                            .query(`
-                                INSERT INTO LeaveBalances (userId, leaveType, year, entitlement, used, remaining, carryOver, isAutoCreated)
-                                VALUES (@userId, @leaveType, @year, @entitlement, 0, @remaining, 0, 1)
-                            `);
-
-                        if (defaultDays < amount) {
-                            return NextResponse.json(
-                                { error: `วันลาปี ${year} ไม่เพียงพอ (มี ${defaultDays} วัน, ต้องการ ${amount} วัน)` },
-                                { status: 400 }
-                            );
-                        }
-                    } else {
+                    if (quotaResult.recordset.length === 0) {
                         return NextResponse.json(
                             { error: `ไม่พบข้อมูลโควตาประเภท ${leaveType}` },
+                            { status: 400 }
+                        );
+                    }
+
+                    const defaultDays = quotaResult.recordset[0].defaultDays;
+                    if (defaultDays < amount) {
+                        return NextResponse.json(
+                            { error: `วันลาปี ${year} ไม่เพียงพอ (มี ${defaultDays} วัน, ต้องการ ${amount} วัน)` },
                             { status: 400 }
                         );
                     }
@@ -303,72 +292,117 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Insert leave request
-        const insertResult = await pool.request()
-            .input('userId', userId)
-            .input('leaveType', leaveType)
-            .input('startDatetime', startDate)
-            .input('endDatetime', endDate)
-            .input('isHourly', isHourly ? 1 : 0)
-            .input('startTime', startTime)
-            .input('endTime', endTime)
-            .input('timeSlot', isHourly ? 'HOURLY' : timeSlot)
-            .input('usageAmount', usageAmount)
-            .input('reason', reason)
-            .input('hasMedicalCert', hasMedicalCert ? 1 : 0)
-            .input('medicalCertFile', medicalCertificateFile)
-            .query(`
-                INSERT INTO LeaveRequests (
-                    userId, leaveType, startDatetime, endDatetime,
-                    isHourly, startTime, endTime, timeSlot,
-                    usageAmount, reason, hasMedicalCertificate, medicalCertificateFile, status
-                )
-                OUTPUT INSERTED.id
-                VALUES (
-                    @userId, @leaveType, @startDatetime, @endDatetime,
-                    @isHourly, @startTime, @endTime, @timeSlot,
-                    @usageAmount, @reason, @hasMedicalCert, @medicalCertFile, 'PENDING'
-                )
-            `);
+        // === BEGIN TRANSACTION ===
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
 
-        const newRequestId = insertResult.recordset[0].id;
+        let newRequestId: number;
 
-        // Deduct balance for each year and record year splits
-        for (const [year, amount] of yearSplits) {
+        try {
+            // Auto-create balance for years that don't exist yet (inside transaction)
             if (leaveType !== 'OTHER') {
-                await pool.request()
-                    .input('userId', userId)
-                    .input('leaveType', leaveType)
+                for (const [year, amount] of yearSplits) {
+                    const balanceExists = await new sql.Request(transaction)
+                        .input('userId', userId)
+                        .input('leaveType', leaveType)
+                        .input('year', year)
+                        .query(`SELECT id FROM LeaveBalances WHERE userId = @userId AND leaveType = @leaveType AND year = @year`);
+
+                    if (balanceExists.recordset.length === 0) {
+                        const quotaResult = await new sql.Request(transaction)
+                            .input('leaveType', leaveType)
+                            .query(`SELECT defaultDays FROM LeaveQuotaSettings WHERE leaveType = @leaveType`);
+
+                        const defaultDays = quotaResult.recordset[0].defaultDays;
+                        await new sql.Request(transaction)
+                            .input('userId', userId)
+                            .input('leaveType', leaveType)
+                            .input('year', year)
+                            .input('entitlement', defaultDays)
+                            .input('remaining', defaultDays)
+                            .query(`
+                                INSERT INTO LeaveBalances (userId, leaveType, year, entitlement, used, remaining, carryOver, isAutoCreated)
+                                VALUES (@userId, @leaveType, @year, @entitlement, 0, @remaining, 0, 1)
+                            `);
+                    }
+                }
+            }
+
+            // Insert leave request
+            const insertResult = await new sql.Request(transaction)
+                .input('userId', userId)
+                .input('leaveType', leaveType)
+                .input('startDatetime', startDate)
+                .input('endDatetime', endDate)
+                .input('isHourly', isHourly ? 1 : 0)
+                .input('startTime', startTime)
+                .input('endTime', endTime)
+                .input('timeSlot', isHourly ? 'HOURLY' : timeSlot)
+                .input('usageAmount', usageAmount)
+                .input('reason', reason)
+                .input('hasMedicalCert', hasMedicalCert ? 1 : 0)
+                .input('medicalCertFile', medicalCertificateFile)
+                .query(`
+                    INSERT INTO LeaveRequests (
+                        userId, leaveType, startDatetime, endDatetime,
+                        isHourly, startTime, endTime, timeSlot,
+                        usageAmount, reason, hasMedicalCertificate, medicalCertificateFile, status
+                    )
+                    OUTPUT INSERTED.id
+                    VALUES (
+                        @userId, @leaveType, @startDatetime, @endDatetime,
+                        @isHourly, @startTime, @endTime, @timeSlot,
+                        @usageAmount, @reason, @hasMedicalCert, @medicalCertFile, 'PENDING'
+                    )
+                `);
+
+            newRequestId = insertResult.recordset[0].id;
+
+            // Deduct balance for each year and record year splits
+            for (const [year, amount] of yearSplits) {
+                if (leaveType !== 'OTHER') {
+                    await new sql.Request(transaction)
+                        .input('userId', userId)
+                        .input('leaveType', leaveType)
+                        .input('year', year)
+                        .input('usageAmount', amount)
+                        .query(`
+                            UPDATE LeaveBalances
+                            SET used = used + @usageAmount,
+                                remaining = remaining - @usageAmount,
+                                updatedAt = GETDATE()
+                            WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                        `);
+                }
+
+                // Always record year split for tracking
+                await new sql.Request(transaction)
+                    .input('leaveRequestId', newRequestId)
                     .input('year', year)
                     .input('usageAmount', amount)
                     .query(`
-                        UPDATE LeaveBalances
-                        SET used = used + @usageAmount,
-                            remaining = remaining - @usageAmount,
-                            updatedAt = GETDATE()
-                        WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                        INSERT INTO LeaveRequestYearSplit (leaveRequestId, year, usageAmount)
+                        VALUES (@leaveRequestId, @year, @usageAmount)
                     `);
             }
 
-            // Always record year split for tracking
-            await pool.request()
-                .input('leaveRequestId', newRequestId)
-                .input('year', year)
-                .input('usageAmount', amount)
-                .query(`
-                    INSERT INTO LeaveRequestYearSplit (leaveRequestId, year, usageAmount)
-                    VALUES (@leaveRequestId, @year, @usageAmount)
-                `);
-        }
+            // Audit log (inside transaction)
+            await logAudit({
+                userId,
+                action: 'CREATE_LEAVE_REQUEST',
+                targetTable: 'LeaveRequests',
+                targetId: newRequestId,
+                newValue: { leaveType, startDate, endDate, usageAmount, reason },
+                transaction
+            });
 
-        // Audit log
-        await logAudit({
-            userId,
-            action: 'CREATE_LEAVE_REQUEST',
-            targetTable: 'LeaveRequests',
-            targetId: newRequestId,
-            newValue: { leaveType, startDate, endDate, usageAmount, reason }
-        });
+            await transaction.commit();
+            // === END TRANSACTION ===
+
+        } catch (txError) {
+            await transaction.rollback();
+            throw txError;
+        }
 
         // Notify manager about pending leave request
         try {

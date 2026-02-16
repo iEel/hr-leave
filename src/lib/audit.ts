@@ -1,4 +1,5 @@
 import { getPool } from './db';
+import sql from 'mssql';
 
 export type AuditAction =
     | 'LOGIN'
@@ -46,10 +47,12 @@ interface AuditLogParams {
     oldValue?: object | null;
     newValue?: object | null;
     ipAddress?: string | null;
+    transaction?: sql.Transaction | null;
 }
 
 /**
  * Log an audit event to the database
+ * Optionally accepts a transaction to participate in an existing SQL transaction
  */
 export async function logAudit({
     userId,
@@ -58,12 +61,15 @@ export async function logAudit({
     targetId = null,
     oldValue = null,
     newValue = null,
-    ipAddress = null
+    ipAddress = null,
+    transaction = null
 }: AuditLogParams): Promise<void> {
     try {
-        const pool = await getPool();
+        const req = transaction
+            ? new sql.Request(transaction)
+            : (await getPool()).request();
 
-        await pool.request()
+        await req
             .input('userId', userId)
             .input('action', action)
             .input('targetTable', targetTable)

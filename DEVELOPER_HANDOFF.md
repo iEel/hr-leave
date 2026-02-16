@@ -538,6 +538,17 @@ sequenceDiagram
 - [x] **Year-End Preview Indicator** - แสดงจำนวน auto-created records + อนุญาต execute โดยไม่ต้องกดเขียนทับ
 - [x] **E2E Test Script** - `tests/cross-year-leave.test.ts` (31 test cases ครอบคลุม 5 scenarios)
 
+### ✅ Phase 11: Data Integrity & Audit (16 ก.พ. 2026)
+- [x] **SQL Transactions** - ครอบ mutation block ด้วย `sql.Transaction` + `begin/commit/rollback`
+  - `api/leave/request` — auto-create balance, INSERT leave, UPDATE balance, INSERT year-split, audit
+  - `api/leave/cancel` — UPDATE status, refund balance, audit
+  - `api/leave/approve` — UPDATE status, refund balance (reject), audit
+  - `api/email/action` — UPDATE status, refund balance (reject), audit
+  - `api/hr/year-end/execute` — DELETE + INSERT ทั้ง batch เป็น atomic
+- [x] **`logAudit` Transaction Support** - เพิ่ม optional `transaction` param ให้ audit log เข้าร่วม transaction เดียวกัน
+- [x] **Year-End Audit Enhancement** - เพิ่ม `oldValue` (overwritten records, auto-created count, usage preserved) และ `newValue` ที่ detail มากขึ้น (carry-over summary, leave types processed, total employees)
+- [x] **Notification Isolation** — Notifications/Email อยู่นอก transaction เสมอ (ป้องกัน rollback จาก email failure)
+
 ### ✅ Bug Fixes (12 ก.พ. 2026)
 - [x] **Interactive User Guide Loop** - แก้ useTour hook ที่ tour รันซ้ำตลอด
   - สาเหตุ: useEffect dependency `[session]` เปลี่ยน reference ทุก re-render
@@ -559,7 +570,7 @@ sequenceDiagram
 |------|---------|
 | `src/auth.ts` | NextAuth config, AD/LDAP integration |
 | `src/middleware.ts` | Auth guard + RBAC |
-| `src/lib/db.ts` | Database connection (Singleton) |
+| `src/lib/db.ts` | Database connection (Singleton), exports `sql` for transactions |
 | `src/lib/ldap.ts` | LDAP/AD connection helper |
 | `src/lib/azure-graph.ts` | Azure AD Graph API |
 | `src/types/index.ts` | All TypeScript types |
@@ -582,7 +593,7 @@ sequenceDiagram
 | File | Purpose |
 |------|---------|
 | `api/hr/year-end/preview/route.ts` | Preview + ตรวจ `isAutoCreated` records |
-| `api/hr/year-end/execute/route.ts` | Execute + Carry-over + Snapshot `used` จาก auto-created records |
+| `api/hr/year-end/execute/route.ts` | Execute + Carry-over + Snapshot `used` + **SQL Transaction** + enhanced audit log |
 | `app/(dashboard)/hr/year-end/page.tsx` | UI + auto-created indicator (banner สีฟ้า) |
 
 ### 🔀 Cross-Year Leave
@@ -590,10 +601,10 @@ sequenceDiagram
 | File | Purpose |
 |------|---------|
 | `lib/date-utils.ts` | `splitLeaveByYear()` - แยกจำนวนวันลาตามปี |
-| `api/leave/request/route.ts` | เช็ค/หักยอดแยกตามปี + auto-create balance |
-| `api/leave/cancel/route.ts` | คืนยอดจาก `LeaveRequestYearSplit` |
-| `api/leave/approve/route.ts` | คืนยอดตอน reject จาก split data |
-| `api/email/action/route.ts` | คืนยอดตอน reject (Magic Link) จาก split data |
+| `api/leave/request/route.ts` | เช็ค/หักยอดแยกตามปี + auto-create balance + **SQL Transaction** |
+| `api/leave/cancel/route.ts` | คืนยอดจาก `LeaveRequestYearSplit` + **SQL Transaction** |
+| `api/leave/approve/route.ts` | คืนยอดตอน reject จาก split data + **SQL Transaction** |
+| `api/email/action/route.ts` | คืนยอดตอน reject (Magic Link) จาก split data + **SQL Transaction** |
 | `database/migrations/add_cross_year_leave_support.sql` | Migration script |
 
 ### 🧪 E2E Tests

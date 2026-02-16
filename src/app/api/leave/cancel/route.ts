@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { getPool } from '@/lib/db';
+import { getPool, sql } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 
 /**
@@ -76,32 +76,53 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Update status to CANCELLED
-        await pool.request()
-            .input('leaveId', leaveId)
-            .input('status', 'CANCELLED')
-            .input('cancelledBy', userId)
-            .query(`
-                UPDATE LeaveRequests
-                SET status = @status, 
-                    updatedAt = GETDATE(),
-                    rejectionReason = 'Cancelled by ' + CAST(@cancelledBy as varchar)
-                WHERE id = @leaveId
-            `);
+        // === BEGIN TRANSACTION ===
+        const transaction = new sql.Transaction(pool);
+        await transaction.begin();
 
-        // Return the used days back to balance using year-split data
-        const splitResult = await pool.request()
-            .input('leaveId', leaveId)
-            .query(`SELECT year, usageAmount FROM LeaveRequestYearSplit WHERE leaveRequestId = @leaveId`);
+        try {
+            // Update status to CANCELLED
+            await new sql.Request(transaction)
+                .input('leaveId', leaveId)
+                .input('status', 'CANCELLED')
+                .input('cancelledBy', userId)
+                .query(`
+                    UPDATE LeaveRequests
+                    SET status = @status, 
+                        updatedAt = GETDATE(),
+                        rejectionReason = 'Cancelled by ' + CAST(@cancelledBy as varchar)
+                    WHERE id = @leaveId
+                `);
 
-        if (splitResult.recordset.length > 0) {
-            // Refund using split data (new system)
-            for (const split of splitResult.recordset) {
-                await pool.request()
+            // Return the used days back to balance using year-split data
+            const splitResult = await new sql.Request(transaction)
+                .input('leaveId', leaveId)
+                .query(`SELECT year, usageAmount FROM LeaveRequestYearSplit WHERE leaveRequestId = @leaveId`);
+
+            if (splitResult.recordset.length > 0) {
+                // Refund using split data (new system)
+                for (const split of splitResult.recordset) {
+                    await new sql.Request(transaction)
+                        .input('userId', leave.userId)
+                        .input('leaveType', leave.leaveType)
+                        .input('year', split.year)
+                        .input('usageAmount', split.usageAmount)
+                        .query(`
+                            UPDATE LeaveBalances
+                            SET used = used - @usageAmount,
+                                remaining = remaining + @usageAmount,
+                                updatedAt = GETDATE()
+                            WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                        `);
+                }
+            } else {
+                // Fallback for pre-migration leaves: use startDatetime year
+                const leaveYear = new Date(leave.startDatetime).getFullYear();
+                await new sql.Request(transaction)
                     .input('userId', leave.userId)
                     .input('leaveType', leave.leaveType)
-                    .input('year', split.year)
-                    .input('usageAmount', split.usageAmount)
+                    .input('year', leaveYear)
+                    .input('usageAmount', leave.usageAmount)
                     .query(`
                         UPDATE LeaveBalances
                         SET used = used - @usageAmount,
@@ -110,32 +131,25 @@ export async function POST(request: NextRequest) {
                         WHERE userId = @userId AND leaveType = @leaveType AND year = @year
                     `);
             }
-        } else {
-            // Fallback for pre-migration leaves: use startDatetime year
-            const leaveYear = new Date(leave.startDatetime).getFullYear();
-            await pool.request()
-                .input('userId', leave.userId)
-                .input('leaveType', leave.leaveType)
-                .input('year', leaveYear)
-                .input('usageAmount', leave.usageAmount)
-                .query(`
-                    UPDATE LeaveBalances
-                    SET used = used - @usageAmount,
-                        remaining = remaining + @usageAmount,
-                        updatedAt = GETDATE()
-                    WHERE userId = @userId AND leaveType = @leaveType AND year = @year
-                `);
-        }
 
-        // Audit log
-        await logAudit({
-            userId,
-            action: 'CANCEL_LEAVE_REQUEST',
-            targetTable: 'LeaveRequests',
-            targetId: leaveId,
-            oldValue: { leaveType: leave.leaveType, usageAmount: leave.usageAmount, status: 'PENDING' },
-            newValue: { status: 'CANCELLED' }
-        });
+            // Audit log (inside transaction)
+            await logAudit({
+                userId,
+                action: 'CANCEL_LEAVE_REQUEST',
+                targetTable: 'LeaveRequests',
+                targetId: leaveId,
+                oldValue: { leaveType: leave.leaveType, usageAmount: leave.usageAmount, status: leave.status },
+                newValue: { status: 'CANCELLED' },
+                transaction
+            });
+
+            await transaction.commit();
+            // === END TRANSACTION ===
+
+        } catch (txError) {
+            await transaction.rollback();
+            throw txError;
+        }
 
         return NextResponse.json({
             success: true,
