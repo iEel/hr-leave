@@ -78,6 +78,21 @@ export async function GET(request: NextRequest) {
                 al.action,
                 al.targetTable,
                 al.targetId,
+                CASE 
+                    WHEN al.targetTable = 'Users' AND al.targetId IS NOT NULL 
+                        THEN (SELECT tu.employeeId FROM Users tu WHERE tu.id = al.targetId)
+                    WHEN al.targetTable = 'LeaveRequests' AND al.targetId IS NOT NULL 
+                        THEN (SELECT tu.employeeId FROM LeaveRequests tlr JOIN Users tu ON tlr.userId = tu.id WHERE tlr.id = al.targetId)
+                    WHEN al.targetTable = 'LeaveBalances' AND al.targetId IS NOT NULL 
+                        THEN (SELECT tu.employeeId FROM Users tu WHERE tu.id = al.targetId)
+                    WHEN al.targetTable = 'DelegateApprovers' AND al.targetId IS NOT NULL 
+                        THEN (SELECT tu.employeeId FROM DelegateApprovers tda JOIN Users tu ON tda.managerId = tu.id WHERE tda.id = al.targetId)
+                    WHEN al.targetTable = 'PublicHolidays' AND al.targetId IS NOT NULL 
+                        THEN (SELECT TOP 1 ph.name FROM PublicHolidays ph WHERE ph.id = al.targetId)
+                    WHEN al.targetTable = 'Companies' AND al.targetId IS NOT NULL 
+                        THEN (SELECT tc.name FROM Companies tc WHERE tc.id = al.targetId)
+                    ELSE CAST(al.targetId AS VARCHAR)
+                END as targetLabel,
                 al.oldValue,
                 al.newValue,
                 al.ipAddress,

@@ -25,6 +25,7 @@ interface AuditLog {
     action: string;
     targetTable: string;
     targetId: number | null;
+    targetLabel: string | null;
     oldValue: string | null;
     newValue: string | null;
     ipAddress: string | null;
@@ -281,7 +282,7 @@ export default function AuditLogsPage() {
                                             </td>
                                             <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">
                                                 <span className="text-gray-400">{log.targetTable}</span>
-                                                {log.targetId && <span className="ml-1">#{log.targetId}</span>}
+                                                {log.targetLabel && <span className="ml-1">#{log.targetLabel}</span>}
                                             </td>
                                             <td className="py-3 px-4 text-center">
                                                 {(log.oldValue || log.newValue) && (
