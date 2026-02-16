@@ -117,6 +117,24 @@ export async function PUT(request: NextRequest) {
                         `);
                 }
             }
+
+            // 3. Check if it's the carry-over limit setting
+            if (key === 'LEAVE_CARRYOVER_LIMIT') {
+                const maxDays = parseInt(String(value));
+                if (!isNaN(maxDays)) {
+                    // Sync to LeaveQuotaSettings for VACATION (the only type that carries over)
+                    await pool.request()
+                        .input('maxDays', maxDays)
+                        .input('allowCarryOver', maxDays > 0 ? 1 : 0)
+                        .query(`
+                            UPDATE LeaveQuotaSettings 
+                            SET maxCarryOverDays = @maxDays, 
+                                allowCarryOver = @allowCarryOver,
+                                updatedAt = GETDATE()
+                            WHERE leaveType = 'VACATION'
+                        `);
+                }
+            }
         }
 
         // Audit log

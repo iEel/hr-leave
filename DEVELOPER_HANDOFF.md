@@ -563,10 +563,16 @@ sequenceDiagram
   - `PublicHolidays(date, company)` — holiday exclusion
   - Migration: `database/migrations/add_performance_indexes.sql`
 
-### ✅ Bug Fixes (12 ก.พ. 2026)
+### ✅ Bug Fixes (12-16 ก.พ. 2026)
 - [x] **Interactive User Guide Loop** - แก้ useTour hook ที่ tour รันซ้ำตลอด
   - สาเหตุ: useEffect dependency `[session]` เปลี่ยน reference ทุก re-render
   - แก้ไข: ใช้ `session?.user?.role` + `hasStartedRef` + `useCallback`
+- [x] **Cancellation Reason แสดง Numeric ID** - เหตุผลยกเลิกแสดง "Cancelled by 5" แทนที่จะเป็น employeeId
+  - แก้ไข: ใช้ subquery `(SELECT employeeId FROM Users WHERE id = @cancelledBy)` ใน UPDATE statement
+  - อัพเดทข้อมูลเก่าใน DB ด้วย (9 rows)
+- [x] **Carry-Over Limit ไม่ Sync** - เปลี่ยน `ยกยอดข้ามปีได้สูงสุด` จากหน้าตั้งค่า ไม่ sync ไป `LeaveQuotaSettings.maxCarryOverDays`
+  - สาเหตุ: `PUT /api/hr/settings` จัดการแค่ `LEAVE_QUOTA_*` → `defaultDays` ไม่มี handler สำหรับ `LEAVE_CARRYOVER_LIMIT`
+  - แก้ไข: เพิ่ม sync `LEAVE_CARRYOVER_LIMIT` → `LeaveQuotaSettings` (maxCarryOverDays + allowCarryOver) สำหรับ VACATION
 
 ### 🔲 สิ่งที่ยังรอ (Remaining)
 - [ ] LINE Notify Integration (optional)
