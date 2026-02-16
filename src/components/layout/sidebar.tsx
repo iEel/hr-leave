@@ -155,7 +155,7 @@ export function Sidebar() {
 
     const { startTour } = useTour();
 
-    const SidebarContent = () => (
+    const sidebarContent = (
         <div className="flex flex-col h-full">
             {/* Logo */}
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
@@ -327,12 +327,12 @@ export function Sidebar() {
                 >
                     <X className="w-6 h-6" />
                 </button>
-                <SidebarContent />
+                {sidebarContent}
             </aside>
 
             {/* Desktop Sidebar */}
             <aside className="hidden lg:block fixed inset-y-0 left-0 w-72 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700">
-                <SidebarContent />
+                {sidebarContent}
             </aside>
         </>
     );
