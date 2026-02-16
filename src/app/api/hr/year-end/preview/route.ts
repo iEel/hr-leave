@@ -58,12 +58,20 @@ export async function GET(request: NextRequest) {
                 ORDER BY u.employeeId, lb.leaveType
             `);
 
-        // Check if next year already has data
+        // Check if next year already has data (including auto-created info)
         const nextYearCheck = await pool.request()
             .input('toYear', toYear)
-            .query(`SELECT COUNT(*) as count FROM LeaveBalances WHERE year = @toYear`);
+            .query(`
+                SELECT 
+                    COUNT(*) as totalCount,
+                    SUM(CASE WHEN isAutoCreated = 1 THEN 1 ELSE 0 END) as autoCreatedCount
+                FROM LeaveBalances WHERE year = @toYear
+            `);
 
-        const nextYearExists = nextYearCheck.recordset[0].count > 0;
+        const nextYearTotalCount = nextYearCheck.recordset[0].totalCount;
+        const nextYearAutoCreatedCount = nextYearCheck.recordset[0].autoCreatedCount || 0;
+        const nextYearExists = nextYearTotalCount > 0;
+        const nextYearAllAutoCreated = nextYearTotalCount > 0 && nextYearTotalCount === nextYearAutoCreatedCount;
 
         // Group by employee and calculate carry-over
         const employeeMap: Record<number, {
@@ -134,6 +142,8 @@ export async function GET(request: NextRequest) {
                 fromYear,
                 toYear,
                 nextYearExists,
+                nextYearAutoCreatedCount,
+                nextYearAllAutoCreated,
                 employees,
                 summary: {
                     totalEmployees: employees.length,

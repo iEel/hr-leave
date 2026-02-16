@@ -40,6 +40,8 @@ interface PreviewData {
     fromYear: number;
     toYear: number;
     nextYearExists: boolean;
+    nextYearAutoCreatedCount: number;
+    nextYearAllAutoCreated: boolean;
     employees: EmployeePreview[];
     summary: {
         totalEmployees: number;
@@ -205,15 +207,40 @@ export default function YearEndProcessingPage() {
                 <>
                     {/* Warning if next year exists */}
                     {previewData.nextYearExists && (
-                        <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl flex items-start gap-3">
-                            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5" />
+                        <div className={`mb-6 p-4 rounded-xl flex items-start gap-3 ${previewData.nextYearAllAutoCreated
+                                ? 'bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800'
+                                : 'bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800'
+                            }`}>
+                            {previewData.nextYearAllAutoCreated ? (
+                                <Info className="w-5 h-5 text-blue-600 mt-0.5" />
+                            ) : (
+                                <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5" />
+                            )}
                             <div>
-                                <p className="text-amber-700 dark:text-amber-300 font-medium">
-                                    ⚠️ ข้อมูลปี {previewData.toYear} มีอยู่แล้วในระบบ
-                                </p>
-                                <p className="text-sm text-amber-600 dark:text-amber-400">
-                                    หากต้องการประมวลผลใหม่ กรุณาเลือก "เขียนทับข้อมูลเดิม" ด้านล่าง
-                                </p>
+                                {previewData.nextYearAllAutoCreated ? (
+                                    <>
+                                        <p className="text-blue-700 dark:text-blue-300 font-medium">
+                                            ℹ️ พบ {previewData.nextYearAutoCreatedCount} รายการที่สร้างอัตโนมัติ (จากการลาข้ามปี)
+                                        </p>
+                                        <p className="text-sm text-blue-600 dark:text-blue-400">
+                                            ระบบจะเขียนทับข้อมูลเหล่านี้อัตโนมัติ โดยเก็บยอดวันลาที่ใช้ไปแล้วไว้
+                                        </p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="text-amber-700 dark:text-amber-300 font-medium">
+                                            ⚠️ ข้อมูลปี {previewData.toYear} มีอยู่แล้วในระบบ
+                                            {previewData.nextYearAutoCreatedCount > 0 && (
+                                                <span className="ml-1 text-sm font-normal">
+                                                    (รวม {previewData.nextYearAutoCreatedCount} รายการสร้างอัตโนมัติ)
+                                                </span>
+                                            )}
+                                        </p>
+                                        <p className="text-sm text-amber-600 dark:text-amber-400">
+                                            หากต้องการประมวลผลใหม่ กรุณาเลือก &quot;เขียนทับข้อมูลเดิม&quot; ด้านล่าง
+                                        </p>
+                                    </>
+                                )}
                             </div>
                         </div>
                     )}
@@ -256,7 +283,9 @@ export default function YearEndProcessingPage() {
                                 <div>
                                     <p className="text-sm text-gray-500">สถานะปี {previewData.toYear}</p>
                                     <p className="text-lg font-bold text-gray-900 dark:text-white">
-                                        {previewData.nextYearExists ? '📋 มีข้อมูลแล้ว' : '⏳ ยังไม่มีข้อมูล'}
+                                        {previewData.nextYearExists
+                                            ? (previewData.nextYearAllAutoCreated ? '🔄 สร้างอัตโนมัติ' : '📋 มีข้อมูลแล้ว')
+                                            : '⏳ ยังไม่มีข้อมูล'}
                                     </p>
                                 </div>
                             </div>
@@ -349,7 +378,7 @@ export default function YearEndProcessingPage() {
                             ดำเนินการ
                         </h2>
 
-                        {previewData.nextYearExists && (
+                        {previewData.nextYearExists && !previewData.nextYearAllAutoCreated && (
                             <label className="flex items-center gap-2 mb-4">
                                 <input
                                     type="checkbox"
@@ -363,7 +392,7 @@ export default function YearEndProcessingPage() {
 
                         <button
                             onClick={executeYearEnd}
-                            disabled={executing || (previewData.nextYearExists && !forceOverwrite)}
+                            disabled={executing || (previewData.nextYearExists && !previewData.nextYearAllAutoCreated && !forceOverwrite)}
                             className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white rounded-xl shadow-lg transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {executing ? (
