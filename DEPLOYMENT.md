@@ -312,13 +312,13 @@ crontab -e
 
 ### ทดสอบก่อน:
 ```bash
-curl -X POST http://localhost:3000/api/cron/audit-cleanup \
-  -H "x-cron-secret: YOUR_CRON_SECRET"
+curl -X POST http://localhost:3002/api/cron/audit-cleanup \
+  -H "x-cron-secret: default-cron-secret-change-me"
 ```
 
 ผลลัพธ์:
 ```json
-{"success":true,"message":"Cleaned up 0 audit log records older than 12 months","deleted":0}
+{"success":true,"message":"No old audit logs to clean up","deleted":0}
 ```
 
 ### ตั้ง Cron Job (ทุกเดือนวันที่ 1 เวลา 02:00):
@@ -330,12 +330,12 @@ crontab -e
 
 เพิ่มบรรทัด:
 ```
-0 2 1 * * curl -s -X POST http://localhost:3000/api/cron/audit-cleanup -H "x-cron-secret: YOUR_CRON_SECRET" >> /var/log/hr-audit-cleanup.log 2>&1
+0 2 1 * * curl -s -X POST http://localhost:3002/api/cron/audit-cleanup -H "x-cron-secret: default-cron-secret-change-me" >> /var/log/hr-audit-cleanup.log 2>&1
 ```
 
 **Windows (Task Scheduler):**
 ```
-schtasks /create /tn "HR Audit Cleanup" /tr "curl -s -X POST http://localhost:3000/api/cron/audit-cleanup -H \"x-cron-secret: YOUR_CRON_SECRET\"" /sc monthly /d 1 /st 02:00
+schtasks /create /tn "HR Audit Cleanup" /tr "curl -s -X POST http://localhost:3002/api/cron/audit-cleanup -H \"x-cron-secret: default-cron-secret-change-me\"" /sc monthly /d 1 /st 02:00
 ```
 
 ---
