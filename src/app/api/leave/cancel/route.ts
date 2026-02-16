@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
                     UPDATE LeaveRequests
                     SET status = @status, 
                         updatedAt = GETDATE(),
-                        rejectionReason = 'Cancelled by ' + CAST(@cancelledBy as varchar)
+                        rejectionReason = 'Cancelled by ' + ISNULL((SELECT employeeId FROM Users WHERE id = @cancelledBy), CAST(@cancelledBy AS varchar))
                     WHERE id = @leaveId AND status NOT IN ('CANCELLED', 'REJECTED')
                 `);
 
