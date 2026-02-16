@@ -96,6 +96,7 @@ BEGIN
         used DECIMAL(5,2) NOT NULL DEFAULT 0, -- ใช้ไปแล้ว
         remaining DECIMAL(5,2) NOT NULL DEFAULT 0, -- คงเหลือ
         carryOver DECIMAL(5,2) NOT NULL DEFAULT 0, -- ยกยอดจากปีก่อน
+        isAutoCreated BIT NOT NULL DEFAULT 0, -- 1 = สร้างอัตโนมัติ (ยังไม่ผ่าน Year-End)
         createdAt DATETIME2 NOT NULL DEFAULT GETDATE(),
         updatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
         CONSTRAINT FK_LeaveBalances_User FOREIGN KEY (userId) REFERENCES Users(id),
@@ -104,6 +105,26 @@ BEGIN
     
     CREATE INDEX IX_LeaveBalances_UserId ON LeaveBalances(userId);
     CREATE INDEX IX_LeaveBalances_Year ON LeaveBalances(year);
+END
+GO
+
+-- ==============================================
+-- LeaveRequestYearSplit Table (แยก usageAmount ข้ามปี)
+-- ==============================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='LeaveRequestYearSplit' AND xtype='U')
+BEGIN
+    CREATE TABLE LeaveRequestYearSplit (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        leaveRequestId INT NOT NULL,
+        year INT NOT NULL,
+        usageAmount DECIMAL(5,2) NOT NULL, -- จำนวนวันที่หักจากปีนี้
+        createdAt DATETIME2 NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT FK_YearSplit_LeaveRequest FOREIGN KEY (leaveRequestId) REFERENCES LeaveRequests(id),
+        CONSTRAINT UQ_YearSplit_RequestYear UNIQUE (leaveRequestId, year)
+    );
+
+    CREATE INDEX IX_YearSplit_LeaveRequestId ON LeaveRequestYearSplit(leaveRequestId);
+    CREATE INDEX IX_YearSplit_Year ON LeaveRequestYearSplit(year);
 END
 GO
 

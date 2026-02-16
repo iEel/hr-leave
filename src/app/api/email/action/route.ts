@@ -59,28 +59,48 @@ export async function POST(request: NextRequest) {
                 WHERE id = @leaveId
             `);
 
-        // 3. If REJECTED, Refund Balance
+        // 3. If REJECTED, Refund Balance using year-split data
         if (newStatus === 'REJECTED') {
-            // Fetch usage amount and type to refund
             const leaveData = await pool.request()
                 .input('leaveId', leaveId)
-                .query(`SELECT userId, leaveType, usageAmount FROM LeaveRequests WHERE id = @leaveId`);
+                .query(`SELECT userId, leaveType, usageAmount, startDatetime FROM LeaveRequests WHERE id = @leaveId`);
 
             if (leaveData.recordset.length > 0) {
-                const { userId, leaveType, usageAmount } = leaveData.recordset[0];
-                const currentYear = new Date().getFullYear();
+                const { userId, leaveType, usageAmount, startDatetime } = leaveData.recordset[0];
 
-                await pool.request()
-                    .input('userId', userId)
-                    .input('leaveType', leaveType)
-                    .input('usageAmount', usageAmount)
-                    .input('year', currentYear)
-                    .query(`
-                        UPDATE LeaveBalances
-                        SET used = used - @usageAmount,
-                            remaining = remaining + @usageAmount
-                        WHERE userId = @userId AND leaveType = @leaveType AND year = @year
-                    `);
+                const splitResult = await pool.request()
+                    .input('leaveId', leaveId)
+                    .query(`SELECT year, usageAmount FROM LeaveRequestYearSplit WHERE leaveRequestId = @leaveId`);
+
+                if (splitResult.recordset.length > 0) {
+                    for (const split of splitResult.recordset) {
+                        await pool.request()
+                            .input('userId', userId)
+                            .input('leaveType', leaveType)
+                            .input('usageAmount', split.usageAmount)
+                            .input('year', split.year)
+                            .query(`
+                                UPDATE LeaveBalances
+                                SET used = used - @usageAmount,
+                                    remaining = remaining + @usageAmount
+                                WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                            `);
+                    }
+                } else {
+                    // Fallback: use startDatetime year
+                    const leaveYear = new Date(startDatetime).getFullYear();
+                    await pool.request()
+                        .input('userId', userId)
+                        .input('leaveType', leaveType)
+                        .input('usageAmount', usageAmount)
+                        .input('year', leaveYear)
+                        .query(`
+                            UPDATE LeaveBalances
+                            SET used = used - @usageAmount,
+                                remaining = remaining + @usageAmount
+                            WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                        `);
+                }
             }
         }
 

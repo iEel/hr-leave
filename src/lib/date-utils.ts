@@ -124,6 +124,77 @@ export function calculateNetWorkingDays(
 }
 
 /**
+ * Split leave usage amount by year for cross-year leave requests.
+ * Uses the same day-counting logic as calculateNetWorkingDays but groups by year.
+ * @returns Map<year, usageAmount> e.g. { 2025: 3, 2026: 1 }
+ */
+export function splitLeaveByYear(
+    startDate: Date,
+    endDate: Date,
+    holidays: Date[],
+    timeSlot: TimeSlot = TimeSlot.FULL_DAY,
+    workingSaturdays: WorkingSaturdayData[] = [],
+    workHoursPerDay: number = 7.5
+): Map<number, number> {
+    const allDays = eachDayOfInterval({
+        start: startOfDay(startDate),
+        end: startOfDay(endDate),
+    });
+
+    const holidayStrings = holidays.map((h) => format(startOfDay(h), 'yyyy-MM-dd'));
+
+    const workingSaturdayMap = new Map<string, WorkingSaturdayData>();
+    for (const ws of workingSaturdays) {
+        workingSaturdayMap.set(ws.date, ws);
+    }
+
+    const yearMap = new Map<number, number>();
+
+    for (const day of allDays) {
+        const dayStr = format(day, 'yyyy-MM-dd');
+        const dayOfWeek = day.getDay();
+        const isHoliday = holidayStrings.includes(dayStr);
+        const year = day.getFullYear();
+
+        if (isHoliday) continue;
+        if (dayOfWeek === 0) continue;
+
+        let dayValue = 0;
+
+        if (dayOfWeek === 6) {
+            const workingSat = workingSaturdayMap.get(dayStr);
+            if (workingSat) {
+                dayValue = workingSat.workHours / workHoursPerDay;
+            }
+            // If not a working Saturday, skip
+        } else {
+            // Regular weekday (Mon-Fri)
+            dayValue = 1;
+        }
+
+        if (dayValue > 0) {
+            yearMap.set(year, (yearMap.get(year) || 0) + dayValue);
+        }
+    }
+
+    // If half day, apply to the single-day result
+    if (timeSlot === TimeSlot.HALF_MORNING || timeSlot === TimeSlot.HALF_AFTERNOON) {
+        if (allDays.length === 1) {
+            for (const [year, val] of yearMap) {
+                yearMap.set(year, val * 0.5);
+            }
+        }
+    }
+
+    // Round all values to 2 decimal places
+    for (const [year, val] of yearMap) {
+        yearMap.set(year, Math.round(val * 100) / 100);
+    }
+
+    return yearMap;
+}
+
+/**
  * Check if two date ranges overlap
  * Algorithm: (StartNew <= EndExisting) AND (EndNew >= StartExisting)
  */

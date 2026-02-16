@@ -28,16 +28,42 @@ export async function POST(request: NextRequest) {
         // Check if next year already has data
         const nextYearCheck = await pool.request()
             .input('toYear', toYear)
-            .query(`SELECT COUNT(*) as count FROM LeaveBalances WHERE year = @toYear`);
+            .query(`
+                SELECT 
+                    COUNT(*) as totalCount,
+                    SUM(CASE WHEN isAutoCreated = 1 THEN 1 ELSE 0 END) as autoCreatedCount
+                FROM LeaveBalances WHERE year = @toYear
+            `);
 
-        if (nextYearCheck.recordset[0].count > 0 && !forceOverwrite) {
+        const totalCount = nextYearCheck.recordset[0].totalCount;
+        const autoCreatedCount = nextYearCheck.recordset[0].autoCreatedCount;
+        const allAutoCreated = totalCount > 0 && totalCount === autoCreatedCount;
+
+        if (totalCount > 0 && !allAutoCreated && !forceOverwrite) {
             return NextResponse.json({
                 error: `ปี ${toYear} มีข้อมูลอยู่แล้ว กรุณาเลือก "เขียนทับ" หากต้องการประมวลผลใหม่`
             }, { status: 400 });
         }
 
-        // If force overwrite, delete existing data for next year
-        if (forceOverwrite && nextYearCheck.recordset[0].count > 0) {
+        // Snapshot existing usage before deleting (for auto-created records)
+        let existingUsage: Record<string, { used: number }> = {};
+
+        // Delete existing data if force overwrite or all auto-created
+        if (totalCount > 0 && (forceOverwrite || allAutoCreated)) {
+            // Save existing usage amounts (from cross-year leaves taken before year-end)
+            const usageSnapshot = await pool.request()
+                .input('toYear', toYear)
+                .query(`
+                    SELECT userId, leaveType, used 
+                    FROM LeaveBalances 
+                    WHERE year = @toYear AND used > 0
+                `);
+
+            for (const row of usageSnapshot.recordset) {
+                const key = `${row.userId}_${row.leaveType}`;
+                existingUsage[key] = { used: row.used };
+            }
+
             await pool.request()
                 .input('toYear', toYear)
                 .query(`DELETE FROM LeaveBalances WHERE year = @toYear`);
@@ -130,7 +156,12 @@ export async function POST(request: NextRequest) {
                         : 0;
 
                     const entitlement = quota.defaultDays;
-                    const remaining = entitlement + carryOver;
+
+                    // Check if there was pre-existing usage (from cross-year leaves)
+                    const usageKey = `${emp.userId}_${leaveType}`;
+                    const priorUsed = existingUsage[usageKey]?.used || 0;
+
+                    const remaining = entitlement + carryOver - priorUsed;
 
                     await pool.request()
                         .input('userId', emp.userId)
@@ -138,10 +169,11 @@ export async function POST(request: NextRequest) {
                         .input('year', toYear)
                         .input('entitlement', entitlement)
                         .input('carryOver', carryOver)
+                        .input('used', priorUsed)
                         .input('remaining', remaining)
                         .query(`
-                            INSERT INTO LeaveBalances (userId, leaveType, year, entitlement, used, remaining, carryOver)
-                            VALUES (@userId, @leaveType, @year, @entitlement, 0, @remaining, @carryOver)
+                            INSERT INTO LeaveBalances (userId, leaveType, year, entitlement, used, remaining, carryOver, isAutoCreated)
+                            VALUES (@userId, @leaveType, @year, @entitlement, @used, @remaining, @carryOver, 0)
                         `);
                 }
 

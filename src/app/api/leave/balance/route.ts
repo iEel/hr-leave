@@ -57,8 +57,8 @@ export async function GET(request: NextRequest) {
                     .input('entitlement', quota.defaultDays)
                     .input('remaining', quota.defaultDays)
                     .query(`
-                        INSERT INTO LeaveBalances (userId, leaveType, year, entitlement, used, remaining, carryOver)
-                        VALUES (@userId, @leaveType, @year, @entitlement, 0, @remaining, 0)
+                        INSERT INTO LeaveBalances (userId, leaveType, year, entitlement, used, remaining, carryOver, isAutoCreated)
+                        VALUES (@userId, @leaveType, @year, @entitlement, 0, @remaining, 0, 1)
                     `);
             }
 

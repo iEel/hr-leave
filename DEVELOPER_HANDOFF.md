@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 12 กุมภาพันธ์ 2026 (Bulk Leave Import + Hourly Leave)  
+> 📅 อัปเดตล่าสุด: 16 กุมภาพันธ์ 2026 (Cross-Year Leave Support)  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -75,8 +75,8 @@ hr-leave/
 │       ├── add_ad_auth_support.sql
 │       ├── add_ad_lifecycle_support.sql
 │       ├── add_companies_table.sql
+│       ├── add_cross_year_leave_support.sql
 │       ├── add_ishrstaff_column.sql
-│       ├── add_system_settings.sql
 │       └── add_work_schedule.sql
 ├── scripts/                          # Utility scripts
 │   ├── seed-db.ts                    # Seed database
@@ -257,7 +257,8 @@ npm run dev
 |-------|----------|
 | `Users` | ข้อมูลพนักงาน (employeeId, password, role, company, department) |
 | `LeaveRequests` | ใบคำขอลา (leaveType, startDatetime, endDatetime, status) |
-| `LeaveBalances` | ยอดวันลาคงเหลือต่อปี |
+| `LeaveRequestYearSplit` | แยกจำนวนวันลาตามปี (สำหรับใบลาข้ามปี) |
+| `LeaveBalances` | ยอดวันลาคงเหลือต่อปี (มี `isAutoCreated` flag) |
 | `PublicHolidays` | วันหยุดประเพณี/พิเศษ |
 | `Notifications` | การแจ้งเตือน |
 | `AuditLogs` | บันทึกกิจกรรม |
@@ -286,6 +287,18 @@ npm run dev
 - `usageAmount`: จำนวนวันสุทธิ (หลังหักวันหยุด)
 - `status`: PENDING, APPROVED, REJECTED, CANCELLED
 - `rejectionReason`: เหตุผลที่ไม่อนุมัติ
+
+### Key Columns ใน LeaveBalances:
+- `isAutoCreated`: BIT - ระบุว่า Balance ถูกสร้างอัตโนมัติ (1) หรือจาก Year-End processing (0)
+- `entitlement`: DECIMAL - สิทธิ์วันลาทั้งหมด
+- `used`: DECIMAL - จำนวนที่ใช้ไปแล้ว
+- `remaining`: DECIMAL - คงเหลือ (entitlement + carryOver - used)
+- `carryOver`: DECIMAL - ยอดยกมาจากปีก่อน
+
+### Key Columns ใน LeaveRequestYearSplit:
+- `leaveRequestId`: INT FK → LeaveRequests - ใบลาที่เกี่ยวข้อง
+- `year`: INT - ปีที่หักยอด
+- `usageAmount`: DECIMAL - จำนวนวันที่หักในปีนั้น
 
 ---
 
@@ -512,6 +525,15 @@ sequenceDiagram
 - [x] **Sidebar** - เมนู "นำเข้าวันลา" (FileSpreadsheet icon) ใน HR section
 - [x] **Access Control** - HR/ADMIN/isHRStaff (middleware + API)
 
+### ✅ Phase 10: Cross-Year Leave Support (16 ก.พ. 2026)
+- [x] **Split-Year Usage** - ใบลาที่ข้ามปี (เช่น 28 ธ.ค. - 4 ม.ค.) จะถูกแยกหักยอดแต่ละปีอัตโนมัติ
+- [x] **LeaveRequestYearSplit Table** - ตารางใหม่เก็บจำนวนวันแยกตามปี
+- [x] **Auto-Create Balance** - สร้างยอดวันลาปีใหม่อัตโนมัติ (ก่อน Year-End) พร้อม flag `isAutoCreated`
+- [x] **Year-End Auto-Overwrite** - ประมวลผลสิ้นปี overwrite ยอดที่ auto-create ได้โดยไม่ต้อง "เขียนทับ" + Snapshot `used` ก่อนลบ
+- [x] **Cross-Year Refund** - ยกเลิก/ปฏิเสธใบลาข้ามปี คืนยอดถูกปีทุกกรณี
+- [x] **splitLeaveByYear()** - utility function ใน `date-utils.ts`
+- [x] **Migration Script** - `database/migrations/add_cross_year_leave_support.sql`
+
 ### ✅ Bug Fixes (12 ก.พ. 2026)
 - [x] **Interactive User Guide Loop** - แก้ useTour hook ที่ tour รันซ้ำตลอด
   - สาเหตุ: useEffect dependency `[session]` เปลี่ยน reference ทุก re-render
@@ -551,13 +573,24 @@ sequenceDiagram
 | `scripts/migrate-ad-lifecycle.ts` | Migration script |
 | `scripts/scheduled-ad-sync.ts` | Cron script for Task Scheduler |
 
-### � Year-End Processing
+### 📊 Year-End Processing
 
 | File | Purpose |
 |------|---------|
 | `api/hr/year-end/preview/route.ts` | Preview ประมวลผลสิ้นปี |
-| `api/hr/year-end/execute/route.ts` | Execute + Carry-over |
+| `api/hr/year-end/execute/route.ts` | Execute + Carry-over + Snapshot `used` จาก auto-created records |
 | `app/(dashboard)/hr/year-end/page.tsx` | UI หน้าประมวลผลสิ้นปี |
+
+### 🔀 Cross-Year Leave
+
+| File | Purpose |
+|------|---------|
+| `lib/date-utils.ts` | `splitLeaveByYear()` - แยกจำนวนวันลาตามปี |
+| `api/leave/request/route.ts` | เช็ค/หักยอดแยกตามปี + auto-create balance |
+| `api/leave/cancel/route.ts` | คืนยอดจาก `LeaveRequestYearSplit` |
+| `api/leave/approve/route.ts` | คืนยอดตอน reject จาก split data |
+| `api/email/action/route.ts` | คืนยอดตอน reject (Magic Link) จาก split data |
+| `database/migrations/add_cross_year_leave_support.sql` | Migration script |
 
 ### 📥 Bulk Leave Import
 
@@ -700,6 +733,13 @@ sequenceDiagram
 - หักวันเสาร์-อาทิตย์อัตโนมัติ
 - หักวันหยุดนักขัตฤกษ์ (จาก PublicHolidays table)
 - Half-day = 0.5 วัน
+
+### Cross-Year Leave (ลาข้ามปี):
+- ใบลาที่ข้ามวันที่ 31 ธ.ค. จะถูกแยกหักยอดแต่ละปีอัตโนมัติ
+- ตัวอย่าง: ลา 28 ธ.ค. 2026 - 4 ม.ค. 2027 → หัก 2 วันจากปี 2026, หัก 2 วันจากปี 2027
+- ถ้ายอดปีใหม่ยังไม่มี ระบบ auto-create ให้ (flag `isAutoCreated = 1`)
+- เมื่อ Year-End processing ทำ → auto-overwrite ยอดที่ auto-create + เก็บ `used` เดิมไว้
+- ยกเลิก/ปฏิเสธใบลาข้ามปี → คืนยอดถูกปีทุกกรณี (จาก `LeaveRequestYearSplit`)
 
 ### Timezone:
 - ระบบใช้ `Asia/Bangkok (UTC+7)`

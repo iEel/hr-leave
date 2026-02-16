@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
         const leaveResult = await pool.request()
             .input('leaveId', leaveId)
             .query(`
-                SELECT id, userId, leaveType, usageAmount, status
+                SELECT id, userId, leaveType, usageAmount, status, startDatetime
                 FROM LeaveRequests
                 WHERE id = @leaveId
             `);
@@ -89,20 +89,43 @@ export async function POST(request: NextRequest) {
                 WHERE id = @leaveId
             `);
 
-        // Return the used days back to balance
-        const currentYear = new Date().getFullYear();
-        await pool.request()
-            .input('userId', userId)
-            .input('leaveType', leave.leaveType)
-            .input('year', currentYear)
-            .input('usageAmount', leave.usageAmount)
-            .query(`
-                UPDATE LeaveBalances
-                SET used = used - @usageAmount,
-                    remaining = remaining + @usageAmount,
-                    updatedAt = GETDATE()
-                WHERE userId = @userId AND leaveType = @leaveType AND year = @year
-            `);
+        // Return the used days back to balance using year-split data
+        const splitResult = await pool.request()
+            .input('leaveId', leaveId)
+            .query(`SELECT year, usageAmount FROM LeaveRequestYearSplit WHERE leaveRequestId = @leaveId`);
+
+        if (splitResult.recordset.length > 0) {
+            // Refund using split data (new system)
+            for (const split of splitResult.recordset) {
+                await pool.request()
+                    .input('userId', leave.userId)
+                    .input('leaveType', leave.leaveType)
+                    .input('year', split.year)
+                    .input('usageAmount', split.usageAmount)
+                    .query(`
+                        UPDATE LeaveBalances
+                        SET used = used - @usageAmount,
+                            remaining = remaining + @usageAmount,
+                            updatedAt = GETDATE()
+                        WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                    `);
+            }
+        } else {
+            // Fallback for pre-migration leaves: use startDatetime year
+            const leaveYear = new Date(leave.startDatetime).getFullYear();
+            await pool.request()
+                .input('userId', leave.userId)
+                .input('leaveType', leave.leaveType)
+                .input('year', leaveYear)
+                .input('usageAmount', leave.usageAmount)
+                .query(`
+                    UPDATE LeaveBalances
+                    SET used = used - @usageAmount,
+                        remaining = remaining + @usageAmount,
+                        updatedAt = GETDATE()
+                    WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                `);
+        }
 
         // Audit log
         await logAudit({

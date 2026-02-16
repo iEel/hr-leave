@@ -201,23 +201,105 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        // Check leave balance
-        const currentYear = new Date().getFullYear();
-        const balanceCheck = await pool.request()
-            .input('userId', userId)
-            .input('leaveType', leaveType)
-            .input('year', currentYear)
-            .query(`
-                SELECT remaining FROM LeaveBalances
-                WHERE userId = @userId AND leaveType = @leaveType AND year = @year
-            `);
+        // === SPLIT-YEAR BALANCE CHECK & DEDUCTION ===
+        const leaveStartDate2 = new Date(startDate);
+        const leaveEndDate2 = new Date(endDate);
+        const startYear = leaveStartDate2.getFullYear();
+        const endYear = leaveEndDate2.getFullYear();
 
+        // Determine year-split usage
+        let yearSplits: Map<number, number>;
+
+        if (startYear === endYear) {
+            // Same year — simple case
+            yearSplits = new Map([[startYear, usageAmount]]);
+        } else {
+            // Cross-year — calculate split using holidays and working saturdays
+            const holidayResult = await pool.request()
+                .input('startDate2', startDate)
+                .input('endDate2', endDate)
+                .query(`SELECT date FROM PublicHolidays WHERE date BETWEEN @startDate2 AND @endDate2`);
+            const holidays = holidayResult.recordset.map((r: any) => new Date(r.date));
+
+            const wSatResult = await pool.request()
+                .input('startDate2', startDate)
+                .input('endDate2', endDate)
+                .query(`SELECT date, startTime, endTime, workHours FROM WorkingSaturdays WHERE date BETWEEN @startDate2 AND @endDate2`);
+            const workingSats = wSatResult.recordset.map((r: any) => ({
+                date: new Date(r.date).toISOString().split('T')[0],
+                startTime: r.startTime,
+                endTime: r.endTime,
+                workHours: r.workHours
+            }));
+
+            // Fetch WORK_HOURS_PER_DAY setting
+            const whpdResult = await pool.request()
+                .input('key', 'WORK_HOURS_PER_DAY')
+                .query('SELECT settingValue FROM SystemSettings WHERE settingKey = @key');
+            const workHoursPerDay = whpdResult.recordset.length > 0
+                ? parseFloat(whpdResult.recordset[0].settingValue)
+                : 7.5;
+
+            const { splitLeaveByYear } = await import('@/lib/date-utils');
+            yearSplits = splitLeaveByYear(
+                leaveStartDate2,
+                leaveEndDate2,
+                holidays,
+                isHourly ? 'FULL_DAY' as any : timeSlot,
+                workingSats,
+                workHoursPerDay
+            );
+        }
+
+        // Check balance for each year (skip for OTHER type)
         if (leaveType !== 'OTHER') {
-            if (balanceCheck.recordset.length === 0 || balanceCheck.recordset[0].remaining < usageAmount) {
-                return NextResponse.json(
-                    { error: 'วันลาไม่เพียงพอ' },
-                    { status: 400 }
-                );
+            for (const [year, amount] of yearSplits) {
+                const balanceCheck = await pool.request()
+                    .input('userId', userId)
+                    .input('leaveType', leaveType)
+                    .input('year', year)
+                    .query(`
+                        SELECT remaining FROM LeaveBalances
+                        WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                    `);
+
+                if (balanceCheck.recordset.length === 0) {
+                    // Auto-create balance for this year if not exists
+                    const quotaResult = await pool.request()
+                        .input('leaveType', leaveType)
+                        .query(`SELECT defaultDays FROM LeaveQuotaSettings WHERE leaveType = @leaveType`);
+
+                    if (quotaResult.recordset.length > 0) {
+                        const defaultDays = quotaResult.recordset[0].defaultDays;
+                        await pool.request()
+                            .input('userId', userId)
+                            .input('leaveType', leaveType)
+                            .input('year', year)
+                            .input('entitlement', defaultDays)
+                            .input('remaining', defaultDays)
+                            .query(`
+                                INSERT INTO LeaveBalances (userId, leaveType, year, entitlement, used, remaining, carryOver, isAutoCreated)
+                                VALUES (@userId, @leaveType, @year, @entitlement, 0, @remaining, 0, 1)
+                            `);
+
+                        if (defaultDays < amount) {
+                            return NextResponse.json(
+                                { error: `วันลาปี ${year} ไม่เพียงพอ (มี ${defaultDays} วัน, ต้องการ ${amount} วัน)` },
+                                { status: 400 }
+                            );
+                        }
+                    } else {
+                        return NextResponse.json(
+                            { error: `ไม่พบข้อมูลโควตาประเภท ${leaveType}` },
+                            { status: 400 }
+                        );
+                    }
+                } else if (balanceCheck.recordset[0].remaining < amount) {
+                    return NextResponse.json(
+                        { error: `วันลาปี ${year} ไม่เพียงพอ (เหลือ ${balanceCheck.recordset[0].remaining} วัน, ต้องการ ${amount} วัน)` },
+                        { status: 400 }
+                    );
+                }
             }
         }
 
@@ -251,19 +333,33 @@ export async function POST(request: NextRequest) {
 
         const newRequestId = insertResult.recordset[0].id;
 
-        // Update leave balance (deduct used, remaining)
-        await pool.request()
-            .input('userId', userId)
-            .input('leaveType', leaveType)
-            .input('year', currentYear)
-            .input('usageAmount', usageAmount)
-            .query(`
-                UPDATE LeaveBalances
-                SET used = used + @usageAmount,
-                    remaining = remaining - @usageAmount,
-                    updatedAt = GETDATE()
-                WHERE userId = @userId AND leaveType = @leaveType AND year = @year
-            `);
+        // Deduct balance for each year and record year splits
+        for (const [year, amount] of yearSplits) {
+            if (leaveType !== 'OTHER') {
+                await pool.request()
+                    .input('userId', userId)
+                    .input('leaveType', leaveType)
+                    .input('year', year)
+                    .input('usageAmount', amount)
+                    .query(`
+                        UPDATE LeaveBalances
+                        SET used = used + @usageAmount,
+                            remaining = remaining - @usageAmount,
+                            updatedAt = GETDATE()
+                        WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                    `);
+            }
+
+            // Always record year split for tracking
+            await pool.request()
+                .input('leaveRequestId', newRequestId)
+                .input('year', year)
+                .input('usageAmount', amount)
+                .query(`
+                    INSERT INTO LeaveRequestYearSplit (leaveRequestId, year, usageAmount)
+                    VALUES (@leaveRequestId, @year, @usageAmount)
+                `);
+        }
 
         // Audit log
         await logAudit({
