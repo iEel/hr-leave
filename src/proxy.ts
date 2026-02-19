@@ -14,7 +14,7 @@ const roleBasedRoutes: Record<string, string[]> = {
     '/admin': ['ADMIN'],
 };
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
 
     // Allow public routes
@@ -68,6 +68,6 @@ export const config = {
          * - uploads folder (uploaded files)
          * - api/auth routes
          */
-        '/((?!_next/static|_next/image|favicon.ico|icons|manifest.json|sw.js|uploads|api/auth).*)',
+        '/((?!_next/static|_next/image|favicon.ico|icon.svg|icons|manifest.json|sw.js|uploads|api/auth|.*\\.(?:png|jpg|jpeg|gif|svg|ico)$).*)',
     ],
 };
