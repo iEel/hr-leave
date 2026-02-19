@@ -12,6 +12,22 @@ const notoSansThai = Noto_Sans_Thai({
 export const metadata: Metadata = {
   title: "HR Leave Management System",
   description: "ระบบจัดการการลางาน - Sonic Interfreight / Grandlink Logistics",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: [
+      { url: "/icons/icon-512x512.png" },
+    ],
+  },
+  manifest: "/manifest.json",
+  themeColor: "#4F46E5",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Sonic Leave",
+  },
+  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no",
 };
 
 export default function RootLayout({
@@ -21,17 +37,6 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="th" suppressHydrationWarning>
-      <head>
-        {/* PWA Meta Tags */}
-        <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#4F46E5" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="Sonic Leave" />
-        <link rel="apple-touch-icon" href="/icons/icon-512x512.png" />
-        <meta name="mobile-web-app-capable" content="yes" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-      </head>
       <body className={`${notoSansThai.variable} font-sans antialiased`} suppressHydrationWarning>
         <Providers>{children}</Providers>
         {/* Service Worker Registration */}
