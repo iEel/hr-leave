@@ -50,7 +50,8 @@ export async function POST(request: NextRequest) {
         const leave = leaveResult.recordset[0];
         const userRole = session.user.role;
         const isOwner = leave.userId === userId;
-        const isHrOrAdmin = userRole === 'HR' || userRole === 'ADMIN';
+        const isHRStaff = (session.user as any)?.isHRStaff === true;
+        const isHrOrAdmin = userRole === 'HR' || userRole === 'ADMIN' || isHRStaff;
 
         // Permission check
         if (!isOwner && !isHrOrAdmin) {
