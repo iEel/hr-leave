@@ -13,7 +13,7 @@ import {
     ArrowLeft,
 } from 'lucide-react';
 import Link from 'next/link';
-import { formatLeaveDays, formatHourlyDuration } from '@/lib/leave-utils';
+import { formatLeaveDays, formatHourlyDuration, formatMinutesToDisplay } from '@/lib/leave-utils';
 
 interface TeamMember {
     id: number;
@@ -41,6 +41,7 @@ interface BalanceData {
         used: number;
         remaining: number;
         carryOver: number;
+        actualUsedMinutes: number;
     }>;
     leaveHistory: Array<{
         id: number;
@@ -258,7 +259,7 @@ export default function ManagerTeamPage() {
                                                 {b.entitlement === 0 && b.carryOver === 0 ? 'ไม่จำกัด' : formatLeaveDays(b.remaining)}
                                             </p>
                                             <p className="text-xs text-gray-400">
-                                                ใช้ {formatLeaveDays(b.used)} / {b.entitlement === 0 && b.carryOver === 0 ? 'ไม่จำกัด' : formatLeaveDays(b.entitlement + b.carryOver)}
+                                                ใช้ {formatMinutesToDisplay(b.actualUsedMinutes)} / {b.entitlement === 0 && b.carryOver === 0 ? 'ไม่จำกัด' : formatLeaveDays(b.entitlement + b.carryOver)}
                                             </p>
                                         </div>
                                     ))}

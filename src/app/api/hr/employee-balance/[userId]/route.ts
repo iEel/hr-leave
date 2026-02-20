@@ -65,6 +65,57 @@ export async function GET(
                 ORDER BY leaveType
             `);
 
+        // For unlimited leave types (entitlement=0), compute actual used minutes from LeaveRequests
+        // to avoid precision loss from accumulated decimal conversions
+        const actualUsedResult = await pool.request()
+            .input('userId', userId)
+            .input('year', currentYear)
+            .query(`
+                SELECT 
+                    leaveType,
+                    SUM(
+                        CASE 
+                            WHEN isHourly = 1 AND startTime IS NOT NULL AND endTime IS NOT NULL THEN
+                                -- Calculate net minutes directly from times
+                                DATEDIFF(MINUTE, 
+                                    CAST(startTime AS TIME), 
+                                    CAST(endTime AS TIME)
+                                )
+                                -- Deduct lunch overlap if applicable
+                                - CASE 
+                                    WHEN CAST(startTime AS TIME) < CAST('13:00' AS TIME) 
+                                         AND CAST(endTime AS TIME) > CAST('12:00' AS TIME) 
+                                    THEN 
+                                        DATEDIFF(MINUTE,
+                                            CASE WHEN CAST(startTime AS TIME) > CAST('12:00' AS TIME) THEN CAST(startTime AS TIME) ELSE CAST('12:00' AS TIME) END,
+                                            CASE WHEN CAST(endTime AS TIME) < CAST('13:00' AS TIME) THEN CAST(endTime AS TIME) ELSE CAST('13:00' AS TIME) END
+                                        )
+                                    ELSE 0
+                                  END
+                            ELSE 
+                                -- For full/half day leaves, convert days to minutes
+                                CAST(usageAmount * 7.5 * 60 AS INT)
+                        END
+                    ) as totalUsedMinutes
+                FROM LeaveRequests
+                WHERE userId = @userId 
+                    AND YEAR(startDatetime) = @year
+                    AND status IN ('PENDING', 'APPROVED')
+                GROUP BY leaveType
+            `);
+
+        // Create a map of actual used minutes per leave type
+        const actualUsedMap: Record<string, number> = {};
+        for (const row of actualUsedResult.recordset) {
+            actualUsedMap[row.leaveType] = row.totalUsedMinutes || 0;
+        }
+
+        // Enrich balance data with actual used minutes for unlimited types
+        const enrichedBalances = balanceResult.recordset.map((b: any) => ({
+            ...b,
+            actualUsedMinutes: actualUsedMap[b.leaveType] || 0,
+        }));
+
         // Get leave history this year
         const historyResult = await pool.request()
             .input('userId', userId)
@@ -86,7 +137,7 @@ export async function GET(
             data: {
                 employee,
                 year: currentYear,
-                balances: balanceResult.recordset,
+                balances: enrichedBalances,
                 leaveHistory: historyResult.recordset
             }
         });

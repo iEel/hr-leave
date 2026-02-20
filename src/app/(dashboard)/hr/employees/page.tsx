@@ -32,7 +32,7 @@ import SearchableSelect from '@/components/ui/SearchableSelect';
 import ManagerSearchSelect from '@/components/ui/ManagerSearchSelect';
 import CompanySelect from '@/components/ui/CompanySelect';
 import DepartmentCombobox from '@/components/ui/DepartmentCombobox';
-import { formatLeaveDays, formatHourlyDuration } from '@/lib/leave-utils';
+import { formatLeaveDays, formatHourlyDuration, formatMinutesToDisplay } from '@/lib/leave-utils';
 
 interface Employee {
     id: number;
@@ -110,7 +110,7 @@ export default function EmployeeManagementPage() {
     const [employeeBalance, setEmployeeBalance] = useState<{
         employee: { employeeId: string; firstName: string; lastName: string; department: string; company: string };
         year: number;
-        balances: { leaveType: string; entitlement: number; used: number; remaining: number; carryOver: number }[];
+        balances: { leaveType: string; entitlement: number; used: number; remaining: number; carryOver: number; actualUsedMinutes: number }[];
         leaveHistory: { id: number; leaveType: string; status: string; days: number; isHourly: boolean; startTime: string | null; endTime: string | null; startDate: string; endDate: string; reason: string }[];
     } | null>(null);
 
@@ -1384,7 +1384,7 @@ export default function EmployeeManagementPage() {
                                                     {b.entitlement === 0 && b.carryOver === 0 ? 'ไม่จำกัด' : formatLeaveDays(b.remaining)}
                                                 </p>
                                                 <p className="text-xs text-gray-400">
-                                                    ใช้ {formatLeaveDays(b.used)} / {b.entitlement === 0 && b.carryOver === 0 ? 'ไม่จำกัด' : formatLeaveDays(b.entitlement + b.carryOver)}
+                                                    ใช้ {formatMinutesToDisplay(b.actualUsedMinutes)} / {b.entitlement === 0 && b.carryOver === 0 ? 'ไม่จำกัด' : formatLeaveDays(b.entitlement + b.carryOver)}
                                                 </p>
                                                 {b.carryOver > 0 && (
                                                     <p className="text-xs text-blue-500 mt-1">

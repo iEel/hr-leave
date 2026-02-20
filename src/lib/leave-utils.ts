@@ -97,6 +97,29 @@ export function hoursToDays(hours: number, workHoursPerDay: number = 7.5): numbe
 }
 
 /**
+ * แปลงนาทีเป็นรูปแบบ "X วัน Y ชม. Z นาที"
+ * ใช้สำหรับแสดงผล actualUsedMinutes ที่คำนวณจาก LeaveRequests โดยตรง
+ * @param totalMinutes จำนวนนาทีทั้งหมด
+ * @param workHoursPerDay ชั่วโมงทำงานต่อวัน (default: 7.5)
+ */
+export function formatMinutesToDisplay(totalMinutes: number, workHoursPerDay: number = 7.5): string {
+    if (totalMinutes <= 0) return '0 นาที';
+
+    const totalHours = totalMinutes / 60;
+    const days = Math.floor(totalHours / workHoursPerDay);
+    const remainingHours = totalHours - (days * workHoursPerDay);
+    const hrs = Math.floor(remainingHours);
+    const mins = Math.round((remainingHours - hrs) * 60);
+
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days} วัน`);
+    if (hrs > 0) parts.push(`${hrs} ชม.`);
+    if (mins > 0) parts.push(`${mins} นาที`);
+
+    return parts.length > 0 ? parts.join(' ') : '0 นาที';
+}
+
+/**
  * แปลงทศนิยมวันเป็นรูปแบบ "X วัน Y ชั่วโมง" หรือ "X วัน Y ชม. Z นาที"
  * เช่น 5.75 -> "5 วัน 6 ชั่วโมง"
  * เช่น 5.125 -> "5 วัน 1 ชั่วโมง"

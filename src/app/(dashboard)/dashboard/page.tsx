@@ -1,7 +1,7 @@
 import { auth } from '@/auth';
 import { redirect } from 'next/navigation';
 import { getPool } from '@/lib/db';
-import { formatLeaveDays } from '@/lib/leave-utils';
+import { formatLeaveDays, formatMinutesToDisplay } from '@/lib/leave-utils';
 import {
     CalendarDays,
     Clock,
@@ -104,8 +104,41 @@ async function getLeaveBalances(userId: number) {
                     ORDER BY leaveType
                 `);
         }
+        // Compute actual used minutes from LeaveRequests for precision
+        const actualUsedResult = await pool.request()
+            .input('userId', userId)
+            .input('year', currentYear)
+            .query(`
+                SELECT 
+                    leaveType as type,
+                    SUM(
+                        CASE 
+                            WHEN isHourly = 1 AND startTime IS NOT NULL AND endTime IS NOT NULL THEN
+                                DATEDIFF(MINUTE, CAST(startTime AS TIME), CAST(endTime AS TIME))
+                                - CASE 
+                                    WHEN CAST(startTime AS TIME) < CAST('13:00' AS TIME) 
+                                         AND CAST(endTime AS TIME) > CAST('12:00' AS TIME) 
+                                    THEN DATEDIFF(MINUTE,
+                                        CASE WHEN CAST(startTime AS TIME) > CAST('12:00' AS TIME) THEN CAST(startTime AS TIME) ELSE CAST('12:00' AS TIME) END,
+                                        CASE WHEN CAST(endTime AS TIME) < CAST('13:00' AS TIME) THEN CAST(endTime AS TIME) ELSE CAST('13:00' AS TIME) END)
+                                    ELSE 0 END
+                            ELSE CAST(usageAmount * 7.5 * 60 AS INT)
+                        END
+                    ) as totalUsedMinutes
+                FROM LeaveRequests
+                WHERE userId = @userId AND YEAR(startDatetime) = @year AND status IN ('PENDING', 'APPROVED')
+                GROUP BY leaveType
+            `);
 
-        return result.recordset;
+        const actualUsedMap: Record<string, number> = {};
+        for (const row of actualUsedResult.recordset) {
+            actualUsedMap[row.type] = row.totalUsedMinutes || 0;
+        }
+
+        return result.recordset.map((b: any) => ({
+            ...b,
+            actualUsedMinutes: actualUsedMap[b.type] || 0,
+        }));
     } catch (error) {
         console.error('Error fetching leave balances:', error);
         return [];
@@ -235,7 +268,7 @@ export default async function DashboardPage() {
                                         {balance.entitlement === 0 ? 'ไม่จำกัด' : formatLeaveDays(balance.remaining)}
                                     </p>
                                     <p className="text-sm text-gray-500 mt-1">
-                                        ใช้ไป {formatLeaveDays(balance.used)} / {balance.entitlement === 0 ? 'ไม่จำกัด' : formatLeaveDays(balance.entitlement)}
+                                        ใช้ไป {formatMinutesToDisplay(balance.actualUsedMinutes)} / {balance.entitlement === 0 ? 'ไม่จำกัด' : formatLeaveDays(balance.entitlement)}
                                     </p>
                                 </div>
                             </div>
