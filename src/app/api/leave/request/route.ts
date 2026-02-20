@@ -47,18 +47,42 @@ export async function POST(request: NextRequest) {
         const pool = await getPool();
 
         // Check for overlapping leave requests
-        const overlapCheck = await pool.request()
-            .input('userId', userId)
-            .input('startDate', startDate)
-            .input('endDate', endDate)
-            .query(`
+        // For hourly leaves: check time range overlap, not just date overlap
+        const overlapQuery = isHourly && startTime && endTime
+            ? `
                 SELECT id FROM LeaveRequests
                 WHERE userId = @userId
                 AND status IN ('PENDING', 'APPROVED')
+                AND (CAST(startDatetime AS DATE) <= @endDate AND CAST(endDatetime AS DATE) >= @startDate)
                 AND (
-                    (CAST(startDatetime AS DATE) <= @endDate AND CAST(endDatetime AS DATE) >= @startDate)
+                    -- Non-hourly existing leave on same day = always overlap
+                    isHourly = 0
+                    OR (
+                        -- Hourly existing leave: check time range intersection
+                        isHourly = 1
+                        AND startTime < @endTime
+                        AND endTime > @startTime
+                    )
                 )
-            `);
+            `
+            : `
+                SELECT id FROM LeaveRequests
+                WHERE userId = @userId
+                AND status IN ('PENDING', 'APPROVED')
+                AND (CAST(startDatetime AS DATE) <= @endDate AND CAST(endDatetime AS DATE) >= @startDate)
+            `;
+
+        const overlapCheckReq = pool.request()
+            .input('userId', userId)
+            .input('startDate', startDate)
+            .input('endDate', endDate);
+
+        if (isHourly && startTime && endTime) {
+            overlapCheckReq.input('startTime', startTime);
+            overlapCheckReq.input('endTime', endTime);
+        }
+
+        const overlapCheck = await overlapCheckReq.query(overlapQuery);
 
         if (overlapCheck.recordset.length > 0) {
             return NextResponse.json(
