@@ -232,10 +232,10 @@ export default async function DashboardPage() {
                                 </div>
                                 <div className="mt-4">
                                     <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                                        {formatLeaveDays(balance.remaining)}
+                                        {balance.entitlement === 0 ? 'ไม่จำกัด' : formatLeaveDays(balance.remaining)}
                                     </p>
                                     <p className="text-sm text-gray-500 mt-1">
-                                        ใช้ไป {formatLeaveDays(balance.used)} / {formatLeaveDays(balance.entitlement)}
+                                        ใช้ไป {formatLeaveDays(balance.used)} / {balance.entitlement === 0 ? 'ไม่จำกัด' : formatLeaveDays(balance.entitlement)}
                                     </p>
                                 </div>
                             </div>

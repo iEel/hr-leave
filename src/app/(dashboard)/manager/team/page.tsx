@@ -13,7 +13,7 @@ import {
     ArrowLeft,
 } from 'lucide-react';
 import Link from 'next/link';
-import { formatLeaveDays } from '@/lib/leave-utils';
+import { formatLeaveDays, formatHourlyDuration } from '@/lib/leave-utils';
 
 interface TeamMember {
     id: number;
@@ -48,6 +48,9 @@ interface BalanceData {
         startDate: string;
         endDate: string;
         days: number;
+        isHourly: boolean;
+        startTime: string | null;
+        endTime: string | null;
         status: string;
     }>;
 }
@@ -252,10 +255,10 @@ export default function ManagerTeamPage() {
                                                 {LEAVE_TYPE_LABELS[b.leaveType] || b.leaveType}
                                             </p>
                                             <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                                                {formatLeaveDays(b.remaining)}
+                                                {b.entitlement === 0 && b.carryOver === 0 ? 'ไม่จำกัด' : formatLeaveDays(b.remaining)}
                                             </p>
                                             <p className="text-xs text-gray-400">
-                                                ใช้ {formatLeaveDays(b.used)} / {formatLeaveDays(b.entitlement + b.carryOver)}
+                                                ใช้ {formatLeaveDays(b.used)} / {b.entitlement === 0 && b.carryOver === 0 ? 'ไม่จำกัด' : formatLeaveDays(b.entitlement + b.carryOver)}
                                             </p>
                                         </div>
                                     ))}
@@ -286,7 +289,9 @@ export default function ManagerTeamPage() {
                                                 </div>
                                                 <div className="text-right">
                                                     <p className="text-sm font-bold text-gray-900 dark:text-white">
-                                                        {formatLeaveDays(h.days)}
+                                                        {h.isHourly && h.startTime && h.endTime
+                                                            ? formatHourlyDuration(h.startTime, h.endTime)
+                                                            : formatLeaveDays(h.days)}
                                                     </p>
                                                 </div>
                                             </div>

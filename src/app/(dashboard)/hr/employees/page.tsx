@@ -1381,10 +1381,10 @@ export default function EmployeeManagementPage() {
                                                     }[b.leaveType] || b.leaveType}
                                                 </p>
                                                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                                                    {formatLeaveDays(b.remaining)}
+                                                    {b.entitlement === 0 && b.carryOver === 0 ? 'ไม่จำกัด' : formatLeaveDays(b.remaining)}
                                                 </p>
                                                 <p className="text-xs text-gray-400">
-                                                    ใช้ {formatLeaveDays(b.used)} / {formatLeaveDays(b.entitlement + b.carryOver)}
+                                                    ใช้ {formatLeaveDays(b.used)} / {b.entitlement === 0 && b.carryOver === 0 ? 'ไม่จำกัด' : formatLeaveDays(b.entitlement + b.carryOver)}
                                                 </p>
                                                 {b.carryOver > 0 && (
                                                     <p className="text-xs text-blue-500 mt-1">
