@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 16 กุมภาพันธ์ 2026 (Cross-Year Leave Support)  
+> 📅 อัปเดตล่าสุด: 20 กุมภาพันธ์ 2026 (Hourly Leave Duration Fix, Proxy Migration)  
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -77,7 +77,8 @@ hr-leave/
 │       ├── add_companies_table.sql
 │       ├── add_cross_year_leave_support.sql
 │       ├── add_ishrstaff_column.sql
-│       └── add_work_schedule.sql
+│       ├── add_work_schedule.sql
+│       └── increase_decimal_precision.sql
 ├── scripts/                          # Utility scripts
 │   ├── seed-db.ts                    # Seed database
 │   ├── migrate-ad-auth.ts            # AD Auth migration
@@ -160,7 +161,7 @@ hr-leave/
 │   ├── lib/
 │   │   ├── db.ts                      # Database connection (Singleton)
 │   │   ├── date-utils.ts              # Timezone, Working days calc
-│   │   ├── leave-utils.ts             # Leave duration formatting
+│   │   ├── leave-utils.ts             # Leave duration formatting + formatHourlyDuration
 │   │   ├── audit.ts                   # Audit logging helper
 │   │   ├── delegate.ts                # Delegate approver helpers
 │   │   ├── email.ts                   # Email sending (SMTP)
@@ -178,7 +179,7 @@ hr-leave/
 │   ├── types/
 │   │   └── index.ts                   # TypeScript types & enums
 │   ├── auth.ts                        # NextAuth configuration
-│   └── middleware.ts                  # Auth + RBAC protection
+│   └── proxy.ts                      # Auth + RBAC protection (renamed from middleware.ts)
 ├── public/
 │   ├── manifest.json                  # PWA Manifest
 │   ├── sw.js                          # Service Worker
@@ -286,21 +287,21 @@ npm run dev
 - `isHourly`: BIT - ลาระดับชั่วโมง (1=ชั่วโมง, 0=เต็มวัน)
 - `startTime`: VARCHAR - เวลาเริ่ม (HH:MM) สำหรับลารายชั่วโมง
 - `endTime`: VARCHAR - เวลาสิ้นสุด (HH:MM) สำหรับลารายชั่วโมง
-- `usageAmount`: จำนวนวันสุทธิ (หลังหักวันหยุด)
+- `usageAmount`: DECIMAL(8,4) - จำนวนวันสุทธิ (หลังหักวันหยุด)
 - `status`: PENDING, APPROVED, REJECTED, CANCELLED
 - `rejectionReason`: เหตุผลที่ไม่อนุมัติ
 
 ### Key Columns ใน LeaveBalances:
 - `isAutoCreated`: BIT - ระบุว่า Balance ถูกสร้างอัตโนมัติ (1) หรือจาก Year-End processing (0)
-- `entitlement`: DECIMAL - สิทธิ์วันลาทั้งหมด
-- `used`: DECIMAL - จำนวนที่ใช้ไปแล้ว
-- `remaining`: DECIMAL - คงเหลือ (entitlement + carryOver - used)
-- `carryOver`: DECIMAL - ยอดยกมาจากปีก่อน
+- `entitlement`: DECIMAL(8,4) - สิทธิ์วันลาทั้งหมด
+- `used`: DECIMAL(8,4) - จำนวนที่ใช้ไปแล้ว
+- `remaining`: DECIMAL(8,4) - คงเหลือ (entitlement + carryOver - used)
+- `carryOver`: DECIMAL(8,4) - ยอดยกมาจากปีก่อน
 
 ### Key Columns ใน LeaveRequestYearSplit:
 - `leaveRequestId`: INT FK → LeaveRequests - ใบลาที่เกี่ยวข้อง
 - `year`: INT - ปีที่หักยอด
-- `usageAmount`: DECIMAL - จำนวนวันที่หักในปีนั้น
+- `usageAmount`: DECIMAL(8,4) - จำนวนวันที่หักในปีนั้น
 
 ---
 
@@ -359,7 +360,7 @@ sequenceDiagram
 - 1-3 ปี: Archive ไปตาราง Archive
 - > 3 ปี: Purge ลบถาวร
 
-### RBAC (middleware.ts):
+### RBAC (proxy.ts):
 | Route | Allowed Roles |
 |-------|---------------|
 | `/hr/*` | HR, ADMIN, isHRStaff |
@@ -591,6 +592,17 @@ sequenceDiagram
   - Cron endpoint: `POST /api/cron/audit-cleanup` (ใช้ `x-cron-secret` header)
   - ลบแบบ batch (5,000 rows/batch) เพื่อหลีกเลี่ยง lock timeout
   - ตั้ง Task Scheduler: รันทุกเดือนวันที่ 1 เวลา 02:00
+- [x] **Hourly Leave Duration Display Fix** - ลา 1 ชม. (08:30-09:30) แสดง "59 นาที" ในหน้าประวัติ/อนุมัติ
+  - สาเหตุ: `DECIMAL(5,2)` ตัดทศนิยม `1/7.5 = 0.13333` → `0.13` → `0.13 × 7.5 × 60 = 58.5 ≈ 59 นาที`
+  - แก้ไข 1: เพิ่ม `formatHourlyDuration()` ใน `leave-utils.ts` คำนวณจาก startTime/endTime โดยตรง
+  - แก้ไข 2: เปลี่ยน DECIMAL(5,2) → DECIMAL(8,4) ทุกคอลัมน์ที่เกี่ยวข้อง
+  - อัพเดท: `history/page.tsx`, `hr/leaves/page.tsx`, `approvals/page.tsx`
+  - Migration: `database/migrations/increase_decimal_precision.sql`
+- [x] **HR Staff Leave Cancellation** - HR Staff (isHRStaff=true) ไม่สามารถยกเลิกใบลาได้
+  - แก้ไข: เพิ่ม `isHRStaff` check ใน `api/leave/cancel/route.ts`
+- [x] **Next.js Middleware → Proxy Migration** - เปลี่ยนชื่อ `middleware.ts` → `proxy.ts` ตาม Next.js convention ใหม่
+  - เปลี่ยน exported function จาก `middleware` → `proxy`
+  - เพิ่ม exclusion สำหรับ static files ใน matcher
 
 ### 🔲 สิ่งที่ยังรอ (Remaining)
 - [ ] LINE Notify Integration (optional)
@@ -607,7 +619,7 @@ sequenceDiagram
 | File | Purpose |
 |------|---------|
 | `src/auth.ts` | NextAuth config, AD/LDAP integration |
-| `src/middleware.ts` | Auth guard + RBAC |
+| `src/proxy.ts` | Auth guard + RBAC (renamed from middleware.ts) |
 | `src/lib/db.ts` | Database connection (Singleton), exports `sql` for transactions |
 | `src/lib/ldap.ts` | LDAP/AD connection helper |
 | `src/lib/azure-graph.ts` | Azure AD Graph API |
@@ -714,7 +726,7 @@ sequenceDiagram
 - `/sw.js` - Service Worker
 - `/uploads` - Uploaded files
 
-ดู config ใน `src/middleware.ts` → `matcher` array
+ดู config ใน `src/proxy.ts` → `matcher` array
 
 ### 📄 Key Components
 
