@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
-import { formatLeaveDays } from '@/lib/leave-utils';
+import { formatLeaveDays, formatHourlyDuration } from '@/lib/leave-utils';
 import {
     History,
     Calendar,
@@ -274,7 +274,9 @@ export default function LeaveHistoryPage() {
                                                             <span className="ml-1">({leave.startTime} - {leave.endTime})</span>
                                                         )}
                                                         <span className="mx-2">•</span>
-                                                        {formatLeaveDays(leave.usageAmount)}
+                                                        {leave.isHourly && leave.startTime && leave.endTime
+                                                            ? formatHourlyDuration(leave.startTime, leave.endTime)
+                                                            : formatLeaveDays(leave.usageAmount)}
                                                     </p>
                                                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                                                         {leave.reason}

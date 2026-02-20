@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { formatLeaveDays } from '@/lib/leave-utils';
+import { formatLeaveDays, formatHourlyDuration } from '@/lib/leave-utils';
 import {
     CheckSquare,
     Clock,
@@ -268,7 +268,9 @@ export default function ApprovalsPage() {
                                                     {request.isHourly && request.startTime && request.endTime && (
                                                         <span className="ml-1">({request.startTime} - {request.endTime})</span>
                                                     )}
-                                                    <span className="ml-1">({formatLeaveDays(request.usageAmount)})</span>
+                                                    <span className="ml-1">({request.isHourly && request.startTime && request.endTime
+                                                        ? formatHourlyDuration(request.startTime, request.endTime)
+                                                        : formatLeaveDays(request.usageAmount)})</span>
                                                 </p>
                                             </div>
                                         </div>

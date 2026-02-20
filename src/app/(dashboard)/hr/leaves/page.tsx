@@ -15,7 +15,7 @@ import {
     XCircle,
     Clock,
 } from 'lucide-react';
-import { formatLeaveDays } from '@/lib/leave-utils';
+import { formatLeaveDays, formatHourlyDuration } from '@/lib/leave-utils';
 import { ListSkeleton } from '@/components/ui/Skeleton';
 
 interface LeaveRecord {
@@ -250,7 +250,9 @@ export default function HRLeavesPage() {
                                                     {leave.isHourly && leave.startTime && leave.endTime && (
                                                         <span className="ml-1">({leave.startTime} - {leave.endTime})</span>
                                                     )}
-                                                    <span className="ml-2">({formatLeaveDays(leave.usageAmount)})</span>
+                                                    <span className="ml-2">({leave.isHourly && leave.startTime && leave.endTime
+                                                        ? formatHourlyDuration(leave.startTime, leave.endTime)
+                                                        : formatLeaveDays(leave.usageAmount)})</span>
                                                 </p>
                                             </div>
 
@@ -359,7 +361,9 @@ export default function HRLeavesPage() {
                                 </div>
                                 <div>
                                     <p className="text-xs text-gray-500 mb-1">จำนวนวัน</p>
-                                    <p className="font-medium text-gray-900 dark:text-white">{formatLeaveDays(selectedLeave.usageAmount)} วัน</p>
+                                    <p className="font-medium text-gray-900 dark:text-white">{selectedLeave.isHourly && selectedLeave.startTime && selectedLeave.endTime
+                                        ? formatHourlyDuration(selectedLeave.startTime, selectedLeave.endTime)
+                                        : formatLeaveDays(selectedLeave.usageAmount)}</p>
                                 </div>
                                 <div className="col-span-2">
                                     <p className="text-xs text-gray-500 mb-1">วันที่ลา</p>

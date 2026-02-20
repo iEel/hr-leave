@@ -69,6 +69,25 @@ export function calculateHourlyDuration(startTime: string, endTime: string): {
 }
 
 /**
+ * แสดงผลระยะเวลาลาเป็นชั่วโมงจาก startTime/endTime โดยตรง
+ * หลีกเลี่ยงปัญหา precision loss จาก DECIMAL ใน DB
+ * เช่น "08:30"-"09:30" → "1 ชม."
+ * เช่น "08:30"-"10:00" → "1 ชม. 30 นาที"
+ * เช่น "10:00"-"14:00" → "3 ชม." (หักพักเที่ยง)
+ */
+export function formatHourlyDuration(startTime: string, endTime: string): string {
+    const result = calculateHourlyDuration(startTime, endTime);
+    const hours = Math.floor(result.netMinutes / 60);
+    const mins = result.netMinutes % 60;
+
+    const parts: string[] = [];
+    if (hours > 0) parts.push(`${hours} ชม.`);
+    if (mins > 0) parts.push(`${mins} นาที`);
+
+    return parts.length > 0 ? parts.join(' ') : '0 นาที';
+}
+
+/**
  * แปลงชั่วโมงเป็นวัน
  * @param hours จำนวนชั่วโมง
  * @param workHoursPerDay ชั่วโมงทำงานต่อวัน (default: 7.5)
