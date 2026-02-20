@@ -96,6 +96,12 @@ export default function LeaveRequestPage() {
     }
     const [workingSaturdays, setWorkingSaturdays] = useState<WorkingSaturdayData[]>([]);
     const [workHoursPerDay, setWorkHoursPerDay] = useState(7.5);
+    const [workSchedule, setWorkSchedule] = useState({
+        workStartTime: '08:30',
+        workEndTime: '17:00',
+        breakStartTime: '12:00',
+        breakEndTime: '13:00',
+    });
     const [publicHolidays, setPublicHolidays] = useState<{ date: string }[]>([]);
 
     // Fetch rules on mount
@@ -116,6 +122,12 @@ export default function LeaveRequestPage() {
                     const scheduleData = await scheduleRes.json();
                     if (scheduleData.success) {
                         setWorkHoursPerDay(scheduleData.settings.workHoursPerDay || 7.5);
+                        setWorkSchedule({
+                            workStartTime: scheduleData.settings.workStartTime || '08:30',
+                            workEndTime: scheduleData.settings.workEndTime || '17:00',
+                            breakStartTime: scheduleData.settings.breakStartTime || '12:00',
+                            breakEndTime: scheduleData.settings.breakEndTime || '13:00',
+                        });
                     }
                 }
             } catch (error) {
@@ -249,13 +261,30 @@ export default function LeaveRequestPage() {
                         current.setDate(current.getDate() + 1);
                     }
 
-                    // Adjust for half day
+                    // Adjust for half day using actual work schedule times
                     if (timeSlot === 'HALF_MORNING' || timeSlot === 'HALF_AFTERNOON') {
-                        days = days > 0 ? days - 0.5 : 0;
+                        // Calculate morning/afternoon fractions from work schedule
+                        const toMins = (t: string) => {
+                            const [h, m] = t.split(':').map(Number);
+                            return h * 60 + m;
+                        };
+                        const morningMins = toMins(workSchedule.breakStartTime) - toMins(workSchedule.workStartTime);
+                        const afternoonMins = toMins(workSchedule.workEndTime) - toMins(workSchedule.breakEndTime);
+                        const totalWorkMins = morningMins + afternoonMins;
+
+                        if (timeSlot === 'HALF_MORNING') {
+                            // Morning fraction of the day
+                            const morningFraction = totalWorkMins > 0 ? morningMins / totalWorkMins : 0.5;
+                            days = days > 0 ? days * morningFraction : 0;
+                        } else {
+                            // Afternoon fraction of the day
+                            const afternoonFraction = totalWorkMins > 0 ? afternoonMins / totalWorkMins : 0.5;
+                            days = days > 0 ? days * afternoonFraction : 0;
+                        }
                     }
 
-                    // Round to 2 decimal places
-                    setCalculatedDays(Math.round(days * 100) / 100);
+                    // Round to 4 decimal places for precision
+                    setCalculatedDays(Math.round(days * 10000) / 10000);
                 } else {
                     setCalculatedDays(0);
                 }
@@ -264,7 +293,7 @@ export default function LeaveRequestPage() {
             }
             setHourlyInfo(null);
         }
-    }, [startDate, endDate, timeSlot, isHourlyMode, startTime, endTime, workingSaturdays, publicHolidays, workHoursPerDay]);
+    }, [startDate, endDate, timeSlot, isHourlyMode, startTime, endTime, workingSaturdays, publicHolidays, workHoursPerDay, workSchedule]);
 
     // Sync endDate with startDate for hourly mode (same day only)
     useEffect(() => {
