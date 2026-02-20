@@ -608,6 +608,11 @@ sequenceDiagram
   - แก้ไข: เพิ่ม time range intersection check สำหรับลารายชั่วโมงใน `api/leave/request/route.ts`
 - [x] **Holidays Calendar Duration Format** - หน้าปฏิทินวันหยุดแสดง "0.1333 วัน" แทนที่จะเป็น "1 ชม."
   - แก้ไข: เพิ่ม `formatHourlyDuration` + `formatLeaveDays` ใน `holidays/page.tsx`
+- [x] **Employee Balance Modal Duration Format** - หน้าจัดการพนักงาน > ดูวันลา แสดง "0.1333 วัน" สำหรับลาชั่วโมง
+  - แก้ไข: เพิ่ม `isHourly`/`startTime`/`endTime` ใน `employee-balance/[userId]/route.ts` + ใช้ `formatHourlyDuration` ใน `employees/page.tsx`
+- [x] **Unlimited Leave Type Display** - ลาประเภท "อื่นๆ" (entitlement=0) แสดง "6 นาที" แทนที่จะเป็น "ไม่จำกัด"
+  - สาเหตุ: `formatLeaveDays()` แปลง remaining (ค่าลบ) เป็นชั่วโมง/นาที อย่างไม่ถูกต้อง
+  - แก้ไข: เพิ่มเงื่อนไข `entitlement === 0` แสดง "ไม่จำกัด" ใน `dashboard/page.tsx`, `manager/team/page.tsx`, `hr/employees/page.tsx`
 
 ### 🔲 สิ่งที่ยังรอ (Remaining)
 - [ ] LINE Notify Integration (optional)
