@@ -32,7 +32,7 @@ import SearchableSelect from '@/components/ui/SearchableSelect';
 import ManagerSearchSelect from '@/components/ui/ManagerSearchSelect';
 import CompanySelect from '@/components/ui/CompanySelect';
 import DepartmentCombobox from '@/components/ui/DepartmentCombobox';
-import { formatLeaveDays } from '@/lib/leave-utils';
+import { formatLeaveDays, formatHourlyDuration } from '@/lib/leave-utils';
 
 interface Employee {
     id: number;
@@ -111,7 +111,7 @@ export default function EmployeeManagementPage() {
         employee: { employeeId: string; firstName: string; lastName: string; department: string; company: string };
         year: number;
         balances: { leaveType: string; entitlement: number; used: number; remaining: number; carryOver: number }[];
-        leaveHistory: { id: number; leaveType: string; status: string; days: number; startDate: string; endDate: string; reason: string }[];
+        leaveHistory: { id: number; leaveType: string; status: string; days: number; isHourly: boolean; startTime: string | null; endTime: string | null; startDate: string; endDate: string; reason: string }[];
     } | null>(null);
 
     const fetchEmployees = async () => {
@@ -1430,7 +1430,9 @@ export default function EmployeeManagementPage() {
                                                     </div>
                                                     <div className="text-right">
                                                         <p className="text-sm font-bold text-gray-900 dark:text-white">
-                                                            {h.days} วัน
+                                                            {h.isHourly && h.startTime && h.endTime
+                                                                ? formatHourlyDuration(h.startTime, h.endTime)
+                                                                : formatLeaveDays(h.days)}
                                                         </p>
                                                         <span className={`text-xs ${h.status === 'APPROVED' ? 'text-green-600' :
                                                             h.status === 'PENDING' ? 'text-yellow-600' : 'text-red-600'

@@ -72,6 +72,7 @@ export async function GET(
             .query(`
                 SELECT 
                     id, leaveType, status, usageAmount as days,
+                    isHourly, startTime, endTime,
                     CONVERT(varchar, startDatetime, 23) as startDate,
                     CONVERT(varchar, endDatetime, 23) as endDate,
                     reason
