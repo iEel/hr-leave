@@ -13,6 +13,7 @@ import {
     Heart,
     User,
 } from 'lucide-react';
+import { formatLeaveDays, formatHourlyDuration } from '@/lib/leave-utils';
 
 interface Holiday {
     id: number;
@@ -27,6 +28,9 @@ interface LeaveRecord {
     leaveType: string;
     startDate: string;
     endDate: string;
+    isHourly: boolean;
+    startTime: string | null;
+    endTime: string | null;
     usageAmount: number;
     reason: string;
     status: string;
@@ -509,7 +513,9 @@ export default function HolidaysPage() {
                                         : `${selectedLeave.startDate} - ${selectedLeave.endDate}`}
                                 </p>
                                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                                    จำนวน: {selectedLeave.usageAmount} วัน
+                                    จำนวน: {selectedLeave.isHourly && selectedLeave.startTime && selectedLeave.endTime
+                                        ? formatHourlyDuration(selectedLeave.startTime, selectedLeave.endTime)
+                                        : formatLeaveDays(selectedLeave.usageAmount)}
                                 </p>
                                 {selectedLeave.reason && (
                                     <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 text-left">
