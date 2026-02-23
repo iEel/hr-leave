@@ -65,6 +65,44 @@ export async function GET(
                 ORDER BY leaveType
             `);
 
+        // Auto-create missing balance records from LeaveQuotaSettings
+        if (balanceResult.recordset.length === 0 || balanceResult.recordset.length < 9) {
+            const quotaResult = await pool.request().query(`
+                SELECT leaveType, defaultDays FROM LeaveQuotaSettings
+            `);
+
+            const existingTypes = new Set(balanceResult.recordset.map((b: any) => b.leaveType));
+
+            for (const quota of quotaResult.recordset) {
+                if (!existingTypes.has(quota.leaveType)) {
+                    await pool.request()
+                        .input('userId', userId)
+                        .input('leaveType', quota.leaveType)
+                        .input('year', currentYear)
+                        .input('entitlement', quota.defaultDays)
+                        .input('remaining', quota.defaultDays)
+                        .query(`
+                            INSERT INTO LeaveBalances (userId, leaveType, year, entitlement, used, remaining, carryOver, isAutoCreated)
+                            VALUES (@userId, @leaveType, @year, @entitlement, 0, @remaining, 0, 1)
+                        `);
+                }
+            }
+
+            // Re-fetch after auto-create
+            if (quotaResult.recordset.length > existingTypes.size) {
+                const refreshResult = await pool.request()
+                    .input('userId', userId)
+                    .input('year', currentYear)
+                    .query(`
+                        SELECT leaveType, entitlement, used, remaining, carryOver
+                        FROM LeaveBalances
+                        WHERE userId = @userId AND year = @year
+                        ORDER BY leaveType
+                    `);
+                balanceResult.recordset = refreshResult.recordset;
+            }
+        }
+
         // For unlimited leave types (entitlement=0), compute actual used minutes from LeaveRequests
         // to avoid precision loss from accumulated decimal conversions
         const actualUsedResult = await pool.request()
@@ -75,20 +113,20 @@ export async function GET(
                     leaveType,
                     SUM(
                         CASE 
-                            WHEN isHourly = 1 AND startTime IS NOT NULL AND endTime IS NOT NULL THEN
+                            WHEN isHourly = 1 AND TRY_CAST(startTime AS TIME) IS NOT NULL AND TRY_CAST(endTime AS TIME) IS NOT NULL THEN
                                 -- Calculate net minutes directly from times
                                 DATEDIFF(MINUTE, 
-                                    CAST(startTime AS TIME), 
-                                    CAST(endTime AS TIME)
+                                    TRY_CAST(startTime AS TIME), 
+                                    TRY_CAST(endTime AS TIME)
                                 )
                                 -- Deduct lunch overlap if applicable
                                 - CASE 
-                                    WHEN CAST(startTime AS TIME) < CAST('13:00' AS TIME) 
-                                         AND CAST(endTime AS TIME) > CAST('12:00' AS TIME) 
+                                    WHEN TRY_CAST(startTime AS TIME) < CAST('13:00' AS TIME) 
+                                         AND TRY_CAST(endTime AS TIME) > CAST('12:00' AS TIME) 
                                     THEN 
                                         DATEDIFF(MINUTE,
-                                            CASE WHEN CAST(startTime AS TIME) > CAST('12:00' AS TIME) THEN CAST(startTime AS TIME) ELSE CAST('12:00' AS TIME) END,
-                                            CASE WHEN CAST(endTime AS TIME) < CAST('13:00' AS TIME) THEN CAST(endTime AS TIME) ELSE CAST('13:00' AS TIME) END
+                                            CASE WHEN TRY_CAST(startTime AS TIME) > CAST('12:00' AS TIME) THEN TRY_CAST(startTime AS TIME) ELSE CAST('12:00' AS TIME) END,
+                                            CASE WHEN TRY_CAST(endTime AS TIME) < CAST('13:00' AS TIME) THEN TRY_CAST(endTime AS TIME) ELSE CAST('13:00' AS TIME) END
                                         )
                                     ELSE 0
                                   END
