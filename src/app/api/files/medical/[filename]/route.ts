@@ -7,8 +7,8 @@ import path from 'path';
 // Content type mapping
 const CONTENT_TYPES: Record<string, string> = {
     '.pdf': 'application/pdf',
-    '.jpg': 'application/octet-stream',
-    '.jpeg': 'application/octet-stream',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
     '.png': 'image/png',
 };
 
