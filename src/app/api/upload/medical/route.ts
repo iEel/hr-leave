@@ -4,8 +4,8 @@ import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { existsSync } from 'fs';
 
-// Directory to store uploaded files
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'medical');
+// Directory to store uploaded files (outside public to avoid Next.js static caching issues)
+const UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads', 'medical');
 
 export async function POST(req: NextRequest) {
     try {
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
         await writeFile(filePath, buffer);
 
         // Return public URL
-        const publicUrl = `/uploads/medical/${safeFilename}`;
+        const publicUrl = `/api/files/medical/${safeFilename}`;
 
         return NextResponse.json({
             success: true,
