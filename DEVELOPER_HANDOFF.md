@@ -69,9 +69,6 @@
 
 ```
 hr-leave/
-├── data/
-│   └── uploads/
-│       └── medical/                  # ไฟล์ใบรับรองแพทย์ (นอก public, serve ผ่าน API)
 ├── database/
 │   ├── schema.sql                    # SQL Script สร้าง Tables
 │   └── migrations/                   # SQL Migration scripts
@@ -236,7 +233,7 @@ DB_ENCRYPT=false
 DB_TRUST_SERVER_CERTIFICATE=true
 NEXTAUTH_SECRET=your-super-secret-key-change-in-production-please-32-chars-min
 NEXTAUTH_URL=http://localhost:3002
-UPLOAD_DIR=./data/uploads
+UPLOAD_DIR=./public/uploads
 TZ=Asia/Bangkok
 SESSION_TIMEOUT_MINUTES=15
 ```
@@ -478,7 +475,7 @@ sequenceDiagram
   - `company` → บริษัท (Sonic→SONIC, Grandlink→GRANDLINK, Sonic-Autologis→SONIC-AUTOLOGIS)
 
 ### ✅ Phase 6: Advanced Features (DONE)
-- [x] File Upload (ใบรับรองแพทย์) - `/api/upload/medical` → เก็บที่ `data/uploads/medical/`
+- [x] File Upload (ใบรับรองแพทย์) - `/api/upload/medical` → เก็บที่ `public/uploads/medical/`
 - [x] File Serving (ใบรับรองแพทย์) - `/api/files/medical/[filename]` (serve ผ่าน API แทน static, แก้ 404 หลัง deploy)
 - [x] Email Notifications - ส่งอีเมลแจ้ง Manager + พนักงาน
 - [x] **PWA Support** - ติดตั้งเป็น App บน Mobile ได้ (manifest.json, Service Worker)
@@ -647,9 +644,8 @@ sequenceDiagram
 - [x] **Medical Certificate 404 หลัง Deploy** - กดดูใบรับรองแพทย์ 404 ต้อง `pm2 restart` จึงใช้ได้
   - สาเหตุ: Next.js cache static files จาก `public/` ตอน build — ไฟล์ที่ upload หลัง build ไม่ถูก serve
   - แก้ไข 1: สร้าง API route `GET /api/files/medical/[filename]` serve ไฟล์แบบ dynamic (ใช้ native `Response` + `Uint8Array`)
-  - แก้ไข 2: ย้าย upload directory จาก `public/uploads/medical/` → `data/uploads/medical/` (นอก public)
-  - แก้ไข 3: Upload API return URL `/api/files/medical/xxx` แทน `/uploads/medical/xxx`
-  - Backward compat: API ค้นหาไฟล์จาก `data/` ก่อน → fallback `public/` สำหรับไฟล์เก่า
+  - แก้ไข 2: Upload API return URL `/api/files/medical/xxx` แทน `/uploads/medical/xxx`
+  - ไฟล์ยังเก็บที่ `public/uploads/medical/` เหมือนเดิม
 
 ### 🔲 สิ่งที่ยังรอ (Remaining)
 - [ ] LINE Notify Integration (optional)
@@ -772,7 +768,7 @@ sequenceDiagram
 - `/manifest.json` - PWA Manifest
 - `/sw.js` - Service Worker
 
-> ⚠️ **หมายเหตุ (12 มี.ค. 2026)**: ไฟล์ใบรับรองแพทย์ย้ายไปเก็บที่ `data/uploads/medical/` แล้ว และ serve ผ่าน API route `/api/files/medical/[filename]` (ไม่ใช้ static path `/uploads/` อีกต่อไป)
+> ⚠️ **หมายเหตุ (12 มี.ค. 2026)**: ไฟล์ใบรับรองแพทย์ยังเก็บที่ `public/uploads/medical/` เหมือนเดิม แต่ serve ผ่าน API route `/api/files/medical/[filename]` แทน static path เพื่อแก้ปัญหา 404 หลัง deploy
 
 ดู config ใน `src/proxy.ts` → `matcher` array
 

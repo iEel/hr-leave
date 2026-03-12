@@ -12,9 +12,8 @@ const CONTENT_TYPES: Record<string, string> = {
     '.png': 'image/png',
 };
 
-// Upload directories (new location first, then legacy fallback)
-const DATA_UPLOAD_DIR = path.join(process.cwd(), 'data', 'uploads', 'medical');
-const LEGACY_UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'medical');
+// Upload directory
+const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads', 'medical');
 
 export async function GET(
     req: NextRequest,
@@ -35,12 +34,8 @@ export async function GET(
             return NextResponse.json({ error: 'Invalid filename' }, { status: 400 });
         }
 
-        // Try new data directory first, then fall back to legacy public directory
-        let filePath = path.join(DATA_UPLOAD_DIR, safeFilename);
-        if (!existsSync(filePath)) {
-            filePath = path.join(LEGACY_UPLOAD_DIR, safeFilename);
-        }
-
+        // Look up file in upload directory
+        const filePath = path.join(UPLOAD_DIR, safeFilename);
         if (!existsSync(filePath)) {
             return NextResponse.json({ error: 'File not found' }, { status: 404 });
         }
