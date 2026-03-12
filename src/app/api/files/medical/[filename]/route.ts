@@ -52,14 +52,16 @@ export async function GET(
         const ext = path.extname(safeFilename).toLowerCase();
         const contentType = CONTENT_TYPES[ext] || 'application/octet-stream';
 
-        // Return file with appropriate headers
-        return new NextResponse(fileBuffer, {
+        // Return file using native Response for proper inline display
+        // (NextResponse can add headers that trigger download behavior)
+        const headers = new Headers();
+        headers.set('Content-Type', contentType);
+        headers.set('Content-Length', String(fileBuffer.length));
+        headers.set('Cache-Control', 'private, max-age=3600');
+
+        return new Response(new Uint8Array(fileBuffer), {
             status: 200,
-            headers: {
-                'Content-Type': contentType,
-                'Content-Length': String(fileBuffer.length),
-                'Cache-Control': 'private, max-age=3600',
-            },
+            headers,
         });
     } catch (error) {
         console.error('Error serving medical file:', error);
