@@ -57,7 +57,7 @@ export async function GET(
             status: 200,
             headers: {
                 'Content-Type': contentType,
-                'Content-Disposition': `inline; filename="${safeFilename}"`,
+                'Content-Length': String(fileBuffer.length),
                 'Cache-Control': 'private, max-age=3600',
             },
         });
