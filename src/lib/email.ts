@@ -23,6 +23,10 @@ export async function sendLeaveRequestEmail(
         endDate: string;
         reason: string;
         days: number;
+        timeSlot?: string;
+        isHourly?: boolean;
+        startTime?: string | null;
+        endTime?: string | null;
     },
     approverId: number
 ) {
@@ -47,6 +51,20 @@ export async function sendLeaveRequestEmail(
     };
     const leaveTypeThai = leaveTypeMap[leaveDetails.type] || leaveDetails.type;
 
+    // Build time slot display text
+    const timeSlotMap: Record<string, string> = {
+        'FULL_DAY': 'เต็มวัน',
+        'HALF_MORNING': 'ครึ่งวันเช้า',
+        'HALF_AFTERNOON': 'ครึ่งวันบ่าย',
+        'HOURLY': 'ระบุชั่วโมง',
+    };
+    let timeSlotDisplay = '';
+    if (leaveDetails.isHourly && leaveDetails.startTime && leaveDetails.endTime) {
+        timeSlotDisplay = `ระบุชั่วโมง (${leaveDetails.startTime} - ${leaveDetails.endTime})`;
+    } else if (leaveDetails.timeSlot && leaveDetails.timeSlot !== 'FULL_DAY') {
+        timeSlotDisplay = timeSlotMap[leaveDetails.timeSlot] || leaveDetails.timeSlot;
+    }
+
     const htmlContent = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden;">
             <div style="background-color: #3b82f6; padding: 20px; text-align: center;">
@@ -63,8 +81,14 @@ export async function sendLeaveRequestEmail(
                     </tr>
                     <tr>
                         <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">วันที่</td>
-                        <td style="padding: 12px; border: 1px solid #e5e7eb;">${leaveDetails.startDate} - ${leaveDetails.endDate}</td>
+                        <td style="padding: 12px; border: 1px solid #e5e7eb;">${leaveDetails.startDate === leaveDetails.endDate ? leaveDetails.startDate : `${leaveDetails.startDate} - ${leaveDetails.endDate}`}</td>
                     </tr>
+                    ${timeSlotDisplay ? `
+                    <tr>
+                        <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">ช่วงเวลา</td>
+                        <td style="padding: 12px; border: 1px solid #e5e7eb;">${timeSlotDisplay}</td>
+                    </tr>
+                    ` : ''}
                     <tr>
                         <td style="padding: 12px; border: 1px solid #e5e7eb; font-weight: bold;">จำนวนวัน</td>
                         <td style="padding: 12px; border: 1px solid #e5e7eb;">${formatLeaveDays(leaveDetails.days)}</td>
@@ -118,6 +142,10 @@ export async function sendLeaveApprovalEmail(
         startDate: string;
         endDate: string;
         days: number;
+        timeSlot?: string;
+        isHourly?: boolean;
+        startTime?: string | null;
+        endTime?: string | null;
     },
     isApproved: boolean,
     rejectionReason?: string

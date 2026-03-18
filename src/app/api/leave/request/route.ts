@@ -466,7 +466,11 @@ export async function POST(request: NextRequest) {
                             startDate: startDate,
                             endDate: endDate,
                             reason: reason,
-                            days: usageAmount
+                            days: usageAmount,
+                            timeSlot: isHourly ? 'HOURLY' : timeSlot,
+                            isHourly: isHourly,
+                            startTime: startTime,
+                            endTime: endTime,
                         },
                         info.managerId
                     );
@@ -509,7 +513,11 @@ export async function POST(request: NextRequest) {
                                         startDate: startDate,
                                         endDate: endDate,
                                         reason: reason,
-                                        days: usageAmount
+                                        days: usageAmount,
+                                        timeSlot: isHourly ? 'HOURLY' : timeSlot,
+                                        isHourly: isHourly,
+                                        startTime: startTime,
+                                        endTime: endTime,
                                     },
                                     delegateId
                                 );
