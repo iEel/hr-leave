@@ -11,7 +11,7 @@ const DEFAULT_PROBATION_EXTENSION_DAYS = 0;
 const DEFAULT_VACATION_DELAY_YEARS = 1;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function toDateOnly(value: string | Date): Date {
+export function toDateOnly(value: string | Date): Date {
     if (value instanceof Date) {
         return new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
     }
@@ -19,6 +19,10 @@ function toDateOnly(value: string | Date): Date {
     const [datePart] = value.split('T');
     const [year, month, day] = datePart.split('-').map(Number);
     return new Date(Date.UTC(year, month - 1, day));
+}
+
+export function toDateText(date: Date): string {
+    return date.toISOString().slice(0, 10);
 }
 
 function addDays(date: Date, days: number): Date {
@@ -58,6 +62,14 @@ export function getFiscalYearRange(year: number, fiscalYearStart: string): { sta
     const end = addDays(new Date(Date.UTC(year + 1, month - 1, day)), -1);
 
     return { start, end };
+}
+
+export function getFiscalYearForDate(date: string | Date, fiscalYearStart: string): number {
+    const dateOnly = toDateOnly(date);
+    const calendarYear = dateOnly.getUTCFullYear();
+    const currentYearRange = getFiscalYearRange(calendarYear, fiscalYearStart);
+
+    return dateOnly >= currentYearRange.start ? calendarYear : calendarYear - 1;
 }
 
 export function isVacationEligibleOnDate(

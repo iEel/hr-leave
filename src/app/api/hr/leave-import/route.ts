@@ -7,8 +7,10 @@ import { calculateHourlyDuration } from '@/lib/leave-utils';
 import { TimeSlot } from '@/types';
 import {
     calculateVacationEligibleDate,
+    getFiscalYearForDate,
     isVacationEligibleOnDate,
     isVacationEntitledInFiscalYear,
+    toDateText,
     type VacationEligibilityInput,
 } from '@/lib/vacation-eligibility';
 
@@ -20,6 +22,7 @@ const VALID_LEAVE_TYPES = [
 const DEFAULT_PROBATION_STANDARD_DAYS = 90;
 const DEFAULT_VACATION_AFTER_PROBATION_YEARS = 1;
 const DEFAULT_FISCAL_YEAR_START = '01-01';
+const BUSINESS_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})/;
 
 interface ImportRow {
     employeeId: string;
@@ -61,9 +64,80 @@ interface VacationSettings {
     fiscalYearStart: string;
 }
 
+interface BusinessDate {
+    text: string;
+    date: Date;
+    year: number;
+    month: number;
+    day: number;
+}
+
 function parsePositiveInteger(value: unknown, fallback: number): number {
     const parsed = Number.parseInt(String(value), 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function padDatePart(value: number): string {
+    return String(value).padStart(2, '0');
+}
+
+function buildBusinessDate(year: number, month: number, day: number): BusinessDate | null {
+    if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+        return null;
+    }
+
+    const date = new Date(year, month - 1, day);
+    if (
+        date.getFullYear() !== year
+        || date.getMonth() !== month - 1
+        || date.getDate() !== day
+    ) {
+        return null;
+    }
+
+    return {
+        text: `${year}-${padDatePart(month)}-${padDatePart(day)}`,
+        date,
+        year,
+        month,
+        day,
+    };
+}
+
+function parseBusinessDate(value: string | Date): BusinessDate | null {
+    if (value instanceof Date) {
+        if (isNaN(value.getTime())) {
+            return null;
+        }
+
+        return buildBusinessDate(value.getFullYear(), value.getMonth() + 1, value.getDate());
+    }
+
+    const trimmed = value.trim();
+    const datePart = trimmed.match(BUSINESS_DATE_PATTERN);
+    if (datePart) {
+        return buildBusinessDate(
+            Number(datePart[1]),
+            Number(datePart[2]),
+            Number(datePart[3])
+        );
+    }
+
+    const parsed = new Date(trimmed);
+    if (isNaN(parsed.getTime())) {
+        return null;
+    }
+
+    return buildBusinessDate(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
+}
+
+function requireBusinessDate(value: string | Date, label: string): BusinessDate {
+    const parsed = parseBusinessDate(value);
+    if (!parsed) {
+        throw new Error(`Invalid ${label} business date`);
+    }
+
+    return parsed;
 }
 
 function parseFiscalYearStart(value: unknown): string {
@@ -107,10 +181,6 @@ function buildVacationSettings(rows: Array<{ settingKey: string; settingValue: s
     return settings;
 }
 
-function toDateText(date: Date): string {
-    return date.toISOString().slice(0, 10);
-}
-
 /**
  * POST /api/hr/leave-import
  * นำเข้าวันลาจำนวนมาก (Bulk Leave Import)
@@ -140,13 +210,13 @@ export async function POST(request: NextRequest) {
 
         // --- Fetch shared data for auto-calculation ---
         // Get all public holidays
-        const holidayResult = await pool.request().query(`SELECT date FROM PublicHolidays`);
-        const holidays = (holidayResult.recordset as HolidayRow[]).map((r) => new Date(r.date));
+        const holidayResult = await pool.request().query(`SELECT CONVERT(varchar, date, 23) as date FROM PublicHolidays`);
+        const holidays = (holidayResult.recordset as HolidayRow[]).map((r) => requireBusinessDate(r.date, 'holiday').date);
 
         // Get all working Saturdays
-        const wSatResult = await pool.request().query(`SELECT date, startTime, endTime, workHours FROM WorkingSaturdays`);
+        const wSatResult = await pool.request().query(`SELECT CONVERT(varchar, date, 23) as date, startTime, endTime, workHours FROM WorkingSaturdays`);
         const workingSaturdays: WorkingSaturdayData[] = (wSatResult.recordset as WorkingSaturdayRow[]).map((r) => ({
-            date: new Date(r.date).toISOString().split('T')[0],
+            date: requireBusinessDate(r.date, 'working Saturday').text,
             startTime: r.startTime,
             endTime: r.endTime,
             workHours: r.workHours
@@ -200,15 +270,16 @@ export async function POST(request: NextRequest) {
                     continue;
                 }
 
-                // Parse dates
-                const startDate = new Date(row.startDate);
-                const endDate = new Date(row.endDate);
-                if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+                const startBusinessDate = parseBusinessDate(row.startDate);
+                const endBusinessDate = parseBusinessDate(row.endDate);
+                if (!startBusinessDate || !endBusinessDate) {
                     errors.push({ row: rowNum, employeeId: row.employeeId, message: 'รูปแบบวันที่ไม่ถูกต้อง' });
                     errorCount++;
                     continue;
                 }
 
+                const startDate = startBusinessDate.date;
+                const endDate = endBusinessDate.date;
                 if (endDate < startDate) {
                     errors.push({ row: rowNum, employeeId: row.employeeId, message: 'วันสิ้นสุดน้อยกว่าวันเริ่มต้น' });
                     errorCount++;
@@ -239,9 +310,9 @@ export async function POST(request: NextRequest) {
 
                 const user = userResult.recordset[0] as ImportUserRow;
                 const userId = user.id;
-                const startDateStr = startDate.toISOString().split('T')[0];
-                const endDateStr = endDate.toISOString().split('T')[0];
-                const leaveYear = startDate.getFullYear();
+                const startDateStr = startBusinessDate.text;
+                const endDateStr = endBusinessDate.text;
+                const leaveYear = getFiscalYearForDate(startDateStr, vacationSettings.fiscalYearStart);
                 let vacationEligibilityInput: VacationEligibilityInput | null = null;
                 let vacationEligibleDateStr: string | null = null;
 
