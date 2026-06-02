@@ -286,24 +286,12 @@ async function getLeaveBalances(userId: number) {
             .input('year', currentYear)
             .query(`
                 SELECT 
-                    leaveType as type,
-                    SUM(
-                        CASE 
-                            WHEN isHourly = 1 AND startTime IS NOT NULL AND endTime IS NOT NULL THEN
-                                DATEDIFF(MINUTE, CAST(startTime AS TIME), CAST(endTime AS TIME))
-                                - CASE 
-                                    WHEN CAST(startTime AS TIME) < CAST('13:00' AS TIME) 
-                                         AND CAST(endTime AS TIME) > CAST('12:00' AS TIME) 
-                                    THEN DATEDIFF(MINUTE,
-                                        CASE WHEN CAST(startTime AS TIME) > CAST('12:00' AS TIME) THEN CAST(startTime AS TIME) ELSE CAST('12:00' AS TIME) END,
-                                        CASE WHEN CAST(endTime AS TIME) < CAST('13:00' AS TIME) THEN CAST(endTime AS TIME) ELSE CAST('13:00' AS TIME) END)
-                                    ELSE 0 END
-                            ELSE CAST(usageAmount * 7.5 * 60 AS INT)
-                        END
-                    ) as totalUsedMinutes
-                FROM LeaveRequests
-                WHERE userId = @userId AND YEAR(startDatetime) = @year AND status IN ('PENDING', 'APPROVED')
-                GROUP BY leaveType
+                    lr.leaveType as type,
+                    SUM(CAST(yrs.usageAmount * 7.5 * 60 AS INT)) as totalUsedMinutes
+                FROM LeaveRequests lr
+                INNER JOIN LeaveRequestYearSplit yrs ON yrs.leaveRequestId = lr.id
+                WHERE lr.userId = @userId AND yrs.year = @year AND lr.status IN ('PENDING', 'APPROVED')
+                GROUP BY lr.leaveType
             `);
 
         const actualUsedMap: Record<string, number> = {};

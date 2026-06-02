@@ -310,9 +310,16 @@ npm run dev
 - `remaining`: DECIMAL(8,4) - คงเหลือ (entitlement + carryOver - used)
 - `carryOver`: DECIMAL(8,4) - ยอดยกมาจากปีก่อน
 
+### Key Columns ใน Users สำหรับทดลองงาน/สิทธิ์พักร้อน:
+- `probationDays`: INT - จำนวนวันทดลองงานมาตรฐานของพนักงาน (default จาก `PROBATION_STANDARD_DAYS`)
+- `probationExtensionDays`: INT - จำนวนวันที่ต่อทดลองงานเพิ่ม
+- `probationOverrideDate`: DATE NULL - วันที่ผ่านทดลองงานจริงกรณีผ่านก่อน/ยกเว้น/แก้ย้อนหลัง
+- `probationEndDate`: DATE NULL - วันที่ผ่านทดลองงานที่คำนวณหรือ override แล้ว
+- `probationNote`: NVARCHAR(500) NULL - หมายเหตุการปรับทดลองงาน
+
 ### Key Columns ใน LeaveRequestYearSplit:
 - `leaveRequestId`: INT FK → LeaveRequests - ใบลาที่เกี่ยวข้อง
-- `year`: INT - ปีที่หักยอด
+- `year`: INT - ปีงบประมาณที่หักยอด (`LEAVE_YEAR_START`)
 - `usageAmount`: DECIMAL(8,4) - จำนวนวันที่หักในปีนั้น
 
 ---
@@ -599,6 +606,11 @@ sequenceDiagram
 - [x] **Carry-Over Limit ไม่ Sync** - เปลี่ยน `ยกยอดข้ามปีได้สูงสุด` จากหน้าตั้งค่า ไม่ sync ไป `LeaveQuotaSettings.maxCarryOverDays`
   - สาเหตุ: `PUT /api/hr/settings` จัดการแค่ `LEAVE_QUOTA_*` → `defaultDays` ไม่มี handler สำหรับ `LEAVE_CARRYOVER_LIMIT`
   - แก้ไข: เพิ่ม sync `LEAVE_CARRYOVER_LIMIT` → `LeaveQuotaSettings` (maxCarryOverDays + allowCarryOver) สำหรับ VACATION
+- [x] **Vacation Probation Eligibility** - ลาพักร้อนเริ่มใช้สิทธิ์จากวันที่ผ่านทดลองงานจริง + จำนวนปีที่ตั้งค่า
+  - HR ตั้งค่า `PROBATION_STANDARD_DAYS`, `VACATION_AFTER_PROBATION_YEARS`, `LEAVE_ADVANCE_DAYS` ใน `/hr/settings` กลุ่ม `กฏการลา`
+  - HR กรอก `probationExtensionDays`, `probationOverrideDate`, `probationNote` ได้ที่ `/hr/employees`
+  - ถ้า eligible date อยู่ภายในปีงบประมาณ ให้สิทธิ์พักร้อนเต็มปี ไม่มี prorate
+  - การสร้าง balance, request, bulk import และ year-end ใช้ปีงบประมาณจาก `LEAVE_YEAR_START`
 - [x] **CSV Export ประเภทการลาไม่ครบ** - Export CSV หน้ารายงานแสดงแค่ 3 ประเภท (พักร้อน, ลาป่วย, ลากิจ)
   - แก้ไข: เพิ่มทุกประเภทใน SQL query + CSV header (ลาคลอด, เกณฑ์ทหาร, ลาบวช, ทำหมัน, ฝึกอบรม, อื่นๆ)
 - [x] **Audit Log แสดง Numeric ID** - คอลัมน์รายละเอียดแสดง `Users#1` แทน employeeId
@@ -866,7 +878,7 @@ sequenceDiagram
 ### ประเภทการลา (9 ประเภท):
 | Type | ชื่อ | สิทธิ์/ปี | เงื่อนไข |
 |------|------|----------|----------|
-| VACATION | พักร้อน | 6 วัน | ทำงานครบ 1 ปีก่อน |
+| VACATION | พักร้อน | 6 วัน | ผ่านทดลองงานจริง + `VACATION_AFTER_PROBATION_YEARS` |
 | SICK | ลาป่วย | 30 วัน | >= 3 วัน ต้องมีใบแพทย์ |
 | PERSONAL | ลากิจ | 10 วัน | - |
 | MATERNITY | ลาคลอด | 120 วัน | ผู้หญิงเท่านั้น |
@@ -888,11 +900,17 @@ sequenceDiagram
 - Half-day = 0.5 วัน
 
 ### Cross-Year Leave (ลาข้ามปี):
-- ใบลาที่ข้ามวันที่ 31 ธ.ค. จะถูกแยกหักยอดแต่ละปีอัตโนมัติ
-- ตัวอย่าง: ลา 28 ธ.ค. 2026 - 4 ม.ค. 2027 → หัก 2 วันจากปี 2026, หัก 2 วันจากปี 2027
+- ใบลาที่ข้ามปีงบประมาณ (`LEAVE_YEAR_START`) จะถูกแยกหักยอดแต่ละปีอัตโนมัติ
+- ตัวอย่างถ้าปีงบเริ่ม 01-01: ลา 28 ธ.ค. 2026 - 4 ม.ค. 2027 → หัก 2 วันจากปี 2026, หัก 2 วันจากปี 2027
+- ตัวอย่างถ้าปีงบเริ่ม 04-01: ลา 30 มี.ค. 2026 - 3 เม.ย. 2026 → แยกหักปีงบ 2025/2026 ตามวันทำงานจริง
 - ถ้ายอดปีใหม่ยังไม่มี ระบบ auto-create ให้ (flag `isAutoCreated = 1`)
 - เมื่อ Year-End processing ทำ → auto-overwrite ยอดที่ auto-create + เก็บ `used` เดิมไว้
 - ยกเลิก/ปฏิเสธใบลาข้ามปี → คืนยอดถูกปีทุกกรณี (จาก `LeaveRequestYearSplit`)
+
+### Vacation Carry-Over:
+- ตั้งค่าได้ที่ `/hr/settings` กลุ่ม `ปีงบประมาณ` ผ่าน `LEAVE_CARRYOVER_LIMIT`
+- ยกยอดพักร้อนได้เฉพาะเมื่อพนักงานมีสิทธิ์พักร้อนในปีงบต้นทาง
+- ปีงบปลายทางจะได้สิทธิ์พักร้อนเต็ม `LEAVE_QUOTA_VACATION` เมื่อ eligible date อยู่ในปีงบนั้น ไม่มี prorate
 
 ### Timezone:
 - ระบบใช้ `Asia/Bangkok (UTC+7)`

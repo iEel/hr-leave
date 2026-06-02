@@ -2,6 +2,16 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getPool } from '@/lib/db';
 
+function parsePositiveInteger(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseNonNegativeInteger(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 export async function GET() {
     try {
         const session = await auth();
@@ -33,13 +43,13 @@ export async function GET() {
 
         result.recordset.forEach(row => {
             if (row.settingKey === 'LEAVE_ADVANCE_DAYS') {
-                rules.advanceNoticeDays = parseInt(row.settingValue, 10) || 3;
+                rules.advanceNoticeDays = parseNonNegativeInteger(row.settingValue, 3);
             } else if (row.settingKey === 'LEAVE_SICK_CERT_DAYS') {
-                rules.sickCertThreshold = parseInt(row.settingValue, 10) || 3;
+                rules.sickCertThreshold = parsePositiveInteger(row.settingValue, 3);
             } else if (row.settingKey === 'PROBATION_STANDARD_DAYS') {
-                rules.probationStandardDays = parseInt(row.settingValue, 10) || 90;
+                rules.probationStandardDays = parsePositiveInteger(row.settingValue, 90);
             } else if (row.settingKey === 'VACATION_AFTER_PROBATION_YEARS') {
-                rules.vacationAfterProbationYears = parseInt(row.settingValue, 10) || 1;
+                rules.vacationAfterProbationYears = parseNonNegativeInteger(row.settingValue, 1);
             } else if (row.settingKey === 'LEAVE_YEAR_START') {
                 rules.fiscalYearStart = row.settingValue || '01-01';
             }

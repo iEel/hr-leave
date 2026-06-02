@@ -33,6 +33,11 @@ function parsePositiveInteger(value: unknown, fallback: number): number {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseNonNegativeInteger(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 function parseFiscalYearStart(value: unknown): string {
     if (typeof value !== 'string') {
         return DEFAULT_FISCAL_YEAR_START;
@@ -65,7 +70,10 @@ function buildSettings(rows: Array<{ settingKey: string; settingValue: string | 
         if (row.settingKey === 'PROBATION_STANDARD_DAYS') {
             settings.probationStandardDays = parsePositiveInteger(row.settingValue, DEFAULT_PROBATION_STANDARD_DAYS);
         } else if (row.settingKey === 'VACATION_AFTER_PROBATION_YEARS') {
-            settings.vacationAfterProbationYears = parsePositiveInteger(row.settingValue, DEFAULT_VACATION_AFTER_PROBATION_YEARS);
+            settings.vacationAfterProbationYears = parseNonNegativeInteger(
+                row.settingValue,
+                DEFAULT_VACATION_AFTER_PROBATION_YEARS
+            );
         } else if (row.settingKey === 'LEAVE_YEAR_START') {
             settings.fiscalYearStart = parseFiscalYearStart(row.settingValue);
         }

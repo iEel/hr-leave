@@ -332,36 +332,14 @@ export async function GET(
             .input('year', currentYear)
             .query(`
                 SELECT 
-                    leaveType,
-                    SUM(
-                        CASE 
-                            WHEN isHourly = 1 AND TRY_CAST(startTime AS TIME) IS NOT NULL AND TRY_CAST(endTime AS TIME) IS NOT NULL THEN
-                                -- Calculate net minutes directly from times
-                                DATEDIFF(MINUTE, 
-                                    TRY_CAST(startTime AS TIME), 
-                                    TRY_CAST(endTime AS TIME)
-                                )
-                                -- Deduct lunch overlap if applicable
-                                - CASE 
-                                    WHEN TRY_CAST(startTime AS TIME) < CAST('13:00' AS TIME) 
-                                         AND TRY_CAST(endTime AS TIME) > CAST('12:00' AS TIME) 
-                                    THEN 
-                                        DATEDIFF(MINUTE,
-                                            CASE WHEN TRY_CAST(startTime AS TIME) > CAST('12:00' AS TIME) THEN TRY_CAST(startTime AS TIME) ELSE CAST('12:00' AS TIME) END,
-                                            CASE WHEN TRY_CAST(endTime AS TIME) < CAST('13:00' AS TIME) THEN TRY_CAST(endTime AS TIME) ELSE CAST('13:00' AS TIME) END
-                                        )
-                                    ELSE 0
-                                  END
-                            ELSE 
-                                -- For full/half day leaves, convert days to minutes
-                                CAST(usageAmount * 7.5 * 60 AS INT)
-                        END
-                    ) as totalUsedMinutes
-                FROM LeaveRequests
-                WHERE userId = @userId 
-                    AND YEAR(startDatetime) = @year
-                    AND status IN ('PENDING', 'APPROVED')
-                GROUP BY leaveType
+                    lr.leaveType,
+                    SUM(CAST(yrs.usageAmount * 7.5 * 60 AS INT)) as totalUsedMinutes
+                FROM LeaveRequests lr
+                INNER JOIN LeaveRequestYearSplit yrs ON yrs.leaveRequestId = lr.id
+                WHERE lr.userId = @userId
+                    AND yrs.year = @year
+                    AND lr.status IN ('PENDING', 'APPROVED')
+                GROUP BY lr.leaveType
             `);
 
         // Create a map of actual used minutes per leave type
@@ -391,7 +369,13 @@ export async function GET(
                     CONVERT(varchar, endDatetime, 23) as endDate,
                     reason
                 FROM LeaveRequests
-                WHERE userId = @userId AND YEAR(startDatetime) = @year
+                WHERE userId = @userId
+                  AND EXISTS (
+                      SELECT 1
+                      FROM LeaveRequestYearSplit yrs
+                      WHERE yrs.leaveRequestId = LeaveRequests.id
+                        AND yrs.year = @year
+                  )
                 ORDER BY startDatetime DESC
             `);
 

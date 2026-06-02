@@ -77,6 +77,11 @@ function parsePositiveInteger(value: unknown, fallback: number): number {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseNonNegativeInteger(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 function padDatePart(value: number): string {
     return String(value).padStart(2, '0');
 }
@@ -131,6 +136,68 @@ function parseBusinessDate(value: string | Date): BusinessDate | null {
     return buildBusinessDate(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
 }
 
+function addBusinessDays(date: Date, days: number): Date {
+    const result = new Date(date);
+    result.setDate(result.getDate() + days);
+    return result;
+}
+
+function formatBusinessDate(date: Date): string {
+    return [
+        date.getFullYear(),
+        padDatePart(date.getMonth() + 1),
+        padDatePart(date.getDate()),
+    ].join('-');
+}
+
+function splitLeaveByFiscalYear(
+    startDate: Date,
+    endDate: Date,
+    holidays: Date[],
+    workingSaturdays: WorkingSaturdayData[],
+    workHoursPerDay: number,
+    fiscalYearStart: string
+): Map<number, number> {
+    const holidayStrings = new Set(holidays.map(formatBusinessDate));
+    const workingSaturdayMap = new Map(workingSaturdays.map((workingSaturday) => [
+        workingSaturday.date,
+        workingSaturday,
+    ]));
+    const fiscalYearMap = new Map<number, number>();
+
+    for (let day = new Date(startDate); day <= endDate; day = addBusinessDays(day, 1)) {
+        const dayText = formatBusinessDate(day);
+        if (holidayStrings.has(dayText)) {
+            continue;
+        }
+
+        const dayOfWeek = day.getDay();
+        let dayValue = 0;
+
+        if (dayOfWeek === 0) {
+            continue;
+        } else if (dayOfWeek === 6) {
+            const workingSaturday = workingSaturdayMap.get(dayText);
+            if (workingSaturday) {
+                dayValue = workingSaturday.workHours / workHoursPerDay;
+            }
+        } else {
+            dayValue = 1;
+        }
+
+        if (dayValue > 0) {
+            const fiscalYear = getFiscalYearForDate(dayText, fiscalYearStart);
+            fiscalYearMap.set(fiscalYear, (fiscalYearMap.get(fiscalYear) || 0) + dayValue);
+        }
+    }
+
+    for (const [year, value] of fiscalYearMap) {
+        fiscalYearMap.set(year, Math.round(value * 10000) / 10000);
+    }
+
+    return fiscalYearMap;
+}
+
 function requireBusinessDate(value: string | Date, label: string): BusinessDate {
     const parsed = parseBusinessDate(value);
     if (!parsed) {
@@ -172,7 +239,10 @@ function buildVacationSettings(rows: Array<{ settingKey: string; settingValue: s
         if (row.settingKey === 'PROBATION_STANDARD_DAYS') {
             settings.probationStandardDays = parsePositiveInteger(row.settingValue, DEFAULT_PROBATION_STANDARD_DAYS);
         } else if (row.settingKey === 'VACATION_AFTER_PROBATION_YEARS') {
-            settings.vacationAfterProbationYears = parsePositiveInteger(row.settingValue, DEFAULT_VACATION_AFTER_PROBATION_YEARS);
+            settings.vacationAfterProbationYears = parseNonNegativeInteger(
+                row.settingValue,
+                DEFAULT_VACATION_AFTER_PROBATION_YEARS
+            );
         } else if (row.settingKey === 'LEAVE_YEAR_START') {
             settings.fiscalYearStart = parseFiscalYearStart(row.settingValue);
         }
@@ -312,7 +382,6 @@ export async function POST(request: NextRequest) {
                 const userId = user.id;
                 const startDateStr = startBusinessDate.text;
                 const endDateStr = endBusinessDate.text;
-                const leaveYear = getFiscalYearForDate(startDateStr, vacationSettings.fiscalYearStart);
                 let vacationEligibilityInput: VacationEligibilityInput | null = null;
                 let vacationEligibleDateStr: string | null = null;
 
@@ -337,16 +406,6 @@ export async function POST(request: NextRequest) {
                             row: rowNum,
                             employeeId: row.employeeId,
                             message: `ใช้สิทธิ์ลาพักร้อนได้ตั้งแต่ ${vacationEligibleDateStr}`
-                        });
-                        errorCount++;
-                        continue;
-                    }
-
-                    if (!isVacationEntitledInFiscalYear(vacationEligibilityInput, leaveYear, vacationSettings.fiscalYearStart)) {
-                        errors.push({
-                            row: rowNum,
-                            employeeId: row.employeeId,
-                            message: `ยังไม่มีสิทธิ์ลาพักร้อนในปีงบประมาณ ${leaveYear} (ใช้สิทธิ์ได้ตั้งแต่ ${vacationEligibleDateStr})`
                         });
                         errorCount++;
                         continue;
@@ -405,74 +464,114 @@ export async function POST(request: NextRequest) {
                     continue;
                 }
 
-                // --- Check leave balance (skip for OTHER type) ---
-                if (row.leaveType !== 'OTHER') {
-                    const balanceResult = await pool.request()
-                        .input('userId', userId)
-                        .input('leaveType', row.leaveType)
-                        .input('year', leaveYear)
-                        .query(`
-                            SELECT remaining FROM LeaveBalances
-                            WHERE userId = @userId AND leaveType = @leaveType AND year = @year
-                        `);
+                const startFiscalYear = getFiscalYearForDate(startDateStr, vacationSettings.fiscalYearStart);
+                const endFiscalYear = getFiscalYearForDate(endDateStr, vacationSettings.fiscalYearStart);
+                const yearSplits = isHourly || startFiscalYear === endFiscalYear
+                    ? new Map([[startFiscalYear, days]])
+                    : splitLeaveByFiscalYear(
+                        startDate,
+                        endDate,
+                        holidays,
+                        workingSaturdays,
+                        workHoursPerDay,
+                        vacationSettings.fiscalYearStart
+                    );
 
-                    let remaining: number;
+                if (yearSplits.size === 0) {
+                    errors.push({ row: rowNum, employeeId: row.employeeId, message: 'ไม่สามารถแยกจำนวนวันลาตามปีงบประมาณได้' });
+                    errorCount++;
+                    continue;
+                }
 
-                    if (balanceResult.recordset.length === 0) {
-                        // Auto-create balance from LeaveQuotaSettings (same as leave/request route)
-                        if (
-                            row.leaveType === 'VACATION'
-                            && (
-                                !vacationEligibilityInput
-                                || !isVacationEntitledInFiscalYear(vacationEligibilityInput, leaveYear, vacationSettings.fiscalYearStart)
-                            )
-                        ) {
+                if (row.leaveType === 'VACATION') {
+                    if (!vacationEligibilityInput || !vacationEligibleDateStr) {
+                        errors.push({ row: rowNum, employeeId: row.employeeId, message: 'ไม่สามารถตรวจสอบสิทธิ์ลาพักร้อนได้' });
+                        errorCount++;
+                        continue;
+                    }
+
+                    let hasVacationEligibilityError = false;
+                    for (const [year] of yearSplits) {
+                        if (!isVacationEntitledInFiscalYear(vacationEligibilityInput, year, vacationSettings.fiscalYearStart)) {
                             errors.push({
                                 row: rowNum,
                                 employeeId: row.employeeId,
-                                message: `ยังไม่มีสิทธิ์ลาพักร้อนในปีงบประมาณ ${leaveYear}${vacationEligibleDateStr ? ` (ใช้สิทธิ์ได้ตั้งแต่ ${vacationEligibleDateStr})` : ''}`
+                                message: `ยังไม่มีสิทธิ์ลาพักร้อนในปีงบประมาณ ${year} (ใช้สิทธิ์ได้ตั้งแต่ ${vacationEligibleDateStr})`
                             });
                             errorCount++;
-                            continue;
+                            hasVacationEligibilityError = true;
+                            break;
                         }
+                    }
+                    if (hasVacationEligibilityError) {
+                        continue;
+                    }
+                }
 
-                        const quotaResult = await pool.request()
+                // --- Check leave balance (skip for OTHER type) ---
+                if (row.leaveType !== 'OTHER') {
+                    let hasBalanceError = false;
+                    const missingBalances: Array<{ year: number; defaultDays: number }> = [];
+
+                    for (const [year, amount] of yearSplits) {
+                        const balanceResult = await pool.request()
+                            .input('userId', userId)
                             .input('leaveType', row.leaveType)
-                            .query(`SELECT defaultDays FROM LeaveQuotaSettings WHERE leaveType = @leaveType`);
+                            .input('year', year)
+                            .query(`
+                                SELECT remaining FROM LeaveBalances
+                                WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                            `);
 
-                        if (quotaResult.recordset.length === 0) {
-                            errors.push({ row: rowNum, employeeId: row.employeeId, message: `ไม่พบการตั้งค่าโควตาประเภท ${row.leaveType}` });
-                            errorCount++;
-                            continue;
+                        let remaining: number;
+
+                        if (balanceResult.recordset.length === 0) {
+                            const quotaResult = await pool.request()
+                                .input('leaveType', row.leaveType)
+                                .query(`SELECT defaultDays FROM LeaveQuotaSettings WHERE leaveType = @leaveType`);
+
+                            if (quotaResult.recordset.length === 0) {
+                                errors.push({ row: rowNum, employeeId: row.employeeId, message: `ไม่พบการตั้งค่าโควตาประเภท ${row.leaveType}` });
+                                errorCount++;
+                                hasBalanceError = true;
+                                break;
+                            }
+
+                            const defaultDays = quotaResult.recordset[0].defaultDays;
+                            missingBalances.push({ year, defaultDays });
+                            remaining = defaultDays;
+                        } else {
+                            remaining = balanceResult.recordset[0].remaining;
                         }
 
-                        const defaultDays = quotaResult.recordset[0].defaultDays;
+                        if (remaining < amount) {
+                            errors.push({ row: rowNum, employeeId: row.employeeId, message: `วันลาปี ${year} ไม่เพียงพอ (เหลือ ${remaining} วัน, ต้องการ ${amount} วัน)` });
+                            errorCount++;
+                            hasBalanceError = true;
+                            break;
+                        }
+                    }
+                    if (hasBalanceError) {
+                        continue;
+                    }
+
+                    for (const missingBalance of missingBalances) {
                         await pool.request()
                             .input('userId', userId)
                             .input('leaveType', row.leaveType)
-                            .input('year', leaveYear)
-                            .input('entitlement', defaultDays)
-                            .input('remaining', defaultDays)
+                            .input('year', missingBalance.year)
+                            .input('entitlement', missingBalance.defaultDays)
+                            .input('remaining', missingBalance.defaultDays)
                             .query(`
                                 INSERT INTO LeaveBalances (userId, leaveType, year, entitlement, used, remaining, carryOver, isAutoCreated)
                                 VALUES (@userId, @leaveType, @year, @entitlement, 0, @remaining, 0, 1)
                             `);
-
-                        remaining = defaultDays;
-                    } else {
-                        remaining = balanceResult.recordset[0].remaining;
-                    }
-
-                    if (remaining < days) {
-                        errors.push({ row: rowNum, employeeId: row.employeeId, message: `วันลาไม่เพียงพอ (เหลือ ${remaining} วัน, ต้องการ ${days} วัน)` });
-                        errorCount++;
-                        continue;
                     }
                 }
 
 
                 // --- Insert leave request (status = APPROVED) ---
-                await pool.request()
+                const insertResult = await pool.request()
                     .input('userId', userId)
                     .input('leaveType', row.leaveType)
                     .input('startDatetime', startDateStr)
@@ -499,19 +598,32 @@ export async function POST(request: NextRequest) {
                         )
                     `);
 
-                // --- Deduct leave balance (skip for OTHER type) ---
-                if (row.leaveType !== 'OTHER') {
+                const newId = insertResult.recordset[0].id;
+
+                // --- Deduct leave balance and record fiscal-year splits ---
+                for (const [year, amount] of yearSplits) {
+                    if (row.leaveType !== 'OTHER') {
+                        await pool.request()
+                            .input('userId', userId)
+                            .input('leaveType', row.leaveType)
+                            .input('year', year)
+                            .input('usageAmount', amount)
+                            .query(`
+                                UPDATE LeaveBalances
+                                SET used = used + @usageAmount,
+                                    remaining = remaining - @usageAmount,
+                                    updatedAt = GETDATE()
+                                WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                            `);
+                    }
+
                     await pool.request()
-                        .input('userId', userId)
-                        .input('leaveType', row.leaveType)
-                        .input('year', leaveYear)
-                        .input('usageAmount', days)
+                        .input('leaveRequestId', newId)
+                        .input('year', year)
+                        .input('usageAmount', amount)
                         .query(`
-                            UPDATE LeaveBalances
-                            SET used = used + @usageAmount,
-                                remaining = remaining - @usageAmount,
-                                updatedAt = GETDATE()
-                            WHERE userId = @userId AND leaveType = @leaveType AND year = @year
+                            INSERT INTO LeaveRequestYearSplit (leaveRequestId, year, usageAmount)
+                            VALUES (@leaveRequestId, @year, @usageAmount)
                         `);
                 }
 
