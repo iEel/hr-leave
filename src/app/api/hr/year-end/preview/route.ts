@@ -24,6 +24,46 @@ type VacationEligibilityUser = {
     probationOverrideDate: string | null;
 };
 
+type LeaveQuotaSetting = {
+    defaultDays: number;
+    allowCarryOver: boolean;
+    maxCarryOverDays: number;
+    minTenureYears: number;
+};
+
+type SourceBalance = {
+    remaining: number;
+    used: number;
+    entitlement: number;
+};
+
+type PreviewBalance = {
+    leaveType: string;
+    currentRemaining: number;
+    currentUsed: number;
+    currentEntitlement: number;
+    carryOver: number;
+    newEntitlement: number;
+    newTotal: number;
+    vacationEligibleDate?: string | null;
+    vacationEligibleInFromYear?: boolean;
+    vacationEligibleInToYear?: boolean;
+    vacationEligibilityStatus?: 'ELIGIBLE' | 'NOT_ELIGIBLE' | 'MISSING_START_DATE';
+    vacationEligibilityReason?: string;
+    vacationCarryOverBlockedByEligibility?: boolean;
+};
+
+type InternalEmployeePreview = VacationEligibilityUser & {
+    userId: number;
+    employeeId: string;
+    firstName: string;
+    lastName: string;
+    department: string;
+    company: string;
+    sourceBalances: Record<string, SourceBalance>;
+    balances: PreviewBalance[];
+};
+
 function isHRStaffSessionUser(user: unknown): boolean {
     return typeof user === 'object' && user !== null && 'isHRStaff' in user && user.isHRStaff === true;
 }
@@ -132,17 +172,20 @@ export async function GET(request: NextRequest) {
         // Get leave quota settings for carry-over rules
         const quotaResult = await pool.request()
             .query(`
-                SELECT leaveType, defaultDays, allowCarryOver, maxCarryOverDays
+                SELECT leaveType, defaultDays, allowCarryOver, maxCarryOverDays, minTenureYears
                 FROM LeaveQuotaSettings
             `);
 
-        const quotaSettings: Record<string, { defaultDays: number; allowCarryOver: boolean; maxCarryOverDays: number }> = {};
+        const quotaSettings: Record<string, LeaveQuotaSetting> = {};
+        const leaveTypes: string[] = [];
         for (const row of quotaResult.recordset) {
             quotaSettings[row.leaveType] = {
                 defaultDays: row.defaultDays,
                 allowCarryOver: row.allowCarryOver,
-                maxCarryOverDays: row.maxCarryOverDays
+                maxCarryOverDays: row.maxCarryOverDays,
+                minTenureYears: row.minTenureYears ?? 0
             };
+            leaveTypes.push(row.leaveType);
         }
 
         // Get all active employees with their current year balances
@@ -185,30 +228,8 @@ export async function GET(request: NextRequest) {
         const nextYearExists = nextYearTotalCount > 0;
         const nextYearAllAutoCreated = nextYearTotalCount > 0 && nextYearTotalCount === nextYearAutoCreatedCount;
 
-        // Group by employee and calculate carry-over
-        const employeeMap: Record<number, {
-            userId: number;
-            employeeId: string;
-            firstName: string;
-            lastName: string;
-            department: string;
-            company: string;
-            balances: Array<{
-                leaveType: string;
-                currentRemaining: number;
-                currentUsed: number;
-                currentEntitlement: number;
-                carryOver: number;
-                newEntitlement: number;
-                newTotal: number;
-                vacationEligibleDate?: string | null;
-                vacationEligibleInFromYear?: boolean;
-                vacationEligibleInToYear?: boolean;
-                vacationEligibilityStatus?: 'ELIGIBLE' | 'NOT_ELIGIBLE' | 'MISSING_START_DATE';
-                vacationEligibilityReason?: string;
-                vacationCarryOverBlockedByEligibility?: boolean;
-            }>;
-        }> = {};
+        // Group source-year balances by employee, then generate preview rows from configured leave types.
+        const employeeMap: Record<number, InternalEmployeePreview> = {};
 
         for (const row of employeesResult.recordset) {
             if (!employeeMap[row.userId]) {
@@ -219,14 +240,37 @@ export async function GET(request: NextRequest) {
                     lastName: row.lastName,
                     department: row.department,
                     company: row.company,
+                    startDate: row.startDate,
+                    probationDays: row.probationDays,
+                    probationExtensionDays: row.probationExtensionDays,
+                    probationOverrideDate: row.probationOverrideDate,
+                    sourceBalances: {},
                     balances: []
                 };
             }
 
             if (row.leaveType) {
-                const quota = quotaSettings[row.leaveType] || { defaultDays: 0, allowCarryOver: false, maxCarryOverDays: 0 };
+                employeeMap[row.userId].sourceBalances[row.leaveType] = {
+                    remaining: row.remaining,
+                    used: row.used,
+                    entitlement: row.entitlement
+                };
+            }
+        }
+
+        for (const employee of Object.values(employeeMap)) {
+            const startYear = employee.startDate ? Number.parseInt(employee.startDate.slice(0, 4), 10) : toYear;
+            const yearsOfService = toYear - startYear;
+
+            for (const leaveType of leaveTypes) {
+                const quota = quotaSettings[leaveType];
+                const sourceBalance = employee.sourceBalances[leaveType] || {
+                    remaining: 0,
+                    used: 0,
+                    entitlement: 0
+                };
                 let carryOver = quota.allowCarryOver
-                    ? Math.min(row.remaining, quota.maxCarryOverDays)
+                    ? Math.min(sourceBalance.remaining, quota.maxCarryOverDays)
                     : 0;
                 let newEntitlement = quota.defaultDays;
                 let vacationEligibleDate: string | null | undefined;
@@ -236,8 +280,8 @@ export async function GET(request: NextRequest) {
                 let vacationEligibilityReason: string | undefined;
                 let vacationCarryOverBlockedByEligibility: boolean | undefined;
 
-                if (row.leaveType === 'VACATION') {
-                    const eligibilityInput = buildVacationEligibilityInput(row, settings);
+                if (leaveType === 'VACATION') {
+                    const eligibilityInput = buildVacationEligibilityInput(employee, settings);
 
                     if (eligibilityInput) {
                         vacationEligibleDate = toDateText(calculateVacationEligibleDate(eligibilityInput));
@@ -252,7 +296,7 @@ export async function GET(request: NextRequest) {
                             settings.fiscalYearStart
                         );
                         carryOver = vacationEligibleInFromYear && quota.allowCarryOver
-                            ? Math.min(row.remaining, quota.maxCarryOverDays)
+                            ? Math.min(sourceBalance.remaining, quota.maxCarryOverDays)
                             : 0;
                         newEntitlement = vacationEligibleInToYear ? quota.defaultDays : 0;
                         vacationEligibilityStatus = vacationEligibleInToYear ? 'ELIGIBLE' : 'NOT_ELIGIBLE';
@@ -260,7 +304,7 @@ export async function GET(request: NextRequest) {
                             ? 'eligible_in_target_fiscal_year'
                             : 'not_eligible_in_target_fiscal_year';
                         vacationCarryOverBlockedByEligibility =
-                            !vacationEligibleInFromYear && quota.allowCarryOver && row.remaining > 0;
+                            !vacationEligibleInFromYear && quota.allowCarryOver && sourceBalance.remaining > 0;
                     } else {
                         carryOver = 0;
                         newEntitlement = 0;
@@ -269,15 +313,17 @@ export async function GET(request: NextRequest) {
                         vacationEligibleInToYear = false;
                         vacationEligibilityStatus = 'MISSING_START_DATE';
                         vacationEligibilityReason = 'missing_start_date';
-                        vacationCarryOverBlockedByEligibility = quota.allowCarryOver && row.remaining > 0;
+                        vacationCarryOverBlockedByEligibility = quota.allowCarryOver && sourceBalance.remaining > 0;
                     }
+                } else if (yearsOfService < quota.minTenureYears) {
+                    continue;
                 }
 
-                employeeMap[row.userId].balances.push({
-                    leaveType: row.leaveType,
-                    currentRemaining: row.remaining,
-                    currentUsed: row.used,
-                    currentEntitlement: row.entitlement,
+                employee.balances.push({
+                    leaveType,
+                    currentRemaining: sourceBalance.remaining,
+                    currentUsed: sourceBalance.used,
+                    currentEntitlement: sourceBalance.entitlement,
                     carryOver,
                     newEntitlement,
                     newTotal: newEntitlement + carryOver,
@@ -292,7 +338,15 @@ export async function GET(request: NextRequest) {
         }
 
         // Calculate summary stats
-        const employees = Object.values(employeeMap);
+        const employees = Object.values(employeeMap).map(employee => ({
+            userId: employee.userId,
+            employeeId: employee.employeeId,
+            firstName: employee.firstName,
+            lastName: employee.lastName,
+            department: employee.department,
+            company: employee.company,
+            balances: employee.balances
+        }));
         const totalCarryOverByType: Record<string, number> = {};
 
         for (const emp of employees) {
