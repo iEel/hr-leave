@@ -1,6 +1,113 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getPool } from '@/lib/db';
+import {
+    calculateVacationEligibleDate,
+    isVacationEntitledInFiscalYear,
+    type VacationEligibilityInput,
+} from '@/lib/vacation-eligibility';
+
+const DEFAULT_PROBATION_STANDARD_DAYS = 90;
+const DEFAULT_VACATION_AFTER_PROBATION_YEARS = 1;
+const DEFAULT_FISCAL_YEAR_START = '01-01';
+
+type YearEndSettings = {
+    probationStandardDays: number;
+    vacationAfterProbationYears: number;
+    fiscalYearStart: string;
+};
+
+type VacationEligibilityUser = {
+    startDate: string | null;
+    probationDays: number | null;
+    probationExtensionDays: number | null;
+    probationOverrideDate: string | null;
+};
+
+function isHRStaffSessionUser(user: unknown): boolean {
+    return typeof user === 'object' && user !== null && 'isHRStaff' in user && user.isHRStaff === true;
+}
+
+function parsePositiveInteger(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseFiscalYearStart(value: unknown): string {
+    if (typeof value !== 'string') {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    const match = value.match(/^(\d{2})-(\d{2})$/);
+    if (!match) {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    const month = Number(match[1]);
+    const day = Number(match[2]);
+    const daysInMonth = new Date(Date.UTC(2001, month, 0)).getUTCDate();
+
+    if (month < 1 || month > 12 || day < 1 || day > daysInMonth) {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    return value;
+}
+
+function toDateText(date: Date): string {
+    return date.toISOString().slice(0, 10);
+}
+
+function buildSettings(rows: Array<{ settingKey: string; settingValue: string | null }>): YearEndSettings {
+    const settings: YearEndSettings = {
+        probationStandardDays: DEFAULT_PROBATION_STANDARD_DAYS,
+        vacationAfterProbationYears: DEFAULT_VACATION_AFTER_PROBATION_YEARS,
+        fiscalYearStart: DEFAULT_FISCAL_YEAR_START,
+    };
+
+    for (const row of rows) {
+        if (row.settingKey === 'PROBATION_STANDARD_DAYS') {
+            settings.probationStandardDays = parsePositiveInteger(row.settingValue, DEFAULT_PROBATION_STANDARD_DAYS);
+        } else if (row.settingKey === 'VACATION_AFTER_PROBATION_YEARS') {
+            settings.vacationAfterProbationYears = parsePositiveInteger(row.settingValue, DEFAULT_VACATION_AFTER_PROBATION_YEARS);
+        } else if (row.settingKey === 'LEAVE_YEAR_START') {
+            settings.fiscalYearStart = parseFiscalYearStart(row.settingValue);
+        }
+    }
+
+    return settings;
+}
+
+async function loadYearEndSettings(pool: Awaited<ReturnType<typeof getPool>>): Promise<YearEndSettings> {
+    const settingsResult = await pool.request().query(`
+        SELECT settingKey, settingValue
+        FROM SystemSettings
+        WHERE settingKey IN (
+            'PROBATION_STANDARD_DAYS',
+            'VACATION_AFTER_PROBATION_YEARS',
+            'LEAVE_YEAR_START'
+        )
+    `);
+
+    return buildSettings(settingsResult.recordset);
+}
+
+function buildVacationEligibilityInput(
+    user: VacationEligibilityUser,
+    settings: YearEndSettings
+): VacationEligibilityInput | null {
+    if (!user.startDate) {
+        return null;
+    }
+
+    return {
+        startDate: user.startDate,
+        probationDays: user.probationDays ?? settings.probationStandardDays,
+        probationExtensionDays: user.probationExtensionDays,
+        probationOverrideDate: user.probationOverrideDate,
+        vacationDelayYears: settings.vacationAfterProbationYears,
+    };
+}
 
 /**
  * GET /api/hr/year-end/preview
@@ -10,7 +117,7 @@ export async function GET(request: NextRequest) {
     try {
         const session = await auth();
         // Allow if role is HR/ADMIN OR user has isHRStaff flag
-        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        const isHRStaff = isHRStaffSessionUser(session?.user);
         if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
@@ -20,6 +127,7 @@ export async function GET(request: NextRequest) {
         const toYear = fromYear + 1;
 
         const pool = await getPool();
+        const settings = await loadYearEndSettings(pool);
 
         // Get leave quota settings for carry-over rules
         const quotaResult = await pool.request()
@@ -48,6 +156,10 @@ export async function GET(request: NextRequest) {
                     u.lastName,
                     u.department,
                     u.company,
+                    CONVERT(varchar, u.startDate, 23) as startDate,
+                    u.probationDays,
+                    u.probationExtensionDays,
+                    CONVERT(varchar, u.probationOverrideDate, 23) as probationOverrideDate,
                     lb.leaveType,
                     ISNULL(lb.remaining, 0) as remaining,
                     ISNULL(lb.used, 0) as used,
@@ -89,6 +201,12 @@ export async function GET(request: NextRequest) {
                 carryOver: number;
                 newEntitlement: number;
                 newTotal: number;
+                vacationEligibleDate?: string | null;
+                vacationEligibleInFromYear?: boolean;
+                vacationEligibleInToYear?: boolean;
+                vacationEligibilityStatus?: 'ELIGIBLE' | 'NOT_ELIGIBLE' | 'MISSING_START_DATE';
+                vacationEligibilityReason?: string;
+                vacationCarryOverBlockedByEligibility?: boolean;
             }>;
         }> = {};
 
@@ -107,9 +225,53 @@ export async function GET(request: NextRequest) {
 
             if (row.leaveType) {
                 const quota = quotaSettings[row.leaveType] || { defaultDays: 0, allowCarryOver: false, maxCarryOverDays: 0 };
-                const carryOver = quota.allowCarryOver
+                let carryOver = quota.allowCarryOver
                     ? Math.min(row.remaining, quota.maxCarryOverDays)
                     : 0;
+                let newEntitlement = quota.defaultDays;
+                let vacationEligibleDate: string | null | undefined;
+                let vacationEligibleInFromYear: boolean | undefined;
+                let vacationEligibleInToYear: boolean | undefined;
+                let vacationEligibilityStatus: 'ELIGIBLE' | 'NOT_ELIGIBLE' | 'MISSING_START_DATE' | undefined;
+                let vacationEligibilityReason: string | undefined;
+                let vacationCarryOverBlockedByEligibility: boolean | undefined;
+
+                if (row.leaveType === 'VACATION') {
+                    const eligibilityInput = buildVacationEligibilityInput(row, settings);
+
+                    if (eligibilityInput) {
+                        vacationEligibleDate = toDateText(calculateVacationEligibleDate(eligibilityInput));
+                        vacationEligibleInFromYear = isVacationEntitledInFiscalYear(
+                            eligibilityInput,
+                            fromYear,
+                            settings.fiscalYearStart
+                        );
+                        vacationEligibleInToYear = isVacationEntitledInFiscalYear(
+                            eligibilityInput,
+                            toYear,
+                            settings.fiscalYearStart
+                        );
+                        carryOver = vacationEligibleInFromYear && quota.allowCarryOver
+                            ? Math.min(row.remaining, quota.maxCarryOverDays)
+                            : 0;
+                        newEntitlement = vacationEligibleInToYear ? quota.defaultDays : 0;
+                        vacationEligibilityStatus = vacationEligibleInToYear ? 'ELIGIBLE' : 'NOT_ELIGIBLE';
+                        vacationEligibilityReason = vacationEligibleInToYear
+                            ? 'eligible_in_target_fiscal_year'
+                            : 'not_eligible_in_target_fiscal_year';
+                        vacationCarryOverBlockedByEligibility =
+                            !vacationEligibleInFromYear && quota.allowCarryOver && row.remaining > 0;
+                    } else {
+                        carryOver = 0;
+                        newEntitlement = 0;
+                        vacationEligibleDate = null;
+                        vacationEligibleInFromYear = false;
+                        vacationEligibleInToYear = false;
+                        vacationEligibilityStatus = 'MISSING_START_DATE';
+                        vacationEligibilityReason = 'missing_start_date';
+                        vacationCarryOverBlockedByEligibility = quota.allowCarryOver && row.remaining > 0;
+                    }
+                }
 
                 employeeMap[row.userId].balances.push({
                     leaveType: row.leaveType,
@@ -117,8 +279,14 @@ export async function GET(request: NextRequest) {
                     currentUsed: row.used,
                     currentEntitlement: row.entitlement,
                     carryOver,
-                    newEntitlement: quota.defaultDays,
-                    newTotal: quota.defaultDays + carryOver
+                    newEntitlement,
+                    newTotal: newEntitlement + carryOver,
+                    vacationEligibleDate,
+                    vacationEligibleInFromYear,
+                    vacationEligibleInToYear,
+                    vacationEligibilityStatus,
+                    vacationEligibilityReason,
+                    vacationCarryOverBlockedByEligibility
                 });
             }
         }

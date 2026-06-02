@@ -1,7 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     CalendarClock,
     RefreshCw,
@@ -24,6 +23,12 @@ interface EmployeeBalance {
     carryOver: number;
     newEntitlement: number;
     newTotal: number;
+    vacationEligibleDate?: string | null;
+    vacationEligibleInFromYear?: boolean;
+    vacationEligibleInToYear?: boolean;
+    vacationEligibilityStatus?: 'ELIGIBLE' | 'NOT_ELIGIBLE' | 'MISSING_START_DATE';
+    vacationEligibilityReason?: string;
+    vacationCarryOverBlockedByEligibility?: boolean;
 }
 
 interface EmployeePreview {
@@ -50,6 +55,14 @@ interface PreviewData {
     quotaSettings: Record<string, { defaultDays: number; allowCarryOver: boolean; maxCarryOverDays: number }>;
 }
 
+type YearEndStats = {
+    fromYear: number;
+    toYear: number;
+    totalEmployees: number;
+    success: number;
+    errors: number;
+};
+
 const leaveTypeNames: Record<string, string> = {
     'VACATION': 'พักร้อน',
     'SICK': 'ลาป่วย',
@@ -62,8 +75,16 @@ const leaveTypeNames: Record<string, string> = {
     'OTHER': 'อื่นๆ'
 };
 
+function formatDateLabel(date?: string | null): string {
+    if (!date) {
+        return '-';
+    }
+
+    const [year, month, day] = date.split('-');
+    return year && month && day ? `${day}/${month}/${year}` : date;
+}
+
 export default function YearEndProcessingPage() {
-    const { data: session } = useSession();
     const currentYear = new Date().getFullYear();
 
     const [selectedYear, setSelectedYear] = useState(currentYear);
@@ -71,10 +92,10 @@ export default function YearEndProcessingPage() {
     const [loading, setLoading] = useState(false);
     const [executing, setExecuting] = useState(false);
     const [forceOverwrite, setForceOverwrite] = useState(false);
-    const [result, setResult] = useState<{ success: boolean; message: string; stats?: any } | null>(null);
+    const [result, setResult] = useState<{ success: boolean; message: string; stats?: YearEndStats } | null>(null);
     const [expandedEmployees, setExpandedEmployees] = useState<Set<number>>(new Set());
 
-    const fetchPreview = async () => {
+    const fetchPreview = useCallback(async () => {
         setLoading(true);
         setResult(null);
         try {
@@ -91,7 +112,7 @@ export default function YearEndProcessingPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [selectedYear]);
 
     const executeYearEnd = async () => {
         if (!previewData) return;
@@ -137,7 +158,7 @@ export default function YearEndProcessingPage() {
 
     useEffect(() => {
         fetchPreview();
-    }, [selectedYear]);
+    }, [fetchPreview]);
 
     return (
         <div className="animate-fade-in">
@@ -351,15 +372,41 @@ export default function YearEndProcessingPage() {
                                                                 </tr>
                                                             </thead>
                                                             <tbody>
-                                                                {emp.balances.map(bal => (
-                                                                    <tr key={bal.leaveType} className="border-t border-gray-200 dark:border-gray-700">
-                                                                        <td className="py-1">{leaveTypeNames[bal.leaveType] || bal.leaveType}</td>
-                                                                        <td className="text-right py-1">{bal.currentRemaining}</td>
-                                                                        <td className="text-right py-1 text-orange-600">+{bal.carryOver}</td>
-                                                                        <td className="text-right py-1">{bal.newEntitlement}</td>
-                                                                        <td className="text-right py-1 font-semibold text-green-600">{bal.newTotal}</td>
-                                                                    </tr>
-                                                                ))}
+                                                                {emp.balances.map(bal => {
+                                                                    const isVacation = bal.leaveType === 'VACATION';
+
+                                                                    return (
+                                                                        <tr key={bal.leaveType} className="border-t border-gray-200 dark:border-gray-700">
+                                                                            <td className="py-2 align-top">
+                                                                                <div>{leaveTypeNames[bal.leaveType] || bal.leaveType}</div>
+                                                                                {isVacation && (
+                                                                                    <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] leading-4">
+                                                                                        <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 text-gray-600 dark:text-gray-300">
+                                                                                            เริ่ม {formatDateLabel(bal.vacationEligibleDate)}
+                                                                                        </span>
+                                                                                        <span className={`rounded px-1.5 py-0.5 ${bal.vacationEligibleInToYear
+                                                                                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                                                                                                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                                                                                            }`}>
+                                                                                            {bal.vacationEligibleInToYear
+                                                                                                ? `มีสิทธิ์ปี ${previewData.toYear}`
+                                                                                                : `ยังไม่มีสิทธิ์ปี ${previewData.toYear}`}
+                                                                                        </span>
+                                                                                        {bal.vacationCarryOverBlockedByEligibility && (
+                                                                                            <span className="rounded bg-red-100 px-1.5 py-0.5 text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                                                                                                ไม่ยกยอดจากปี {previewData.fromYear}
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                )}
+                                                                            </td>
+                                                                            <td className="text-right py-2 align-top">{bal.currentRemaining}</td>
+                                                                            <td className="text-right py-2 align-top text-orange-600">+{bal.carryOver}</td>
+                                                                            <td className="text-right py-2 align-top">{bal.newEntitlement}</td>
+                                                                            <td className="text-right py-2 align-top font-semibold text-green-600">{bal.newTotal}</td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
                                                             </tbody>
                                                         </table>
                                                     </td>
