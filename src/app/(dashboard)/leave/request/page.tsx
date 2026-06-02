@@ -23,6 +23,7 @@ import {
     GraduationCap,
     HelpCircle,
     Coffee,
+    type LucideIcon,
 } from 'lucide-react';
 import {
     calculateHourlyDuration,
@@ -32,8 +33,35 @@ import {
     hoursToDays,
 } from '@/lib/leave-utils';
 
+type LeaveTypeOption = {
+    value: string;
+    label: string;
+    icon: LucideIcon;
+    color: string;
+    requiresDoc: boolean;
+    docThreshold?: number;
+};
+
+type VacationEligibilityMetadata = {
+    probationEndDate: string | null;
+    vacationEligibleDate: string | null;
+    daysUntilEligible: number | null;
+    isEligibleToday: boolean;
+    entitledInCurrentFiscalYear: boolean;
+    advanceNoticeDays: number;
+    fiscalYearStart: string;
+    fiscalYearStartDate: string;
+    fiscalYearEndDate: string;
+};
+
+type VacationEligibilityResponse = {
+    success: boolean;
+    data?: VacationEligibilityMetadata;
+    error?: string;
+};
+
 // Leave type options
-const leaveTypes = [
+const leaveTypes: LeaveTypeOption[] = [
     { value: 'VACATION', label: 'ลาพักร้อน', icon: Briefcase, color: 'blue', requiresDoc: false },
     { value: 'SICK', label: 'ลาป่วย', icon: Heart, color: 'red', requiresDoc: true }, // docThreshold set dynamically
     { value: 'PERSONAL', label: 'ลากิจ', icon: User, color: 'purple', requiresDoc: false },
@@ -54,6 +82,22 @@ const dayTimeSlots = [
 
 // Generate time options (08:00 - 18:00, 30 min intervals)
 const timeOptions = generateTimeOptions();
+
+const formatDateLabel = (dateText?: string | null) => {
+    if (!dateText) return '-';
+
+    const [year, month, day] = dateText.split('-').map(Number);
+    if (!year || !month || !day) return dateText;
+
+    const date = new Date(year, month - 1, day);
+    if (Number.isNaN(date.getTime())) return dateText;
+
+    return date.toLocaleDateString('th-TH', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+    });
+};
 
 export default function LeaveRequestPage() {
     const { data: session } = useSession();
@@ -80,6 +124,8 @@ export default function LeaveRequestPage() {
         netHours: number;
         lunchDeducted: boolean;
     } | null>(null);
+    const [vacationEligibility, setVacationEligibility] = useState<VacationEligibilityMetadata | null>(null);
+    const [vacationEligibilityFetchFailed, setVacationEligibilityFetchFailed] = useState(false);
 
     // Dynamic Rules State
     const [leaveRules, setLeaveRules] = useState({
@@ -104,7 +150,7 @@ export default function LeaveRequestPage() {
     });
     const [publicHolidays, setPublicHolidays] = useState<{ date: string }[]>([]);
 
-    // Fetch rules on mount
+    // Fetch rules and eligibility on mount
     useEffect(() => {
         const fetchRules = async () => {
             try {
@@ -134,7 +180,27 @@ export default function LeaveRequestPage() {
                 console.error('Failed to fetch leave rules', error);
             }
         };
+
+        const fetchVacationEligibility = async () => {
+            try {
+                setVacationEligibilityFetchFailed(false);
+                const eligibilityRes = await fetch('/api/leave/vacation-eligibility');
+                if (eligibilityRes.ok) {
+                    const eligibilityData: VacationEligibilityResponse = await eligibilityRes.json();
+                    if (eligibilityData.success && eligibilityData.data) {
+                        setVacationEligibility(eligibilityData.data);
+                        return;
+                    }
+                }
+                setVacationEligibilityFetchFailed(true);
+            } catch (error) {
+                setVacationEligibilityFetchFailed(true);
+                console.error('Failed to fetch vacation eligibility', error);
+            }
+        };
+
         fetchRules();
+        fetchVacationEligibility();
     }, []);
 
     // Fetch working saturdays when dates change
@@ -323,18 +389,43 @@ export default function LeaveRequestPage() {
         }
     }, [isSaturdayOnlyLeave, timeSlot]);
 
-    // Get today's date in YYYY-MM-DD format
-    const today = new Date().toISOString().split('T')[0];
-
     // Check if medical cert is required
     const selectedType = leaveTypes.find(t => t.value === leaveType);
+    const selectedDocThreshold = selectedType?.docThreshold ?? 1;
 
-    // Dynamic Doc Threshold Check
     // Dynamic Doc Threshold Check
     const requiresMedicalCert = selectedType?.requiresDoc &&
         (leaveType === 'SICK'
             ? calculatedDays >= leaveRules.sickCertThreshold
-            : calculatedDays >= ('docThreshold' in (selectedType || {}) ? (selectedType as any).docThreshold : 1));
+            : calculatedDays >= selectedDocThreshold);
+
+    const hasVacationEligibilityData = Boolean(vacationEligibility?.probationEndDate && vacationEligibility?.vacationEligibleDate);
+    const vacationDaysUntilEligible = vacationEligibility?.daysUntilEligible ?? null;
+    const isVacationMissingEligibility = vacationEligibilityFetchFailed || !hasVacationEligibilityData;
+    const isVacationNotYetEligible = hasVacationEligibilityData &&
+        !vacationEligibilityFetchFailed &&
+        ((vacationDaysUntilEligible !== null && vacationDaysUntilEligible > 0) ||
+            vacationEligibility?.isEligibleToday === false);
+    const isVacationBlockedInFiscalYear = hasVacationEligibilityData &&
+        !vacationEligibilityFetchFailed &&
+        vacationEligibility?.isEligibleToday === true &&
+        vacationEligibility.entitledInCurrentFiscalYear === false;
+    const isVacationReady = hasVacationEligibilityData &&
+        !vacationEligibilityFetchFailed &&
+        vacationEligibility?.isEligibleToday === true &&
+        vacationEligibility.entitledInCurrentFiscalYear === true;
+    const vacationEligibilityPanelClasses = isVacationReady
+        ? 'mt-4 p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
+        : 'mt-4 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
+    const vacationEligibilityIconClasses = isVacationReady
+        ? 'w-5 h-5 text-green-600 flex-shrink-0 mt-0.5'
+        : 'w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5';
+    const vacationEligibilityTitleClasses = isVacationReady
+        ? 'font-semibold text-green-800 dark:text-green-200'
+        : 'font-semibold text-amber-800 dark:text-amber-200';
+    const vacationEligibilityBodyClasses = isVacationReady
+        ? 'text-sm text-green-700 dark:text-green-300 mt-1'
+        : 'text-sm text-amber-700 dark:text-amber-300 mt-1';
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -355,6 +446,17 @@ export default function LeaveRequestPage() {
             if (!isHourlyMode && new Date(endDate) < new Date(startDate)) {
                 throw new Error('วันสิ้นสุดต้องไม่น้อยกว่าวันเริ่มต้น');
             }
+            if (leaveType === 'VACATION') {
+                if (!vacationEligibility?.vacationEligibleDate) {
+                    throw new Error('ไม่พบข้อมูลวันที่มีสิทธิ์ลาพักร้อน กรุณาติดต่อฝ่าย HR');
+                }
+                if (startDate < vacationEligibility.vacationEligibleDate) {
+                    throw new Error(`วันที่เริ่มลาพักร้อนต้องไม่ก่อนวันที่มีสิทธิ์ (${formatDateLabel(vacationEligibility.vacationEligibleDate)})`);
+                }
+                if (!vacationEligibility.entitledInCurrentFiscalYear) {
+                    throw new Error('ยังไม่มีสิทธิ์ลาพักร้อนในปีงบประมาณปัจจุบัน กรุณาติดต่อฝ่าย HR');
+                }
+            }
             if (isHourlyMode) {
                 const validation = validateTimeRange(startTime, endTime);
                 if (!validation.isValid) {
@@ -367,7 +469,7 @@ export default function LeaveRequestPage() {
             if (requiresMedicalCert && !hasMedicalCert) {
                 const threshold = leaveType === 'SICK'
                     ? leaveRules.sickCertThreshold
-                    : ('docThreshold' in (selectedType || {}) ? (selectedType as any).docThreshold : 1);
+                    : selectedDocThreshold;
                 throw new Error(`ลาป่วยตั้งแต่ ${threshold} วันขึ้นไป ต้องมีใบรับรองแพทย์`);
             }
 
@@ -589,6 +691,97 @@ export default function LeaveRequestPage() {
                         )}
                     </div>
 
+                    {leaveType === 'VACATION' && (
+                        <div className={vacationEligibilityPanelClasses}>
+                            <div className="flex items-start gap-3">
+                                {isVacationReady ? (
+                                    <CheckCircle className={vacationEligibilityIconClasses} />
+                                ) : isVacationMissingEligibility ? (
+                                    <Info className={vacationEligibilityIconClasses} />
+                                ) : (
+                                    <AlertCircle className={vacationEligibilityIconClasses} />
+                                )}
+                                <div className="min-w-0 flex-1">
+                                    {isVacationMissingEligibility ? (
+                                        <>
+                                            <p className={vacationEligibilityTitleClasses}>
+                                                ตรวจสอบสิทธิ์ลาพักร้อนไม่สมบูรณ์
+                                            </p>
+                                            <p className={vacationEligibilityBodyClasses}>
+                                                ไม่พบข้อมูลวันเริ่มงานหรือวันผ่านทดลองงาน กรุณาติดต่อฝ่าย HR
+                                            </p>
+                                        </>
+                                    ) : isVacationNotYetEligible ? (
+                                        <>
+                                            <p className={vacationEligibilityTitleClasses}>
+                                                ยังไม่สามารถใช้สิทธิ์ลาพักร้อนได้
+                                            </p>
+                                            <p className={vacationEligibilityBodyClasses}>
+                                                ใช้สิทธิ์ได้ตั้งแต่ {formatDateLabel(vacationEligibility?.vacationEligibleDate)}
+                                                {vacationDaysUntilEligible !== null && vacationDaysUntilEligible > 0 && (
+                                                    <span> เหลืออีก {vacationDaysUntilEligible} วัน</span>
+                                                )}
+                                            </p>
+                                        </>
+                                    ) : isVacationBlockedInFiscalYear ? (
+                                        <>
+                                            <p className={vacationEligibilityTitleClasses}>
+                                                ยังไม่มีสิทธิ์ในปีงบประมาณปัจจุบัน
+                                            </p>
+                                            <p className={vacationEligibilityBodyClasses}>
+                                                ใช้สิทธิ์ลาพักร้อนได้ตั้งแต่ {formatDateLabel(vacationEligibility?.vacationEligibleDate)}
+                                            </p>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <p className={vacationEligibilityTitleClasses}>
+                                                มีสิทธิ์ลาพักร้อนแล้ว
+                                            </p>
+                                            <p className={vacationEligibilityBodyClasses}>
+                                                สามารถยื่นคำขอลาพักร้อนได้ตามเงื่อนไขการแจ้งล่วงหน้า
+                                            </p>
+                                        </>
+                                    )}
+
+                                    <dl className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                                        <div>
+                                            <dt className="text-gray-500 dark:text-gray-400">ผ่านทดลองงาน</dt>
+                                            <dd className="font-medium text-gray-800 dark:text-gray-200">
+                                                {formatDateLabel(vacationEligibility?.probationEndDate)}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt className="text-gray-500 dark:text-gray-400">เริ่มใช้สิทธิ์</dt>
+                                            <dd className="font-medium text-gray-800 dark:text-gray-200">
+                                                {formatDateLabel(vacationEligibility?.vacationEligibleDate)}
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt className="text-gray-500 dark:text-gray-400">แจ้งล่วงหน้า</dt>
+                                            <dd className="font-medium text-gray-800 dark:text-gray-200">
+                                                อย่างน้อย {vacationEligibility?.advanceNoticeDays ?? leaveRules.advanceNoticeDays} วัน
+                                            </dd>
+                                        </div>
+                                        <div>
+                                            <dt className="text-gray-500 dark:text-gray-400">ปีงบประมาณปัจจุบัน</dt>
+                                            <dd className="font-medium text-gray-800 dark:text-gray-200">
+                                                {vacationEligibility?.fiscalYearStartDate && vacationEligibility?.fiscalYearEndDate
+                                                    ? `${formatDateLabel(vacationEligibility.fiscalYearStartDate)} - ${formatDateLabel(vacationEligibility.fiscalYearEndDate)}`
+                                                    : '-'}
+                                                {vacationEligibility && (
+                                                    <span className={vacationEligibility.entitledInCurrentFiscalYear ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}>
+                                                        {' '}
+                                                        ({vacationEligibility.entitledInCurrentFiscalYear ? 'มีสิทธิ์' : 'ยังไม่มีสิทธิ์'})
+                                                    </span>
+                                                )}
+                                            </dd>
+                                        </div>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Time Slot (Day Mode) */}
                     {!isHourlyMode && (
                         <div className="mt-6">
@@ -628,7 +821,7 @@ export default function LeaveRequestPage() {
                             </div>
                             {isSaturdayOnlyLeave && (
                                 <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
-                                    ⚠️ วันเสาร์ไม่รองรับครึ่งวัน กรุณาใช้ "ระบุชั่วโมง" แทน
+                                    ⚠️ วันเสาร์ไม่รองรับครึ่งวัน กรุณาใช้ &quot;ระบุชั่วโมง&quot; แทน
                                 </p>
                             )}
                         </div>
