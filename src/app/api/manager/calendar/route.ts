@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getPool } from '@/lib/db';
+import { normalizeMedicalCertificateFileUrl } from '@/lib/medical-files';
 
 export async function GET(req: NextRequest) {
     try {
@@ -59,7 +60,10 @@ export async function GET(req: NextRequest) {
                     CAST(lr.endDatetime AS DATE) as endDate,
                     lr.usageAmount,
                     lr.status,
-                    lr.timeSlot
+                    lr.timeSlot,
+                    lr.reason,
+                    lr.hasMedicalCertificate as hasMedicalCert,
+                    lr.medicalCertificateFile
                 FROM LeaveRequests lr
                 JOIN Users u ON lr.userId = u.id
                 WHERE lr.userId IN (${teamIds.join(',')})
@@ -94,7 +98,10 @@ export async function GET(req: NextRequest) {
             endDate: leave.endDate.toISOString().split('T')[0],
             days: leave.usageAmount,
             status: leave.status,
-            timeSlot: leave.timeSlot
+            timeSlot: leave.timeSlot,
+            reason: leave.reason,
+            hasMedicalCert: leave.hasMedicalCert,
+            medicalCertificateFile: normalizeMedicalCertificateFileUrl(leave.medicalCertificateFile)
         }));
 
         return NextResponse.json({

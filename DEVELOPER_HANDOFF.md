@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 12 มีนาคม 2026 (Medical Certificate API File Serving)  
+> 📅 อัปเดตล่าสุด: 2 มิถุนายน 2026 (Manager Medical Attachments + Login UX)
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -30,7 +30,7 @@
 - บริษัท โซนิค ออโต้โลจิส จำกัด (SONIC-AUTOLOGIS)
 
 ### Features หลัก:
-- ✅ Login ด้วยรหัสพนักงาน + Biometric (WebAuthn/Passkey)
+- ✅ Login ด้วยชื่อผู้ใช้ (AD username หรือรหัสพนักงาน) + Biometric (WebAuthn/Passkey)
 - ✅ Dashboard แสดงยอดวันลาคงเหลือ
 - ✅ ยื่นคำขอลา (9 ประเภท รวม OTHER)
 - ✅ นำเข้าวันลาจำนวนมาก (Bulk Leave Import)
@@ -85,8 +85,11 @@ hr-leave/
 │   ├── migrate-ad-lifecycle.ts       # AD Lifecycle migration
 │   ├── scheduled-ad-sync.ts          # Cron script for AD Sync
 │   └── update-prod.ts               # Production update script
-├── tests/                            # E2E test scripts
-│   └── cross-year-leave.test.ts      # Cross-year leave tests (31 cases)
+├── tests/                            # E2E/utility test scripts
+│   ├── cross-year-leave.test.ts      # Cross-year leave tests (31 cases)
+│   ├── login-error-message.test.mjs  # Login error mapping tests
+│   ├── medical-file-access.test.mjs  # Medical file permission tests
+│   └── medical-file-url.test.mjs     # Medical file URL normalization tests
 ├── src/
 │   ├── app/
 │   │   ├── (dashboard)/              # Group สำหรับหน้าที่ต้อง Login
@@ -174,7 +177,10 @@ hr-leave/
 │   │   ├── utils.ts                   # General utilities
 │   │   ├── auth/                      # Auth helpers
 │   │   │   ├── settings.ts            # Auth settings cache
-│   │   │   └── jit-user.ts            # JIT user provisioning
+│   │   │   ├── jit-user.ts            # JIT user provisioning
+│   │   │   └── login-errors.ts        # NextAuth login error copy mapping
+│   │   ├── medical-file-access.ts     # Permission rules for medical attachments
+│   │   ├── medical-files.ts           # Normalize medical certificate file URLs
 │   │   └── tour/
 │   │       └── driver-config.ts       # Tour step configuration
 │   ├── types/
@@ -243,6 +249,11 @@ SESSION_TIMEOUT_MINUTES=15
 npm run dev
 ```
 เปิด: `http://localhost:3002`
+
+> ℹ️ บน Windows หาก `next dev` แบบ Turbopack เจอ permission/junction error จาก `mssql`, ใช้ Webpack dev server แทนได้:
+> ```powershell
+> .\node_modules\.bin\next.cmd dev --webpack -p 3002
+> ```
 
 ### 4.6 Test Accounts
 | รหัสพนักงาน | รหัสผ่าน | Role |
@@ -316,11 +327,11 @@ sequenceDiagram
     participant /api/auth/verify
     participant Database
 
-    User->>Login Page: Enter employeeId + password
+    User->>Login Page: Enter AD username/employeeId + password
     Login Page->>NextAuth: signIn('credentials', {...})
     NextAuth->>NextAuth: authorize() callback
     NextAuth-->/api/auth/verify: POST {employeeId, password}
-    /api/auth/verify->>Database: Query Users WHERE employeeId = @id
+    /api/auth/verify->>Database: Query Users WHERE employeeId/adUsername = @id
     Database-->/api/auth/verify: User record
     /api/auth/verify->>bcrypt: compare(password, hash)
     /api/auth/verify-->>NextAuth: User object (if valid)
@@ -338,6 +349,12 @@ sequenceDiagram
 - **Logic**: `src/auth.ts` and `src/lib/ldap.ts` fetch settings from DB at runtime.
 - **Priority**: Database Settings > .env Setup (Fallback).
 - **Benefit**: Change Auth Mode (Local/LDAP/Hybrid) via UI without restarting server.
+
+### Login UX & Error Handling (2 มิ.ย. 2026):
+- หน้า Login ใช้ label `ชื่อผู้ใช้` และ placeholder `กรอกชื่อ AD หรือรหัสพนักงาน`
+- เหตุผล: ผู้ใช้ที่ sync จาก AD ใช้ AD username ส่วนผู้ใช้ที่ Admin สร้างเองใช้รหัสพนักงาน
+- `src/lib/auth/login-errors.ts` map NextAuth error codes เช่น `Configuration`, `CredentialsSignin`, `AccessDenied` เป็นข้อความไทยที่ผู้ใช้เข้าใจง่าย
+- Credentials login ที่ตรวจสอบไม่ผ่านจะ return `null` เพื่อให้ NextAuth แสดง credential error แทน configuration error
 
 ### AD User Authentication Security (24 ม.ค. 2026):
 **ปัญหาที่แก้ไข**: AD Users ที่ Sync เข้ามาเคยมีรหัสผ่าน `password123` และสามารถ bypass LDAP ได้
@@ -647,6 +664,21 @@ sequenceDiagram
   - แก้ไข 2: Upload API return URL `/api/files/medical/xxx` แทน `/uploads/medical/xxx`
   - ไฟล์ยังเก็บที่ `public/uploads/medical/` เหมือนเดิม
 
+### ✅ Updates (2 มิ.ย. 2026)
+- [x] **Manager ดูไฟล์แนบใบลาได้ครบขึ้น**
+  - `/manager/calendar` แสดง/เปิดเอกสารแนบใบรับรองแพทย์จากข้อมูล `medicalCertificateFile`
+  - `/manager/team` ใน modal "ดูวันลา" ของลูกทีม แสดงลิงก์ `ดูเอกสารแนบ` สำหรับใบลาที่มีไฟล์แนบ
+- [x] **Medical File Access Control**
+  - `GET /api/files/medical/[filename]` ตรวจ DB reference ก่อน serve ไฟล์ ลดความเสี่ยงเดาชื่อไฟล์แล้วเปิดได้
+  - ผู้ที่ดูได้: เจ้าของไฟล์, หัวหน้างานโดยตรง, HR, ADMIN, `isHRStaff`, และ delegate ที่ active ของหัวหน้างาน
+  - เพิ่ม `src/lib/medical-file-access.ts` และ test `tests/medical-file-access.test.mjs`
+- [x] **Medical File URL Normalization**
+  - รวม logic normalize path เก่า/ใหม่ไว้ที่ `src/lib/medical-files.ts`
+  - ใช้ร่วมใน pending/history/HR/manager calendar APIs เพื่อรองรับทั้ง `/uploads/medical/...`, `/api/files/medical/...`, absolute URL และ filename เดี่ยว
+- [x] **Login Copy + NextAuth Configuration Error UX**
+  - เปลี่ยน copy หน้า login เป็น `ชื่อผู้ใช้` / `กรอกชื่อ AD หรือรหัสพนักงาน`
+  - เพิ่ม error mapping เพื่อไม่ให้ผู้ใช้เห็น error ดิบแบบ `ConfigurationConfiguration`
+
 ### 🔲 สิ่งที่ยังรอ (Remaining)
 - [ ] LINE Notify Integration (optional)
 - [ ] Calendar iCal Export (optional)
@@ -666,6 +698,9 @@ sequenceDiagram
 | `src/lib/db.ts` | Database connection (Singleton), exports `sql` for transactions |
 | `src/lib/ldap.ts` | LDAP/AD connection helper |
 | `src/lib/azure-graph.ts` | Azure AD Graph API |
+| `src/lib/auth/login-errors.ts` | Map NextAuth login errors เป็นข้อความไทย |
+| `src/lib/medical-file-access.ts` | Permission rules สำหรับการเปิดไฟล์ใบรับรองแพทย์ |
+| `src/lib/medical-files.ts` | Normalize URL/path ของไฟล์ใบรับรองแพทย์ |
 | `src/types/index.ts` | All TypeScript types |
 | `src/lib/rate-limiter.ts` | Rate Limiting Logic |
 | `.env` | Environment variables |
@@ -705,6 +740,9 @@ sequenceDiagram
 | File | Purpose |
 |------|---------|
 | `tests/cross-year-leave.test.ts` | 31 test cases: splitByYear, balance deduction, refund, year-end overwrite, overlap |
+| `tests/login-error-message.test.mjs` | ตรวจการ map NextAuth login error เป็นข้อความไทย |
+| `tests/medical-file-access.test.mjs` | ตรวจสิทธิ์ owner/manager/HR/Admin/delegate ในการดูไฟล์แนบ |
+| `tests/medical-file-url.test.mjs` | ตรวจการ normalize medical certificate URL/path |
 
 ### 📥 Bulk Leave Import
 

@@ -1,13 +1,14 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getPool } from '@/lib/db';
 import { getDelegatingManagers } from '@/lib/delegate';
+import { normalizeMedicalCertificateFileRecord } from '@/lib/medical-files';
 
 /**
  * GET /api/leave/pending
  * ดึงใบลาที่รออนุมัติ (สำหรับ Manager/HR/Delegate)
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
     try {
         // Check authentication
         const session = await auth();
@@ -88,8 +89,8 @@ export async function GET(request: NextRequest) {
         const result = await requestBuilder.query(query);
 
         // Add isDelegated flag to each record
-        const data = result.recordset.map((r: { departmentHeadId: number; managerName: string }) => ({
-            ...r,
+        const data = result.recordset.map((r: { departmentHeadId: number; managerName: string; medicalCertificateFile: string | null }) => ({
+            ...normalizeMedicalCertificateFileRecord(r),
             isDelegated: r.departmentHeadId !== userId,
             originalManagerName: r.departmentHeadId !== userId ? r.managerName : null
         }));

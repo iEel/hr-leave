@@ -3,6 +3,9 @@ import { auth } from '@/auth';
 import { readFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
+import { getPool } from '@/lib/db';
+import { getDelegatingManagers } from '@/lib/delegate';
+import { canViewMedicalCertificateFile } from '@/lib/medical-file-access';
 
 // Content type mapping
 const CONTENT_TYPES: Record<string, string> = {
@@ -32,6 +35,45 @@ export async function GET(
         const safeFilename = path.basename(filename);
         if (safeFilename !== filename || filename.includes('..')) {
             return NextResponse.json({ error: 'Invalid filename' }, { status: 400 });
+        }
+
+        const pool = await getPool();
+        const fileOwnerResult = await pool.request()
+            .input('apiUrl', `/api/files/medical/${safeFilename}`)
+            .input('legacyUrl', `/uploads/medical/${safeFilename}`)
+            .input('filename', safeFilename)
+            .input('fileSuffix', `%/${safeFilename}`)
+            .query(`
+                SELECT TOP 1
+                    lr.userId,
+                    u.departmentHeadId
+                FROM LeaveRequests lr
+                INNER JOIN Users u ON lr.userId = u.id
+                WHERE lr.medicalCertificateFile IN (@apiUrl, @legacyUrl, @filename)
+                   OR lr.medicalCertificateFile LIKE @fileSuffix
+            `);
+
+        if (fileOwnerResult.recordset.length === 0) {
+            return NextResponse.json({ error: 'File not found' }, { status: 404 });
+        }
+
+        const fileOwner = fileOwnerResult.recordset[0] as { userId: number; departmentHeadId: number | null };
+        const delegatingManagerIds = await getDelegatingManagers(Number(session.user.id));
+        const canViewFile = canViewMedicalCertificateFile(
+            {
+                userId: Number(session.user.id),
+                role: session.user.role,
+                isHRStaff: session.user.isHRStaff === true,
+                delegatingManagerIds,
+            },
+            {
+                userId: fileOwner.userId,
+                managerId: fileOwner.departmentHeadId,
+            }
+        );
+
+        if (!canViewFile) {
+            return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 
         // Look up file in upload directory

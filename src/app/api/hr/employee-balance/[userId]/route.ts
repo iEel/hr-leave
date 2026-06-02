@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getPool } from '@/lib/db';
+import { normalizeMedicalCertificateFileRecord } from '@/lib/medical-files';
+
+interface BalanceRow {
+    leaveType: string;
+    entitlement: number;
+    used: number;
+    remaining: number;
+    carryOver: number;
+}
 
 /**
  * GET /api/hr/employee-balance/[userId]
@@ -71,7 +80,7 @@ export async function GET(
                 SELECT leaveType, defaultDays FROM LeaveQuotaSettings
             `);
 
-            const existingTypes = new Set(balanceResult.recordset.map((b: any) => b.leaveType));
+            const existingTypes = new Set(balanceResult.recordset.map((b: BalanceRow) => b.leaveType));
 
             for (const quota of quotaResult.recordset) {
                 if (!existingTypes.has(quota.leaveType)) {
@@ -149,7 +158,7 @@ export async function GET(
         }
 
         // Enrich balance data with actual used minutes for unlimited types
-        const enrichedBalances = balanceResult.recordset.map((b: any) => ({
+        const enrichedBalances = balanceResult.recordset.map((b: BalanceRow) => ({
             ...b,
             actualUsedMinutes: actualUsedMap[b.leaveType] || 0,
         }));
@@ -162,6 +171,8 @@ export async function GET(
                 SELECT 
                     id, leaveType, status, usageAmount as days,
                     isHourly, startTime, endTime,
+                    hasMedicalCertificate as hasMedicalCert,
+                    medicalCertificateFile,
                     CONVERT(varchar, startDatetime, 23) as startDate,
                     CONVERT(varchar, endDatetime, 23) as endDate,
                     reason
@@ -176,7 +187,7 @@ export async function GET(
                 employee,
                 year: currentYear,
                 balances: enrichedBalances,
-                leaveHistory: historyResult.recordset
+                leaveHistory: historyResult.recordset.map(normalizeMedicalCertificateFileRecord)
             }
         });
 

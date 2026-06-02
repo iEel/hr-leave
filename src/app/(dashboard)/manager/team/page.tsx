@@ -6,11 +6,12 @@ import {
     Users,
     Search,
     Loader2,
-    ChevronLeft,
     Mail,
     CalendarDays,
     XCircle,
     ArrowLeft,
+    Paperclip,
+    ExternalLink,
 } from 'lucide-react';
 import Link from 'next/link';
 import { formatLeaveDays, formatHourlyDuration, formatMinutesToDisplay } from '@/lib/leave-utils';
@@ -53,6 +54,8 @@ interface BalanceData {
         startTime: string | null;
         endTime: string | null;
         status: string;
+        hasMedicalCert: boolean;
+        medicalCertificateFile: string | null;
     }>;
 }
 
@@ -76,7 +79,6 @@ export default function ManagerTeamPage() {
 
     // Balance modal
     const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
-    const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
     const [balanceData, setBalanceData] = useState<BalanceData | null>(null);
     const [balanceLoading, setBalanceLoading] = useState(false);
 
@@ -99,7 +101,6 @@ export default function ManagerTeamPage() {
     };
 
     const openBalanceModal = async (member: TeamMember) => {
-        setSelectedMember(member);
         setBalanceLoading(true);
         setIsBalanceModalOpen(true);
         setBalanceData(null);
@@ -274,7 +275,7 @@ export default function ManagerTeamPage() {
                                 ) : (
                                     <div className="space-y-2 max-h-48 overflow-y-auto">
                                         {balanceData.leaveHistory.map(h => (
-                                            <div key={h.id} className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
+                                            <div key={h.id} className="flex items-start justify-between gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg">
                                                 <div className="flex items-center gap-3">
                                                     <span className={`w-2 h-2 rounded-full ${h.status === 'APPROVED' ? 'bg-green-500' :
                                                         h.status === 'PENDING' ? 'bg-yellow-500' : 'bg-red-500'
@@ -286,6 +287,25 @@ export default function ManagerTeamPage() {
                                                         <p className="text-xs text-gray-500">
                                                             {h.startDate} - {h.endDate}
                                                         </p>
+                                                        {h.hasMedicalCert && (
+                                                            h.medicalCertificateFile ? (
+                                                                <a
+                                                                    href={h.medicalCertificateFile}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="inline-flex items-center gap-1.5 mt-1 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                                                                >
+                                                                    <Paperclip className="w-3.5 h-3.5" />
+                                                                    ดูเอกสารแนบ
+                                                                    <ExternalLink className="w-3 h-3" />
+                                                                </a>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1.5 mt-1 text-xs font-medium text-amber-600">
+                                                                    <Paperclip className="w-3.5 h-3.5" />
+                                                                    มีเอกสารแนบ แต่ไม่พบไฟล์
+                                                                </span>
+                                                            )
+                                                        )}
                                                     </div>
                                                 </div>
                                                 <div className="text-right">

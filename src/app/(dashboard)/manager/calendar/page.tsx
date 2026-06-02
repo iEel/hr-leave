@@ -1,15 +1,16 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import {
     Calendar,
     ChevronLeft,
     ChevronRight,
     Loader2,
-    Users,
     AlertCircle,
     ArrowLeft,
+    Paperclip,
+    ExternalLink,
 } from 'lucide-react';
 import Link from 'next/link';
 import { formatLeaveDays } from '@/lib/leave-utils';
@@ -25,6 +26,9 @@ interface LeaveEvent {
     days: number;
     status: string;
     timeSlot: string;
+    reason: string | null;
+    hasMedicalCert: boolean;
+    medicalCertificateFile: string | null;
 }
 
 interface Holiday {
@@ -83,11 +87,7 @@ export default function TeamCalendarPage() {
     const [holidays, setHolidays] = useState<Holiday[]>([]);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
-    useEffect(() => {
-        fetchCalendarData();
-    }, [year, month]);
-
-    const fetchCalendarData = async () => {
+    const fetchCalendarData = useCallback(async () => {
         setLoading(true);
         try {
             const res = await fetch(`/api/manager/calendar?year=${year}&month=${month}`);
@@ -102,7 +102,11 @@ export default function TeamCalendarPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [year, month]);
+
+    useEffect(() => {
+        fetchCalendarData();
+    }, [fetchCalendarData]);
 
     const prevMonth = () => {
         if (month === 1) {
@@ -327,7 +331,7 @@ export default function TeamCalendarPage() {
                             {getLeavesForDate(parseInt(selectedDate.split('-')[2])).map(leave => {
                                 const colors = LEAVE_TYPE_COLORS[leave.leaveType] || { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300' };
                                 return (
-                                    <div key={leave.id} className={`flex items-center justify-between p-4 rounded-xl ${colors.bg}`}>
+                                    <div key={leave.id} className={`flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-4 rounded-xl ${colors.bg}`}>
                                         <div className="flex items-center gap-3">
                                             <div className="w-10 h-10 rounded-full bg-white dark:bg-gray-700 flex items-center justify-center font-semibold text-gray-700 dark:text-gray-300">
                                                 {leave.employeeName.charAt(0)}
@@ -337,6 +341,28 @@ export default function TeamCalendarPage() {
                                                 <p className="text-xs text-gray-500">
                                                     {LEAVE_TYPE_LABELS[leave.leaveType]} • {leave.startDate} - {leave.endDate}
                                                 </p>
+                                                {leave.reason && (
+                                                    <p className="text-xs text-gray-500 mt-1">{leave.reason}</p>
+                                                )}
+                                                {leave.hasMedicalCert && (
+                                                    leave.medicalCertificateFile ? (
+                                                        <a
+                                                            href={leave.medicalCertificateFile}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="inline-flex items-center gap-1.5 mt-2 text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                                                        >
+                                                            <Paperclip className="w-3.5 h-3.5" />
+                                                            ดูเอกสารแนบ
+                                                            <ExternalLink className="w-3 h-3" />
+                                                        </a>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1.5 mt-2 text-xs font-medium text-amber-600">
+                                                            <Paperclip className="w-3.5 h-3.5" />
+                                                            มีเอกสารแนบ แต่ไม่พบไฟล์
+                                                        </span>
+                                                    )
+                                                )}
                                             </div>
                                         </div>
                                         <div className="text-right">

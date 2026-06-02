@@ -1,11 +1,23 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import MicrosoftEntraID from 'next-auth/providers/microsoft-entra-id';
-import bcrypt from 'bcryptjs';
 import { UserRole, Company } from '@/types';
 import { verifyLdapCredentials } from '@/lib/ldap';
 import { findOrCreateUser } from '@/lib/auth/jit-user';
 import { getAuthSettings } from '@/lib/auth/settings';
+
+interface AuthDbUser {
+    id: number;
+    employeeId: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    role: string;
+    company: string;
+    department: string;
+    departmentHeadId: number | null;
+    isHRStaff?: boolean;
+}
 
 // Extend NextAuth types
 declare module 'next-auth' {
@@ -78,7 +90,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                         firstName: profile.given_name || profile.name?.split(' ')[0] || '',
                         lastName: profile.family_name || profile.name?.split(' ').slice(1).join(' ') || '',
                         authProvider: 'AZURE'
-                    });
+                    }) as AuthDbUser;
 
                     return {
                         id: user.id.toString(),
@@ -92,7 +104,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                         departmentHeadId: user.departmentHeadId,
                         isADUser: true,
                         authProvider: 'AZURE',
-                        isHRStaff: (user as any).isHRStaff || false
+                        isHRStaff: user.isHRStaff || false
                     };
                 }
             })
@@ -107,7 +119,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             },
             async authorize(credentials) {
                 if (!credentials?.employeeId || !credentials?.password) {
-                    throw new Error('กรุณากรอกรหัสพนักงานและรหัสผ่าน');
+                    return null;
                 }
 
                 const employeeId = credentials.employeeId as string;
@@ -130,7 +142,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                                 lastName: ldapUser.sn || '',
                                 employeeId: ldapUser.employeeID,
                                 authProvider: 'LDAP'
-                            });
+                            }) as AuthDbUser;
 
                             return {
                                 id: user.id.toString(),
@@ -144,7 +156,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                                 departmentHeadId: user.departmentHeadId,
                                 isADUser: true,
                                 authProvider: 'LDAP',
-                                isHRStaff: (user as any).isHRStaff || false
+                                isHRStaff: user.isHRStaff || false
                             };
                         }
                     } catch (ldapError) {
@@ -193,7 +205,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                     };
                 }
 
-                throw new Error('รหัสพนักงานหรือรหัสผ่านไม่ถูกต้อง');
+                return null;
             },
         }),
     ],

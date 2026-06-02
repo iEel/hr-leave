@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getPool } from '@/lib/db';
+import { normalizeMedicalCertificateFileRecord } from '@/lib/medical-files';
 
 /**
  * GET /api/leave/history
@@ -73,7 +74,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            data: result.recordset,
+            data: result.recordset.map(normalizeMedicalCertificateFileRecord),
         });
 
     } catch (error) {

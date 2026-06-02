@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getPool } from '@/lib/db';
+import { normalizeMedicalCertificateFileRecord } from '@/lib/medical-files';
 
 /**
  * GET /api/hr/leaves
@@ -14,7 +15,7 @@ export async function GET(request: NextRequest) {
         }
 
         const userRole = session.user.role;
-        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        const isHRStaff = session.user.isHRStaff === true;
         if (userRole !== 'HR' && userRole !== 'ADMIN' && !isHRStaff) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            data: result.recordset,
+            data: result.recordset.map(normalizeMedicalCertificateFileRecord),
         });
 
     } catch (error) {

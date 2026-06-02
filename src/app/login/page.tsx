@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { LogIn, User, Lock, AlertCircle, Loader2 } from 'lucide-react';
+import { getLoginErrorMessage } from '@/lib/auth/login-errors';
 
 // Separate component that uses useSearchParams
 function LoginForm() {
@@ -15,7 +16,7 @@ function LoginForm() {
     const [employeeId, setEmployeeId] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [errorMessage, setErrorMessage] = useState(error ? 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ' : '');
+    const [errorMessage, setErrorMessage] = useState(error ? getLoginErrorMessage(error) : '');
     const [showMicrosoftButton, setShowMicrosoftButton] = useState(false);
 
     // Fetch auth mode on mount
@@ -43,7 +44,7 @@ function LoginForm() {
             });
 
             if (result?.error) {
-                setErrorMessage(result.error);
+                setErrorMessage(getLoginErrorMessage(result.error));
                 setIsLoading(false);
             } else {
                 // Log login to audit
@@ -59,7 +60,7 @@ function LoginForm() {
                 router.push(callbackUrl);
                 router.refresh();
             }
-        } catch (error) {
+        } catch {
             setErrorMessage('เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง');
             setIsLoading(false);
         }
@@ -80,7 +81,7 @@ function LoginForm() {
                 {/* Employee ID Field */}
                 <div>
                     <label htmlFor="employeeId" className="block text-sm font-medium text-white/80 mb-2">
-                        รหัสพนักงาน
+                        ชื่อผู้ใช้
                     </label>
                     <div className="relative">
                         <User className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-white/40" />
@@ -89,7 +90,7 @@ function LoginForm() {
                             type="text"
                             value={employeeId}
                             onChange={(e) => setEmployeeId(e.target.value)}
-                            placeholder="กรอกรหัสพนักงาน"
+                            placeholder="กรอกชื่อ AD หรือรหัสพนักงาน"
                             required
                             disabled={isLoading}
                             className="w-full pl-12 pr-4 py-3.5 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-transparent transition-all disabled:opacity-50"
