@@ -27,6 +27,18 @@ assert.equal(
 );
 
 assert.equal(
+    toDateText(calculateProbationEndDate({ ...base, startDate: new Date(2026, 0, 1) })),
+    '2026-04-01',
+    'Date object input preserves the local business date'
+);
+
+assert.equal(
+    toDateText(calculateProbationEndDate({ ...base, startDate: '2026-01-01T15:30:00+07:00' })),
+    '2026-04-01',
+    'ISO string input with time uses the date component'
+);
+
+assert.equal(
     toDateText(calculateProbationEndDate({ ...base, probationExtensionDays: 30 })),
     '2026-05-01',
     'extension days push actual probation end date'

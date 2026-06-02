@@ -13,7 +13,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 function toDateOnly(value: string | Date): Date {
     if (value instanceof Date) {
-        return new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()));
+        return new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
     }
 
     const [datePart] = value.split('T');
