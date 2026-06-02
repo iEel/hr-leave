@@ -1,33 +1,15 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSession } from 'next-auth/react';
 import {
     Settings,
     Save,
     Loader2,
     Calendar,
-    Clock,
     AlertTriangle,
     FileText,
     RefreshCw,
-    Shield,
-    Server,
-    Cloud
 } from 'lucide-react';
-
-type AuthMode = 'LOCAL' | 'LDAP' | 'AZURE' | 'HYBRID';
-
-interface AuthSettings {
-    authMode: AuthMode;
-    ldapUrl: string;
-    ldapDomain: string;
-    ldapBaseDN: string;
-    ldapBindDN: string;
-    azureAdEnabled: boolean;
-    azureAdTenantId: string;
-    azureAdClientId: string;
-}
 
 interface SettingItem {
     value: string;
@@ -56,7 +38,9 @@ const SETTING_GROUPS = [
         title: 'กฏการลา',
         icon: <FileText className="w-5 h-5" />,
         settings: [
-            { key: 'LEAVE_ADVANCE_DAYS', label: 'ต้องขอล่วงหน้า (วัน)', type: 'number' },
+            { key: 'PROBATION_STANDARD_DAYS', label: 'ระยะทดลองงานมาตรฐาน (วัน)', type: 'number' },
+            { key: 'VACATION_AFTER_PROBATION_YEARS', label: 'ลาพักร้อนเริ่มหลังผ่านทดลองงาน (ปี)', type: 'number' },
+            { key: 'LEAVE_ADVANCE_DAYS', label: 'ลาพักร้อนต้องขอล่วงหน้า (วัน)', type: 'number' },
             { key: 'LEAVE_SICK_CERT_DAYS', label: 'ลาป่วยกี่วันต้องมีใบรับรองแพทย์', type: 'number' },
         ]
     },
@@ -71,7 +55,6 @@ const SETTING_GROUPS = [
 ];
 
 export default function SystemSettingsPage() {
-    const { data: session } = useSession();
     const [settings, setSettings] = useState<SettingsData>({});
     const [editedSettings, setEditedSettings] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
@@ -105,8 +88,6 @@ export default function SystemSettingsPage() {
 
     const handleChange = (key: string, value: string) => {
         setEditedSettings(prev => ({ ...prev, [key]: value }));
-        // Check if there are changes
-        const originalValue = settings[key]?.value || '';
         setHasChanges(true);
     };
 

@@ -7,7 +7,7 @@ import { logAudit } from '@/lib/audit';
  * GET /api/hr/settings
  * Fetch all system settings
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
     try {
         const session = await auth();
         if (!session?.user?.id) {
@@ -15,9 +15,8 @@ export async function GET(request: NextRequest) {
         }
 
         // Only HR/Admin can view settings
-        // Only HR/Admin can view settings
         const role = session.user.role;
-        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        const isHRStaff = session.user.isHRStaff === true;
         if (role !== 'HR' && role !== 'ADMIN' && !isHRStaff) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
@@ -55,7 +54,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
     try {
         const session = await auth();
-        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        const isHRStaff = session?.user?.isHRStaff === true;
         if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }

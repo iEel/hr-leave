@@ -14,12 +14,21 @@ export async function GET() {
             .query(`
                 SELECT settingKey, settingValue 
                 FROM SystemSettings 
-                WHERE settingKey IN ('LEAVE_ADVANCE_DAYS', 'LEAVE_SICK_CERT_DAYS')
+                WHERE settingKey IN (
+                    'LEAVE_ADVANCE_DAYS',
+                    'LEAVE_SICK_CERT_DAYS',
+                    'PROBATION_STANDARD_DAYS',
+                    'VACATION_AFTER_PROBATION_YEARS',
+                    'LEAVE_YEAR_START'
+                )
             `);
 
         const rules = {
             advanceNoticeDays: 3, // Default
-            sickCertThreshold: 3  // Default
+            sickCertThreshold: 3,  // Default
+            probationStandardDays: 90,
+            vacationAfterProbationYears: 1,
+            fiscalYearStart: '01-01'
         };
 
         result.recordset.forEach(row => {
@@ -27,6 +36,12 @@ export async function GET() {
                 rules.advanceNoticeDays = parseInt(row.settingValue, 10) || 3;
             } else if (row.settingKey === 'LEAVE_SICK_CERT_DAYS') {
                 rules.sickCertThreshold = parseInt(row.settingValue, 10) || 3;
+            } else if (row.settingKey === 'PROBATION_STANDARD_DAYS') {
+                rules.probationStandardDays = parseInt(row.settingValue, 10) || 90;
+            } else if (row.settingKey === 'VACATION_AFTER_PROBATION_YEARS') {
+                rules.vacationAfterProbationYears = parseInt(row.settingValue, 10) || 1;
+            } else if (row.settingKey === 'LEAVE_YEAR_START') {
+                rules.fiscalYearStart = row.settingValue || '01-01';
             }
         });
 
