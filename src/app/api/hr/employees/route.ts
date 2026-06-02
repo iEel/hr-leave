@@ -3,6 +3,35 @@ import { auth } from '@/auth';
 import { getPool } from '@/lib/db';
 import bcrypt from 'bcryptjs';
 import { logAudit } from '@/lib/audit';
+import { calculateProbationEndDate } from '@/lib/vacation-eligibility';
+
+const DEFAULT_PROBATION_DAYS = 90;
+const DEFAULT_PROBATION_EXTENSION_DAYS = 0;
+
+function parseProbationDays(value: unknown, fallback: number): number {
+    if (value === null || value === undefined || value === '') {
+        return fallback;
+    }
+
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeOptionalDate(value: unknown): string | null {
+    return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function normalizeOptionalText(value: unknown): string | null {
+    return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function formatDateOnly(date: Date): string {
+    return date.toISOString().split('T')[0];
+}
+
+function isHRStaffSessionUser(user: unknown): boolean {
+    return typeof user === 'object' && user !== null && 'isHRStaff' in user && user.isHRStaff === true;
+}
 
 /**
  * GET /api/hr/employees
@@ -16,7 +45,7 @@ export async function GET(request: NextRequest) {
         }
 
         const role = session.user.role;
-        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        const isHRStaff = isHRStaffSessionUser(session.user);
         if (role !== 'HR' && role !== 'ADMIN' && !isHRStaff) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
@@ -67,6 +96,10 @@ export async function GET(request: NextRequest) {
             SELECT u.id, u.employeeId, u.email, u.firstName, u.lastName, 
                    u.role, u.company, u.department, u.startDate, u.isActive,
                    u.departmentHeadId, u.isHRStaff,
+                   u.probationDays, u.probationExtensionDays,
+                   CONVERT(varchar, u.probationOverrideDate, 23) as probationOverrideDate,
+                   CONVERT(varchar, u.probationEndDate, 23) as probationEndDate,
+                   u.probationNote,
                    head.firstName + ' ' + head.lastName as departmentHeadName,
                    CONVERT(varchar, u.createdAt, 23) as createdAt
             FROM Users u
@@ -113,7 +146,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
     try {
         const session = await auth();
-        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        const isHRStaff = isHRStaffSessionUser(session?.user);
         if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
@@ -121,7 +154,11 @@ export async function POST(request: NextRequest) {
         const body = await request.json();
         const {
             employeeId, email, password, firstName, lastName,
-            role, company, department, gender, startDate, departmentHeadId, isHRStaff: newIsHRStaff
+            role, company, department, gender, startDate, departmentHeadId, isHRStaff: newIsHRStaff,
+            probationDays: rawProbationDays,
+            probationExtensionDays: rawProbationExtensionDays,
+            probationOverrideDate: rawProbationOverrideDate,
+            probationNote: rawProbationNote
         } = body;
 
         // Validation
@@ -143,6 +180,16 @@ export async function POST(request: NextRequest) {
 
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
+        const probationDays = parseProbationDays(rawProbationDays, DEFAULT_PROBATION_DAYS);
+        const probationExtensionDays = parseProbationDays(rawProbationExtensionDays, DEFAULT_PROBATION_EXTENSION_DAYS);
+        const probationOverrideDate = normalizeOptionalDate(rawProbationOverrideDate);
+        const probationNote = normalizeOptionalText(rawProbationNote);
+        const probationEndDate = formatDateOnly(calculateProbationEndDate({
+            startDate,
+            probationDays,
+            probationExtensionDays,
+            probationOverrideDate
+        }));
 
         // Insert
         await pool.request()
@@ -158,13 +205,20 @@ export async function POST(request: NextRequest) {
             .input('startDate', startDate)
             .input('departmentHeadId', departmentHeadId || null)
             .input('isHRStaff', newIsHRStaff ? 1 : 0)
+            .input('probationDays', probationDays)
+            .input('probationExtensionDays', probationExtensionDays)
+            .input('probationOverrideDate', probationOverrideDate)
+            .input('probationEndDate', probationEndDate)
+            .input('probationNote', probationNote)
             .query(`
                 INSERT INTO Users (
                     employeeId, email, password, firstName, lastName, 
-                    role, company, department, gender, startDate, isActive, departmentHeadId, isHRStaff
+                    role, company, department, gender, startDate, isActive, departmentHeadId, isHRStaff,
+                    probationDays, probationExtensionDays, probationOverrideDate, probationEndDate, probationNote
                 ) VALUES (
                     @employeeId, @email, @password, @firstName, @lastName, 
-                    @role, @company, @department, @gender, @startDate, 1, @departmentHeadId, @isHRStaff
+                    @role, @company, @department, @gender, @startDate, 1, @departmentHeadId, @isHRStaff,
+                    @probationDays, @probationExtensionDays, @probationOverrideDate, @probationEndDate, @probationNote
                 )
             `);
 
@@ -173,7 +227,10 @@ export async function POST(request: NextRequest) {
             userId: parseInt(session.user.id),
             action: 'CREATE_EMPLOYEE',
             targetTable: 'Users',
-            newValue: { employeeId, email, firstName, lastName, role, company, department }
+            newValue: {
+                employeeId, email, firstName, lastName, role, company, department,
+                probationDays, probationExtensionDays, probationOverrideDate, probationEndDate, probationNote
+            }
         });
 
         return NextResponse.json({ success: true, message: 'Employee created successfully' });
@@ -191,19 +248,36 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
     try {
         const session = await auth();
-        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        const isHRStaff = isHRStaffSessionUser(session?.user);
         if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 
         const body = await request.json();
-        const { id, firstName, lastName, role, company, department, isActive, gender, startDate, departmentHeadId, isHRStaff: newIsHRStaff } = body;
+        const {
+            id, firstName, lastName, role, company, department, isActive, gender, startDate,
+            departmentHeadId, isHRStaff: newIsHRStaff,
+            probationDays: rawProbationDays,
+            probationExtensionDays: rawProbationExtensionDays,
+            probationOverrideDate: rawProbationOverrideDate,
+            probationNote: rawProbationNote
+        } = body;
 
         if (!id) {
             return NextResponse.json({ error: 'Missing user ID' }, { status: 400 });
         }
 
         const pool = await getPool();
+        const probationDays = parseProbationDays(rawProbationDays, DEFAULT_PROBATION_DAYS);
+        const probationExtensionDays = parseProbationDays(rawProbationExtensionDays, DEFAULT_PROBATION_EXTENSION_DAYS);
+        const probationOverrideDate = normalizeOptionalDate(rawProbationOverrideDate);
+        const probationNote = normalizeOptionalText(rawProbationNote);
+        const probationEndDate = formatDateOnly(calculateProbationEndDate({
+            startDate,
+            probationDays,
+            probationExtensionDays,
+            probationOverrideDate
+        }));
 
         await pool.request()
             .input('id', id)
@@ -217,6 +291,11 @@ export async function PUT(request: NextRequest) {
             .input('startDate', startDate)
             .input('departmentHeadId', departmentHeadId || null)
             .input('isHRStaff', newIsHRStaff ? 1 : 0)
+            .input('probationDays', probationDays)
+            .input('probationExtensionDays', probationExtensionDays)
+            .input('probationOverrideDate', probationOverrideDate)
+            .input('probationEndDate', probationEndDate)
+            .input('probationNote', probationNote)
             .query(`
                 UPDATE Users
                 SET firstName = @firstName,
@@ -229,6 +308,11 @@ export async function PUT(request: NextRequest) {
                     startDate = @startDate,
                     departmentHeadId = @departmentHeadId,
                     isHRStaff = @isHRStaff,
+                    probationDays = @probationDays,
+                    probationExtensionDays = @probationExtensionDays,
+                    probationOverrideDate = @probationOverrideDate,
+                    probationEndDate = @probationEndDate,
+                    probationNote = @probationNote,
                     updatedAt = GETDATE()
                 WHERE id = @id
             `);
@@ -239,7 +323,11 @@ export async function PUT(request: NextRequest) {
             action: 'UPDATE_EMPLOYEE',
             targetTable: 'Users',
             targetId: id,
-            newValue: { firstName, lastName, role, company, department, isActive, gender, startDate, isHRStaff: newIsHRStaff }
+            newValue: {
+                firstName, lastName, role, company, department, isActive, gender, startDate,
+                isHRStaff: newIsHRStaff,
+                probationDays, probationExtensionDays, probationOverrideDate, probationEndDate, probationNote
+            }
         });
 
         return NextResponse.json({ success: true, message: 'Employee updated successfully' });
@@ -257,7 +345,7 @@ export async function PUT(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
     try {
         const session = await auth();
-        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        const isHRStaff = isHRStaffSessionUser(session?.user);
         if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }

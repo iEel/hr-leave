@@ -28,7 +28,12 @@ export async function GET(request: NextRequest) {
                     department,
                     role,
                     gender,
-                    CONVERT(varchar, startDate, 23) as startDate
+                    CONVERT(varchar, startDate, 23) as startDate,
+                    probationDays,
+                    probationExtensionDays,
+                    CONVERT(varchar, probationOverrideDate, 23) as probationOverrideDate,
+                    CONVERT(varchar, probationEndDate, 23) as probationEndDate,
+                    probationNote
                 FROM Users
                 WHERE id = @userId
             `);

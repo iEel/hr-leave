@@ -33,6 +33,7 @@ import ManagerSearchSelect from '@/components/ui/ManagerSearchSelect';
 import CompanySelect from '@/components/ui/CompanySelect';
 import DepartmentCombobox from '@/components/ui/DepartmentCombobox';
 import { formatLeaveDays, formatHourlyDuration, formatMinutesToDisplay } from '@/lib/leave-utils';
+import { calculateProbationEndDate } from '@/lib/vacation-eligibility';
 
 interface Employee {
     id: number;
@@ -47,7 +48,42 @@ interface Employee {
     isActive: boolean;
     departmentHeadId?: number;
     departmentHeadName?: string;
+    isHRStaff?: boolean;
+    probationDays?: number | null;
+    probationExtensionDays?: number | null;
+    probationOverrideDate?: string | null;
+    probationEndDate?: string | null;
+    probationNote?: string | null;
     createdAt: string;
+}
+
+const DEFAULT_PROBATION_DAYS = '90';
+const DEFAULT_PROBATION_EXTENSION_DAYS = '0';
+
+const createDefaultFormData = () => ({
+    employeeId: '',
+    email: '',
+    password: '',
+    firstName: '',
+    lastName: '',
+    role: 'EMPLOYEE',
+    company: 'SONIC',
+    department: '',
+    gender: 'M',
+    startDate: new Date().toISOString().split('T')[0],
+    isActive: true,
+    departmentHeadId: '',
+    isHRStaff: false,
+    probationDays: DEFAULT_PROBATION_DAYS,
+    probationExtensionDays: DEFAULT_PROBATION_EXTENSION_DAYS,
+    probationOverrideDate: '',
+    probationEndDate: '',
+    probationNote: ''
+});
+
+function parseFormNumber(value: string, fallback: number): number {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 export default function EmployeeManagementPage() {
@@ -68,21 +104,7 @@ export default function EmployeeManagementPage() {
     const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
     const [subordinates, setSubordinates] = useState<Employee[]>([]);
     const [transferTargetId, setTransferTargetId] = useState<string | number | null>(null);
-    const [formData, setFormData] = useState({
-        employeeId: '',
-        email: '',
-        password: '',
-        firstName: '',
-        lastName: '',
-        role: 'EMPLOYEE',
-        company: 'SONIC',
-        department: '',
-        gender: 'M',
-        startDate: new Date().toISOString().split('T')[0],
-        isActive: true,
-        departmentHeadId: '',
-        isHRStaff: false
-    });
+    const [formData, setFormData] = useState(createDefaultFormData);
     const [newPassword, setNewPassword] = useState('');
     const [formError, setFormError] = useState('');
     const [formSuccess, setFormSuccess] = useState('');
@@ -175,6 +197,25 @@ export default function EmployeeManagementPage() {
         }
     }, [isAddModalOpen, isEditModalOpen]);
 
+    const getProbationEndDatePreview = () => {
+        if (!formData.startDate) {
+            return '';
+        }
+
+        try {
+            return calculateProbationEndDate({
+                startDate: formData.startDate,
+                probationDays: parseFormNumber(formData.probationDays, Number(DEFAULT_PROBATION_DAYS)),
+                probationExtensionDays: parseFormNumber(formData.probationExtensionDays, Number(DEFAULT_PROBATION_EXTENSION_DAYS)),
+                probationOverrideDate: formData.probationOverrideDate || null
+            }).toISOString().split('T')[0];
+        } catch {
+            return '';
+        }
+    };
+
+    const probationEndDatePreview = getProbationEndDatePreview();
+
     const handleAddSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setFormError('');
@@ -186,6 +227,7 @@ export default function EmployeeManagementPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     ...formData,
+                    probationEndDate: probationEndDatePreview,
                     departmentHeadId: formData.departmentHeadId ? Number(formData.departmentHeadId) : null
                 }),
             });
@@ -194,7 +236,7 @@ export default function EmployeeManagementPage() {
                 setIsAddModalOpen(false);
                 fetchEmployees();
                 // Reset form
-                setFormData({ ...formData, employeeId: '', email: '', password: '', firstName: '', lastName: '', departmentHeadId: '' });
+                setFormData(createDefaultFormData());
                 // Show success toast briefly
                 setFormSuccess('เพิ่มพนักงานสำเร็จ');
                 setTimeout(() => setFormSuccess(''), 3000);
@@ -222,6 +264,7 @@ export default function EmployeeManagementPage() {
                 body: JSON.stringify({
                     ...formData,
                     id: selectedEmployee.id,
+                    probationEndDate: probationEndDatePreview,
                     departmentHeadId: formData.departmentHeadId ? Number(formData.departmentHeadId) : null
                 }),
             });
@@ -305,7 +348,12 @@ export default function EmployeeManagementPage() {
             startDate: employee.startDate ? employee.startDate.split('T')[0] : '',
             isActive: employee.isActive,
             departmentHeadId: employee.departmentHeadId ? employee.departmentHeadId.toString() : '',
-            isHRStaff: (employee as any).isHRStaff || false
+            isHRStaff: employee.isHRStaff || false,
+            probationDays: String(employee.probationDays ?? DEFAULT_PROBATION_DAYS),
+            probationExtensionDays: String(employee.probationExtensionDays ?? DEFAULT_PROBATION_EXTENSION_DAYS),
+            probationOverrideDate: employee.probationOverrideDate || '',
+            probationEndDate: employee.probationEndDate || '',
+            probationNote: employee.probationNote || ''
         });
         setIsEditModalOpen(true);
     };
@@ -597,7 +645,7 @@ export default function EmployeeManagementPage() {
                         {/* Add Employee Button */}
                         <button
                             onClick={() => {
-                                setFormData({ ...formData, employeeId: '', email: '', password: '', firstName: '', lastName: '' });
+                                setFormData(createDefaultFormData());
                                 setIsAddModalOpen(true);
                             }}
                             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm"
@@ -936,6 +984,43 @@ export default function EmployeeManagementPage() {
                                     </div>
                                 </div>
 
+                                {/* Section: ข้อมูลทดลองงานและสิทธิ์พักร้อน */}
+                                <div className="mb-6">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <CalendarDays className="w-4 h-4 text-teal-600" />
+                                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลทดลองงานและสิทธิ์พักร้อน</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">ระยะทดลองงานมาตรฐาน (วัน)</label>
+                                            <input type="number" min="0" value={formData.probationDays} onChange={e => setFormData({ ...formData, probationDays: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">ต่อทดลองงานเพิ่ม (วัน)</label>
+                                            <input type="number" min="0" value={formData.probationExtensionDays} onChange={e => setFormData({ ...formData, probationExtensionDays: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">วันที่ผ่านทดลองงานจริง (กรณีผ่านก่อน/ยกเว้น)</label>
+                                            <input type="date" value={formData.probationOverrideDate} onChange={e => setFormData({ ...formData, probationOverrideDate: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">วันที่ครบกำหนดทดลองงาน (คำนวณ)</label>
+                                            <input disabled type="date" value={probationEndDatePreview || formData.probationEndDate}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 cursor-not-allowed" />
+                                        </div>
+                                        <div className="col-span-2">
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">เหตุผลการปรับทดลองงาน</label>
+                                            <textarea value={formData.probationNote} onChange={e => setFormData({ ...formData, probationNote: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                                                rows={3}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
                                 {/* Actions */}
                                 <div className="pt-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
                                     <button
@@ -1145,6 +1230,43 @@ export default function EmployeeManagementPage() {
                                             <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">วันที่เริ่มงาน *</label>
                                             <input required type="date" value={formData.startDate} onChange={e => setFormData({ ...formData, startDate: e.target.value })}
                                                 className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Section: ข้อมูลทดลองงานและสิทธิ์พักร้อน */}
+                                <div className="mb-6">
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <CalendarDays className="w-4 h-4 text-teal-600" />
+                                        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider">ข้อมูลทดลองงานและสิทธิ์พักร้อน</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">ระยะทดลองงานมาตรฐาน (วัน)</label>
+                                            <input type="number" min="0" value={formData.probationDays} onChange={e => setFormData({ ...formData, probationDays: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">ต่อทดลองงานเพิ่ม (วัน)</label>
+                                            <input type="number" min="0" value={formData.probationExtensionDays} onChange={e => setFormData({ ...formData, probationExtensionDays: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">วันที่ผ่านทดลองงานจริง (กรณีผ่านก่อน/ยกเว้น)</label>
+                                            <input type="date" value={formData.probationOverrideDate} onChange={e => setFormData({ ...formData, probationOverrideDate: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">วันที่ครบกำหนดทดลองงาน (คำนวณ)</label>
+                                            <input disabled type="date" value={probationEndDatePreview || formData.probationEndDate}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-100 dark:bg-gray-700 text-gray-500 cursor-not-allowed" />
+                                        </div>
+                                        <div className="col-span-2">
+                                            <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1.5">เหตุผลการปรับทดลองงาน</label>
+                                            <textarea value={formData.probationNote} onChange={e => setFormData({ ...formData, probationNote: e.target.value })}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                                                rows={3}
+                                            />
                                         </div>
                                     </div>
                                 </div>
