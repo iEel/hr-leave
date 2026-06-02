@@ -52,7 +52,10 @@ WHERE probationExtensionDays IS NULL;
 GO
 
 UPDATE Users
-SET probationEndDate = DATEADD(day, probationDays + probationExtensionDays, startDate)
+SET probationEndDate = COALESCE(
+    probationOverrideDate,
+    DATEADD(day, probationDays + probationExtensionDays, startDate)
+)
 WHERE probationEndDate IS NULL;
 GO
 
@@ -102,9 +105,21 @@ BEGIN
 END
 GO
 
--- Ensure SystemSettings can store descriptions for the new defaults.
-IF EXISTS (SELECT * FROM sysobjects WHERE name='SystemSettings' AND xtype='U')
-   AND NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('SystemSettings') AND name = 'description')
+-- Ensure SystemSettings has the expected shape before adding defaults.
+IF OBJECT_ID('dbo.SystemSettings', 'U') IS NULL
+BEGIN
+    THROW 51000, 'Prerequisite missing: dbo.SystemSettings table must exist before running add_probation_vacation_eligibility.sql.', 1;
+END
+GO
+
+IF COL_LENGTH('dbo.SystemSettings', 'settingKey') IS NULL
+   OR COL_LENGTH('dbo.SystemSettings', 'settingValue') IS NULL
+BEGIN
+    THROW 51001, 'Prerequisite incompatible: dbo.SystemSettings must contain settingKey and settingValue columns.', 1;
+END
+GO
+
+IF COL_LENGTH('dbo.SystemSettings', 'description') IS NULL
 BEGIN
     ALTER TABLE SystemSettings ADD description NVARCHAR(255) NULL;
     PRINT 'Added description column to SystemSettings table';
