@@ -67,6 +67,11 @@ function parsePositiveInteger(value: unknown, fallback: number): number {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseNonNegativeInteger(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 function parseFiscalYearStart(value: unknown): string {
     if (typeof value !== 'string') {
         return DEFAULT_FISCAL_YEAR_START;
@@ -100,9 +105,12 @@ function buildSettings(rows: SettingRow[]): Settings {
         if (row.settingKey === 'PROBATION_STANDARD_DAYS') {
             settings.probationStandardDays = parsePositiveInteger(row.settingValue, DEFAULT_PROBATION_STANDARD_DAYS);
         } else if (row.settingKey === 'VACATION_AFTER_PROBATION_YEARS') {
-            settings.vacationAfterProbationYears = parsePositiveInteger(row.settingValue, DEFAULT_VACATION_AFTER_PROBATION_YEARS);
+            settings.vacationAfterProbationYears = parseNonNegativeInteger(
+                row.settingValue,
+                DEFAULT_VACATION_AFTER_PROBATION_YEARS
+            );
         } else if (row.settingKey === 'LEAVE_ADVANCE_DAYS') {
-            settings.advanceNoticeDays = parsePositiveInteger(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
+            settings.advanceNoticeDays = parseNonNegativeInteger(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
         } else if (row.settingKey === 'LEAVE_YEAR_START') {
             settings.fiscalYearStart = parseFiscalYearStart(row.settingValue);
         }
@@ -141,6 +149,13 @@ function buildVacationEligibilityInput(
         probationOverrideDate: employee.probationOverrideDate,
         vacationDelayYears: settings.vacationAfterProbationYears,
     };
+}
+
+function filterVacationBalanceRows<T extends { leaveType: string }>(
+    rows: T[],
+    canShowVacationBalance: boolean
+): T[] {
+    return canShowVacationBalance ? rows : rows.filter((row) => row.leaveType !== 'VACATION');
 }
 
 function buildVacationEligibilityMetadata(
@@ -254,6 +269,8 @@ export async function GET(
 
         const employee = empResult.recordset[0] as EmployeeRow;
         const vacationEligibility = buildVacationEligibilityMetadata(employee, settings, today);
+        const canShowVacationBalance =
+            vacationEligibility.isEligibleToday && vacationEligibility.entitledInCurrentFiscalYear;
 
         // Get current year balance
         const balanceResult = await pool.request()
@@ -276,7 +293,7 @@ export async function GET(
 
             for (const quota of quotaResult.recordset) {
                 if (!existingTypes.has(quota.leaveType)) {
-                    if (quota.leaveType === 'VACATION' && !vacationEligibility.entitledInCurrentFiscalYear) {
+                    if (quota.leaveType === 'VACATION' && !canShowVacationBalance) {
                         continue;
                     }
 
@@ -354,7 +371,8 @@ export async function GET(
         }
 
         // Enrich balance data with actual used minutes for unlimited types
-        const enrichedBalances = balanceResult.recordset.map((b: BalanceRow) => ({
+        const visibleBalances = filterVacationBalanceRows(balanceResult.recordset, canShowVacationBalance);
+        const enrichedBalances = visibleBalances.map((b: BalanceRow) => ({
             ...b,
             actualUsedMinutes: actualUsedMap[b.leaveType] || 0,
         }));

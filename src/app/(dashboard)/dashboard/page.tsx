@@ -4,6 +4,7 @@ import { getPool } from '@/lib/db';
 import { formatLeaveDays, formatMinutesToDisplay } from '@/lib/leave-utils';
 import {
     getFiscalYearRange,
+    isVacationEligibleOnDate,
     isVacationEntitledInFiscalYear,
     type VacationEligibilityInput,
 } from '@/lib/vacation-eligibility';
@@ -98,6 +99,11 @@ function parsePositiveInteger(value: unknown, fallback: number): number {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseNonNegativeInteger(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
 function parseFiscalYearStart(value: unknown): string {
     if (typeof value !== 'string') {
         return DEFAULT_FISCAL_YEAR_START;
@@ -131,9 +137,12 @@ function buildSettings(rows: SettingRow[]): Settings {
         if (row.settingKey === 'PROBATION_STANDARD_DAYS') {
             settings.probationStandardDays = parsePositiveInteger(row.settingValue, DEFAULT_PROBATION_STANDARD_DAYS);
         } else if (row.settingKey === 'VACATION_AFTER_PROBATION_YEARS') {
-            settings.vacationAfterProbationYears = parsePositiveInteger(row.settingValue, DEFAULT_VACATION_AFTER_PROBATION_YEARS);
+            settings.vacationAfterProbationYears = parseNonNegativeInteger(
+                row.settingValue,
+                DEFAULT_VACATION_AFTER_PROBATION_YEARS
+            );
         } else if (row.settingKey === 'LEAVE_ADVANCE_DAYS') {
-            settings.advanceNoticeDays = parsePositiveInteger(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
+            settings.advanceNoticeDays = parseNonNegativeInteger(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
         } else if (row.settingKey === 'LEAVE_YEAR_START') {
             settings.fiscalYearStart = parseFiscalYearStart(row.settingValue);
         }
@@ -170,15 +179,28 @@ function buildVacationEligibilityInput(
     };
 }
 
-function canCreateVacationBalance(user: UserEligibilityRow | null, settings: Settings, year: number): boolean {
+function canShowVacationBalance(
+    user: UserEligibilityRow | null,
+    settings: Settings,
+    year: number,
+    today: Date
+): boolean {
     if (!user) {
         return false;
     }
 
     const eligibilityInput = buildVacationEligibilityInput(user, settings);
     return eligibilityInput
-        ? isVacationEntitledInFiscalYear(eligibilityInput, year, settings.fiscalYearStart)
+        ? isVacationEligibleOnDate(eligibilityInput, today) &&
+            isVacationEntitledInFiscalYear(eligibilityInput, year, settings.fiscalYearStart)
         : false;
+}
+
+function filterVacationBalanceRows<T extends { type: string }>(
+    rows: T[],
+    showVacationBalance: boolean
+): T[] {
+    return showVacationBalance ? rows : rows.filter((row) => row.type !== 'VACATION');
 }
 
 // Fetch leave balances from database
@@ -196,7 +218,8 @@ async function getLeaveBalances(userId: number) {
             )
         `);
         const settings = buildSettings(settingsResult.recordset);
-        const currentYear = getCurrentFiscalYear(new Date(), settings.fiscalYearStart);
+        const today = new Date();
+        const currentYear = getCurrentFiscalYear(today, settings.fiscalYearStart);
 
         const userResult = await pool.request()
             .input('userId', userId)
@@ -210,7 +233,7 @@ async function getLeaveBalances(userId: number) {
                 WHERE id = @userId
             `);
         const user = (userResult.recordset[0] as UserEligibilityRow | undefined) ?? null;
-        const vacationBalanceAllowed = canCreateVacationBalance(user, settings, currentYear);
+        const vacationBalanceAllowed = canShowVacationBalance(user, settings, currentYear, today);
 
         // Query leave balances
         let result = await pool.request()
@@ -288,7 +311,7 @@ async function getLeaveBalances(userId: number) {
             actualUsedMap[row.type] = row.totalUsedMinutes || 0;
         }
 
-        return result.recordset.map((b: LeaveBalanceRow) => ({
+        return filterVacationBalanceRows(result.recordset, vacationBalanceAllowed).map((b: LeaveBalanceRow) => ({
             ...b,
             actualUsedMinutes: actualUsedMap[b.type] || 0,
         }));

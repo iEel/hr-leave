@@ -6,8 +6,11 @@ import { notifyPendingApproval } from '@/lib/notifications';
 import { TimeSlot } from '@/types';
 import {
     calculateVacationEligibleDate,
+    getFiscalYearForDate,
     isVacationEligibleOnDate,
     isVacationEntitledInFiscalYear,
+    toDateOnly,
+    toDateText,
     type VacationEligibilityInput,
 } from '@/lib/vacation-eligibility';
 
@@ -47,9 +50,21 @@ type WorkingSaturdayRow = {
     workHours: number;
 };
 
+type WorkingSaturdaySplit = {
+    date: string;
+    startTime: string;
+    endTime: string;
+    workHours: number;
+};
+
 function parsePositiveInteger(value: unknown, fallback: number): number {
     const parsed = Number.parseInt(String(value), 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseNonNegativeInteger(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 function parseFiscalYearStart(value: unknown): string {
@@ -85,9 +100,12 @@ function buildSettings(rows: SettingRow[]): Settings {
         if (row.settingKey === 'PROBATION_STANDARD_DAYS') {
             settings.probationStandardDays = parsePositiveInteger(row.settingValue, DEFAULT_PROBATION_STANDARD_DAYS);
         } else if (row.settingKey === 'VACATION_AFTER_PROBATION_YEARS') {
-            settings.vacationAfterProbationYears = parsePositiveInteger(row.settingValue, DEFAULT_VACATION_AFTER_PROBATION_YEARS);
+            settings.vacationAfterProbationYears = parseNonNegativeInteger(
+                row.settingValue,
+                DEFAULT_VACATION_AFTER_PROBATION_YEARS
+            );
         } else if (row.settingKey === 'LEAVE_ADVANCE_DAYS') {
-            settings.advanceNoticeDays = parsePositiveInteger(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
+            settings.advanceNoticeDays = parseNonNegativeInteger(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
         } else if (row.settingKey === 'LEAVE_YEAR_START') {
             settings.fiscalYearStart = parseFiscalYearStart(row.settingValue);
         }
@@ -96,22 +114,72 @@ function buildSettings(rows: SettingRow[]): Settings {
     return settings;
 }
 
-function toDateText(date: Date): string {
-    return date.toISOString().slice(0, 10);
-}
-
-function toDateOnly(value: string | Date): Date {
-    if (value instanceof Date) {
-        return new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
-    }
-
-    const [datePart] = value.split('T');
-    const [year, month, day] = datePart.split('-').map(Number);
-    return new Date(Date.UTC(year, month - 1, day));
-}
-
 function getDateOnlyDifferenceInDays(from: string | Date, to: string | Date): number {
     return Math.floor((toDateOnly(to).getTime() - toDateOnly(from).getTime()) / DAY_MS);
+}
+
+function addUtcDays(date: Date, days: number): Date {
+    const result = new Date(date);
+    result.setUTCDate(result.getUTCDate() + days);
+    return result;
+}
+
+function splitLeaveByFiscalYear(
+    startDate: Date,
+    endDate: Date,
+    holidays: Date[],
+    timeSlot: TimeSlot,
+    workingSaturdays: WorkingSaturdaySplit[],
+    workHoursPerDay: number,
+    fiscalYearStart: string
+): Map<number, number> {
+    const holidayStrings = new Set(holidays.map(toDateText));
+    const workingSaturdayMap = new Map(workingSaturdays.map((workingSaturday) => [
+        workingSaturday.date,
+        workingSaturday,
+    ]));
+    const fiscalYearMap = new Map<number, number>();
+
+    for (let day = new Date(startDate); day <= endDate; day = addUtcDays(day, 1)) {
+        const dayText = toDateText(day);
+        if (holidayStrings.has(dayText)) {
+            continue;
+        }
+
+        const dayOfWeek = day.getUTCDay();
+        let dayValue = 0;
+
+        if (dayOfWeek === 0) {
+            continue;
+        } else if (dayOfWeek === 6) {
+            const workingSaturday = workingSaturdayMap.get(dayText);
+            if (workingSaturday) {
+                dayValue = workingSaturday.workHours / workHoursPerDay;
+            }
+        } else {
+            dayValue = 1;
+        }
+
+        if (dayValue > 0) {
+            const fiscalYear = getFiscalYearForDate(day, fiscalYearStart);
+            fiscalYearMap.set(fiscalYear, (fiscalYearMap.get(fiscalYear) || 0) + dayValue);
+        }
+    }
+
+    if (
+        (timeSlot === TimeSlot.HALF_MORNING || timeSlot === TimeSlot.HALF_AFTERNOON) &&
+        toDateText(startDate) === toDateText(endDate)
+    ) {
+        for (const [year, value] of fiscalYearMap) {
+            fiscalYearMap.set(year, value * 0.5);
+        }
+    }
+
+    for (const [year, value] of fiscalYearMap) {
+        fiscalYearMap.set(year, Math.round(value * 100) / 100);
+    }
+
+    return fiscalYearMap;
 }
 
 /**
@@ -155,6 +223,17 @@ export async function POST(request: NextRequest) {
         }
 
         const pool = await getPool();
+        const settingsResult = await pool.request().query(`
+            SELECT settingKey, settingValue
+            FROM SystemSettings
+            WHERE settingKey IN (
+                'PROBATION_STANDARD_DAYS',
+                'VACATION_AFTER_PROBATION_YEARS',
+                'LEAVE_ADVANCE_DAYS',
+                'LEAVE_YEAR_START'
+            )
+        `);
+        const requestSettings = buildSettings(settingsResult.recordset);
 
         // Check for overlapping leave requests
         // For hourly leaves: check time range overlap, not just date overlap
@@ -203,8 +282,8 @@ export async function POST(request: NextRequest) {
 
         // === WEEKEND VALIDATION FOR HOURLY LEAVE ===
         if (isHourly) {
-            const start = new Date(startDate);
-            const dayOfWeek = start.getDay(); // 0 = Sunday, 6 = Saturday
+            const start = toDateOnly(startDate);
+            const dayOfWeek = start.getUTCDay(); // 0 = Sunday, 6 = Saturday
 
             // Rule 1: Sunday is always non-working day
             if (dayOfWeek === 0) {
@@ -273,17 +352,7 @@ export async function POST(request: NextRequest) {
 
         // === VACATION LEAVE SPECIAL RULES ===
         if (leaveType === 'VACATION') {
-            const settingsResult = await pool.request().query(`
-                SELECT settingKey, settingValue
-                FROM SystemSettings
-                WHERE settingKey IN (
-                    'PROBATION_STANDARD_DAYS',
-                    'VACATION_AFTER_PROBATION_YEARS',
-                    'LEAVE_ADVANCE_DAYS',
-                    'LEAVE_YEAR_START'
-                )
-            `);
-            vacationSettings = buildSettings(settingsResult.recordset);
+            vacationSettings = requestSettings;
 
             const userResult = await pool.request()
                 .input('userId', userId)
@@ -355,31 +424,39 @@ export async function POST(request: NextRequest) {
         }
 
         // === SPLIT-YEAR BALANCE CHECK & DEDUCTION ===
-        const leaveStartDate2 = new Date(startDate);
-        const leaveEndDate2 = new Date(endDate);
-        const startYear = leaveStartDate2.getFullYear();
-        const endYear = leaveEndDate2.getFullYear();
+        const leaveStartDate2 = toDateOnly(startDate);
+        const leaveEndDate2 = toDateOnly(endDate);
+        const startYear = getFiscalYearForDate(leaveStartDate2, requestSettings.fiscalYearStart);
+        const endYear = getFiscalYearForDate(leaveEndDate2, requestSettings.fiscalYearStart);
 
         // Determine year-split usage
         let yearSplits: Map<number, number>;
 
         if (startYear === endYear) {
-            // Same year — simple case
+            // Same balance year — simple case
             yearSplits = new Map([[startYear, usageAmount]]);
         } else {
-            // Cross-year — calculate split using holidays and working saturdays
+            // Cross-fiscal-year — calculate split using holidays and working Saturdays
             const holidayResult = await pool.request()
                 .input('startDate2', startDate)
                 .input('endDate2', endDate)
-                .query(`SELECT date FROM PublicHolidays WHERE date BETWEEN @startDate2 AND @endDate2`);
-            const holidays = holidayResult.recordset.map((r: HolidayRow) => new Date(r.date));
+                .query(`
+                    SELECT CONVERT(varchar, date, 23) as date
+                    FROM PublicHolidays
+                    WHERE date BETWEEN @startDate2 AND @endDate2
+                `);
+            const holidays = holidayResult.recordset.map((r: HolidayRow) => toDateOnly(r.date));
 
             const wSatResult = await pool.request()
                 .input('startDate2', startDate)
                 .input('endDate2', endDate)
-                .query(`SELECT date, startTime, endTime, workHours FROM WorkingSaturdays WHERE date BETWEEN @startDate2 AND @endDate2`);
+                .query(`
+                    SELECT CONVERT(varchar, date, 23) as date, startTime, endTime, workHours
+                    FROM WorkingSaturdays
+                    WHERE date BETWEEN @startDate2 AND @endDate2
+                `);
             const workingSats = wSatResult.recordset.map((r: WorkingSaturdayRow) => ({
-                date: new Date(r.date).toISOString().split('T')[0],
+                date: toDateText(toDateOnly(r.date)),
                 startTime: r.startTime,
                 endTime: r.endTime,
                 workHours: r.workHours
@@ -393,14 +470,14 @@ export async function POST(request: NextRequest) {
                 ? parseFloat(whpdResult.recordset[0].settingValue)
                 : 7.5;
 
-            const { splitLeaveByYear } = await import('@/lib/date-utils');
-            yearSplits = splitLeaveByYear(
+            yearSplits = splitLeaveByFiscalYear(
                 leaveStartDate2,
                 leaveEndDate2,
                 holidays,
                 isHourly ? TimeSlot.FULL_DAY : (timeSlot as TimeSlot),
                 workingSats,
-                workHoursPerDay
+                workHoursPerDay,
+                requestSettings.fiscalYearStart
             );
         }
 
