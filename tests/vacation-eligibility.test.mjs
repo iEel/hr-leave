@@ -81,6 +81,12 @@ assert.equal(
 );
 
 assert.equal(
+    isVacationEntitledInFiscalYear({ ...base, probationExtensionDays: 30 }, 2028, '01-01'),
+    true,
+    'vacation entitlement remains available in fiscal years after the eligible date'
+);
+
+assert.equal(
     daysUntilVacationEligible({ ...base, probationExtensionDays: 30 }, '2027-04-30'),
     1,
     'days until eligible counts whole date-only days'

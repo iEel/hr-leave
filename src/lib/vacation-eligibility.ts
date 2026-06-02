@@ -75,7 +75,7 @@ export function isVacationEntitledInFiscalYear(
     const eligibleDate = calculateVacationEligibleDate(input);
     const range = getFiscalYearRange(fiscalYear, fiscalYearStart);
 
-    return eligibleDate >= range.start && eligibleDate <= range.end;
+    return eligibleDate <= range.end;
 }
 
 export function daysUntilVacationEligible(
