@@ -43,7 +43,7 @@ BEGIN
         updatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
         CONSTRAINT FK_Users_DepartmentHead FOREIGN KEY (departmentHeadId) REFERENCES Users(id)
     );
-    
+
     CREATE INDEX IX_Users_EmployeeId ON Users(employeeId);
     CREATE INDEX IX_Users_Company ON Users(company);
     CREATE INDEX IX_Users_Department ON Users(department);
@@ -79,7 +79,7 @@ BEGIN
         CONSTRAINT FK_LeaveRequests_User FOREIGN KEY (userId) REFERENCES Users(id),
         CONSTRAINT FK_LeaveRequests_Approver FOREIGN KEY (approverId) REFERENCES Users(id)
     );
-    
+
     CREATE INDEX IX_LeaveRequests_UserId ON LeaveRequests(userId);
     CREATE INDEX IX_LeaveRequests_Status ON LeaveRequests(status);
     CREATE INDEX IX_LeaveRequests_LeaveType ON LeaveRequests(leaveType);
@@ -107,7 +107,7 @@ BEGIN
         CONSTRAINT FK_LeaveBalances_User FOREIGN KEY (userId) REFERENCES Users(id),
         CONSTRAINT UQ_LeaveBalances_UserYearType UNIQUE (userId, leaveType, year)
     );
-    
+
     CREATE INDEX IX_LeaveBalances_UserId ON LeaveBalances(userId);
     CREATE INDEX IX_LeaveBalances_Year ON LeaveBalances(year);
 END
@@ -146,7 +146,7 @@ BEGIN
         company NVARCHAR(20) NULL, -- NULL = ทุกบริษัท, SONIC, GRANDLINK
         createdAt DATETIME2 NOT NULL DEFAULT GETDATE()
     );
-    
+
     CREATE INDEX IX_PublicHolidays_Date ON PublicHolidays(date);
     CREATE INDEX IX_PublicHolidays_Company ON PublicHolidays(company);
 END
@@ -167,7 +167,7 @@ BEGIN
         createdAt DATETIME2 NOT NULL DEFAULT GETDATE(),
         CONSTRAINT FK_Notifications_User FOREIGN KEY (userId) REFERENCES Users(id)
     );
-    
+
     CREATE INDEX IX_Notifications_UserId ON Notifications(userId);
     CREATE INDEX IX_Notifications_IsRead ON Notifications(isRead);
 END
@@ -190,7 +190,7 @@ BEGIN
         createdAt DATETIME2 NOT NULL DEFAULT GETDATE(),
         CONSTRAINT FK_AuditLogs_User FOREIGN KEY (userId) REFERENCES Users(id)
     );
-    
+
     CREATE INDEX IX_AuditLogs_UserId ON AuditLogs(userId);
     CREATE INDEX IX_AuditLogs_Action ON AuditLogs(action);
     CREATE INDEX IX_AuditLogs_CreatedAt ON AuditLogs(createdAt);
@@ -234,7 +234,7 @@ BEGIN
         CONSTRAINT FK_DelegateApprovers_Manager FOREIGN KEY (managerId) REFERENCES Users(id),
         CONSTRAINT FK_DelegateApprovers_Delegate FOREIGN KEY (delegateUserId) REFERENCES Users(id)
     );
-    
+
     CREATE INDEX IX_DelegateApprovers_ManagerId ON DelegateApprovers(managerId);
     CREATE INDEX IX_DelegateApprovers_IsActive ON DelegateApprovers(isActive);
 END
@@ -246,7 +246,7 @@ GO
 IF NOT EXISTS (SELECT * FROM LeaveQuotaSettings)
 BEGIN
     INSERT INTO LeaveQuotaSettings (leaveType, defaultDays, minTenureYears, requiresMedicalCert, medicalCertDaysThreshold, isPaid, maxPaidDays, allowCarryOver, maxCarryOverDays)
-    VALUES 
+    VALUES
         ('VACATION', 6, 1, 0, 0, 1, 6, 0, 0),
         ('SICK', 30, 0, 1, 3, 1, 30, 0, 0),
         ('PERSONAL', 10, 0, 0, 0, 1, 10, 0, 0),
@@ -297,7 +297,7 @@ BEGIN
         description NVARCHAR(255) NULL,
         updatedAt DATETIME2 NOT NULL DEFAULT GETDATE()
     );
-    
+
     CREATE INDEX IX_SystemSettings_Key ON SystemSettings(settingKey);
 END
 GO

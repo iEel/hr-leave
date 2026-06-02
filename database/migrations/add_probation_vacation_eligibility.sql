@@ -119,6 +119,32 @@ BEGIN
 END
 GO
 
+IF EXISTS (
+    SELECT 1
+    FROM sys.columns c
+    INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
+    WHERE c.object_id = OBJECT_ID('dbo.SystemSettings')
+      AND c.name IN ('settingKey', 'settingValue')
+      AND t.name NOT IN ('nvarchar', 'varchar', 'nchar', 'char')
+)
+BEGIN
+    THROW 51002, 'Prerequisite incompatible: dbo.SystemSettings settingKey and settingValue columns must be character text types.', 1;
+END
+GO
+
+IF EXISTS (
+    SELECT 1
+    FROM sys.columns c
+    INNER JOIN sys.types t ON c.user_type_id = t.user_type_id
+    WHERE c.object_id = OBJECT_ID('dbo.SystemSettings')
+      AND c.name = 'description'
+      AND t.name NOT IN ('nvarchar', 'varchar', 'nchar', 'char')
+)
+BEGIN
+    THROW 51003, 'Prerequisite incompatible: dbo.SystemSettings description column must be a character text type when present.', 1;
+END
+GO
+
 IF COL_LENGTH('dbo.SystemSettings', 'description') IS NULL
 BEGIN
     ALTER TABLE SystemSettings ADD description NVARCHAR(255) NULL;
