@@ -3,6 +3,116 @@ import { auth } from '@/auth';
 import { getPool, sql } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { notifyPendingApproval } from '@/lib/notifications';
+import { TimeSlot } from '@/types';
+import {
+    calculateVacationEligibleDate,
+    isVacationEligibleOnDate,
+    isVacationEntitledInFiscalYear,
+    type VacationEligibilityInput,
+} from '@/lib/vacation-eligibility';
+
+const DEFAULT_PROBATION_STANDARD_DAYS = 90;
+const DEFAULT_VACATION_AFTER_PROBATION_YEARS = 1;
+const DEFAULT_ADVANCE_NOTICE_DAYS = 3;
+const DEFAULT_FISCAL_YEAR_START = '01-01';
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+type UserEligibilityRow = {
+    startDate: string | null;
+    probationDays: number | null;
+    probationExtensionDays: number | null;
+    probationOverrideDate: string | null;
+};
+
+type Settings = {
+    probationStandardDays: number;
+    vacationAfterProbationYears: number;
+    advanceNoticeDays: number;
+    fiscalYearStart: string;
+};
+
+type SettingRow = {
+    settingKey: string;
+    settingValue: string | null;
+};
+
+type HolidayRow = {
+    date: string | Date;
+};
+
+type WorkingSaturdayRow = {
+    date: string | Date;
+    startTime: string;
+    endTime: string;
+    workHours: number;
+};
+
+function parsePositiveInteger(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseFiscalYearStart(value: unknown): string {
+    if (typeof value !== 'string') {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    const match = value.match(/^(\d{2})-(\d{2})$/);
+    if (!match) {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    const month = Number(match[1]);
+    const day = Number(match[2]);
+    const daysInMonth = new Date(Date.UTC(2001, month, 0)).getUTCDate();
+
+    if (month < 1 || month > 12 || day < 1 || day > daysInMonth) {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    return value;
+}
+
+function buildSettings(rows: SettingRow[]): Settings {
+    const settings: Settings = {
+        probationStandardDays: DEFAULT_PROBATION_STANDARD_DAYS,
+        vacationAfterProbationYears: DEFAULT_VACATION_AFTER_PROBATION_YEARS,
+        advanceNoticeDays: DEFAULT_ADVANCE_NOTICE_DAYS,
+        fiscalYearStart: DEFAULT_FISCAL_YEAR_START,
+    };
+
+    for (const row of rows) {
+        if (row.settingKey === 'PROBATION_STANDARD_DAYS') {
+            settings.probationStandardDays = parsePositiveInteger(row.settingValue, DEFAULT_PROBATION_STANDARD_DAYS);
+        } else if (row.settingKey === 'VACATION_AFTER_PROBATION_YEARS') {
+            settings.vacationAfterProbationYears = parsePositiveInteger(row.settingValue, DEFAULT_VACATION_AFTER_PROBATION_YEARS);
+        } else if (row.settingKey === 'LEAVE_ADVANCE_DAYS') {
+            settings.advanceNoticeDays = parsePositiveInteger(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
+        } else if (row.settingKey === 'LEAVE_YEAR_START') {
+            settings.fiscalYearStart = parseFiscalYearStart(row.settingValue);
+        }
+    }
+
+    return settings;
+}
+
+function toDateText(date: Date): string {
+    return date.toISOString().slice(0, 10);
+}
+
+function toDateOnly(value: string | Date): Date {
+    if (value instanceof Date) {
+        return new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
+    }
+
+    const [datePart] = value.split('T');
+    const [year, month, day] = datePart.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day));
+}
+
+function getDateOnlyDifferenceInDays(from: string | Date, to: string | Date): number {
+    return Math.floor((toDateOnly(to).getTime() - toDateOnly(from).getTime()) / DAY_MS);
+}
 
 /**
  * POST /api/leave/request
@@ -157,50 +267,69 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        let vacationEligibilityInput: VacationEligibilityInput | null = null;
+        let vacationSettings: Settings | null = null;
+        let vacationEligibleDateText: string | null = null;
+
         // === VACATION LEAVE SPECIAL RULES ===
         if (leaveType === 'VACATION') {
-            // Get user's start date
+            const settingsResult = await pool.request().query(`
+                SELECT settingKey, settingValue
+                FROM SystemSettings
+                WHERE settingKey IN (
+                    'PROBATION_STANDARD_DAYS',
+                    'VACATION_AFTER_PROBATION_YEARS',
+                    'LEAVE_ADVANCE_DAYS',
+                    'LEAVE_YEAR_START'
+                )
+            `);
+            vacationSettings = buildSettings(settingsResult.recordset);
+
             const userResult = await pool.request()
                 .input('userId', userId)
-                .query(`SELECT startDate FROM Users WHERE id = @userId`);
+                .query(`
+                    SELECT
+                        CONVERT(varchar, startDate, 23) as startDate,
+                        probationDays,
+                        probationExtensionDays,
+                        CONVERT(varchar, probationOverrideDate, 23) as probationOverrideDate
+                    FROM Users
+                    WHERE id = @userId
+                `);
 
-            if (userResult.recordset.length > 0 && userResult.recordset[0].startDate) {
-                const userStartDate = new Date(userResult.recordset[0].startDate);
-                const today = new Date();
+            const user = userResult.recordset[0] as UserEligibilityRow | undefined;
 
-                // Rule 1: Must work at least 1 year before using vacation leave
-                const oneYearFromStart = new Date(userStartDate);
-                oneYearFromStart.setFullYear(oneYearFromStart.getFullYear() + 1);
+            if (!user?.startDate) {
+                return NextResponse.json(
+                    { error: 'ไม่พบวันที่เริ่มงาน จึงไม่สามารถตรวจสอบสิทธิ์ลาพักร้อนได้' },
+                    { status: 400 }
+                );
+            }
 
-                if (today < oneYearFromStart) {
-                    const remainingDays = Math.ceil((oneYearFromStart.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                    return NextResponse.json(
-                        { error: `ต้องทำงานครบ 1 ปี ก่อนใช้สิทธิ์ลาพักร้อน (เหลืออีก ${remainingDays} วัน)` },
-                        { status: 400 }
-                    );
-                }
+            vacationEligibilityInput = {
+                startDate: user.startDate,
+                probationDays: user.probationDays ?? vacationSettings.probationStandardDays,
+                probationExtensionDays: user.probationExtensionDays,
+                probationOverrideDate: user.probationOverrideDate,
+                vacationDelayYears: vacationSettings.vacationAfterProbationYears,
+            };
+
+            const vacationEligibleDate = calculateVacationEligibleDate(vacationEligibilityInput);
+            vacationEligibleDateText = toDateText(vacationEligibleDate);
+
+            if (!isVacationEligibleOnDate(vacationEligibilityInput, startDate)) {
+                return NextResponse.json(
+                    { error: `วันที่เริ่มลาพักร้อนต้องไม่ก่อนวันที่มีสิทธิ์ (${vacationEligibleDateText})` },
+                    { status: 400 }
+                );
             }
 
             // Rule 2: Dynamic Advance Notice (Default: 3 days)
-            // Fetch setting from DB
-            const settingResult = await pool.request()
-                .input('key', 'LEAVE_ADVANCE_DAYS')
-                .query('SELECT settingValue FROM SystemSettings WHERE settingKey = @key');
+            const diffDays = getDateOnlyDifferenceInDays(new Date(), startDate);
 
-            const advanceDays = settingResult.recordset.length > 0
-                ? parseInt(settingResult.recordset[0].settingValue, 10)
-                : 3; // Default fallback
-
-            const leaveStartDate = new Date(startDate);
-            const todayDate = new Date();
-            todayDate.setHours(0, 0, 0, 0);
-            leaveStartDate.setHours(0, 0, 0, 0);
-
-            const diffDays = Math.floor((leaveStartDate.getTime() - todayDate.getTime()) / (1000 * 60 * 60 * 24));
-
-            if (diffDays < advanceDays) {
+            if (diffDays < vacationSettings.advanceNoticeDays) {
                 return NextResponse.json(
-                    { error: `การลาพักร้อนต้องแจ้งล่วงหน้าอย่างน้อย ${advanceDays} วัน` },
+                    { error: `การลาพักร้อนต้องแจ้งล่วงหน้าอย่างน้อย ${vacationSettings.advanceNoticeDays} วัน` },
                     { status: 400 }
                 );
             }
@@ -243,13 +372,13 @@ export async function POST(request: NextRequest) {
                 .input('startDate2', startDate)
                 .input('endDate2', endDate)
                 .query(`SELECT date FROM PublicHolidays WHERE date BETWEEN @startDate2 AND @endDate2`);
-            const holidays = holidayResult.recordset.map((r: any) => new Date(r.date));
+            const holidays = holidayResult.recordset.map((r: HolidayRow) => new Date(r.date));
 
             const wSatResult = await pool.request()
                 .input('startDate2', startDate)
                 .input('endDate2', endDate)
                 .query(`SELECT date, startTime, endTime, workHours FROM WorkingSaturdays WHERE date BETWEEN @startDate2 AND @endDate2`);
-            const workingSats = wSatResult.recordset.map((r: any) => ({
+            const workingSats = wSatResult.recordset.map((r: WorkingSaturdayRow) => ({
                 date: new Date(r.date).toISOString().split('T')[0],
                 startTime: r.startTime,
                 endTime: r.endTime,
@@ -269,10 +398,30 @@ export async function POST(request: NextRequest) {
                 leaveStartDate2,
                 leaveEndDate2,
                 holidays,
-                isHourly ? 'FULL_DAY' as any : timeSlot,
+                isHourly ? TimeSlot.FULL_DAY : (timeSlot as TimeSlot),
                 workingSats,
                 workHoursPerDay
             );
+        }
+
+        if (leaveType === 'VACATION') {
+            if (!vacationEligibilityInput || !vacationSettings || !vacationEligibleDateText) {
+                return NextResponse.json(
+                    { error: 'ไม่สามารถตรวจสอบสิทธิ์ลาพักร้อนได้' },
+                    { status: 400 }
+                );
+            }
+
+            for (const [year] of yearSplits) {
+                if (!isVacationEntitledInFiscalYear(vacationEligibilityInput, year, vacationSettings.fiscalYearStart)) {
+                    return NextResponse.json(
+                        {
+                            error: `ยังไม่มีสิทธิ์ลาพักร้อนสำหรับปี ${year} (ใช้สิทธิ์ได้ตั้งแต่ ${vacationEligibleDateText})`,
+                        },
+                        { status: 400 }
+                    );
+                }
+            }
         }
 
         // Check balance for each year (skip for OTHER type) — pre-validate before transaction
@@ -325,7 +474,7 @@ export async function POST(request: NextRequest) {
         try {
             // Auto-create balance for years that don't exist yet (inside transaction)
             if (leaveType !== 'OTHER') {
-                for (const [year, amount] of yearSplits) {
+                for (const [year] of yearSplits) {
                     const balanceExists = await new sql.Request(transaction)
                         .input('userId', userId)
                         .input('leaveType', leaveType)
@@ -333,6 +482,19 @@ export async function POST(request: NextRequest) {
                         .query(`SELECT id FROM LeaveBalances WHERE userId = @userId AND leaveType = @leaveType AND year = @year`);
 
                     if (balanceExists.recordset.length === 0) {
+                        if (
+                            leaveType === 'VACATION' &&
+                            (!vacationEligibilityInput ||
+                                !vacationSettings ||
+                                !isVacationEntitledInFiscalYear(
+                                    vacationEligibilityInput,
+                                    year,
+                                    vacationSettings.fiscalYearStart
+                                ))
+                        ) {
+                            throw new Error(`Blocked VACATION balance auto-create for unentitled year ${year}`);
+                        }
+
                         const quotaResult = await new sql.Request(transaction)
                             .input('leaveType', leaveType)
                             .query(`SELECT defaultDays FROM LeaveQuotaSettings WHERE leaveType = @leaveType`);

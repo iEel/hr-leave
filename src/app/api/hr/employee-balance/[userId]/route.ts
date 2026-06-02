@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getPool } from '@/lib/db';
 import { normalizeMedicalCertificateFileRecord } from '@/lib/medical-files';
+import {
+    calculateProbationEndDate,
+    calculateVacationEligibleDate,
+    daysUntilVacationEligible,
+    getFiscalYearRange,
+    isVacationEligibleOnDate,
+    isVacationEntitledInFiscalYear,
+    type VacationEligibilityInput,
+} from '@/lib/vacation-eligibility';
+
+const DEFAULT_PROBATION_STANDARD_DAYS = 90;
+const DEFAULT_VACATION_AFTER_PROBATION_YEARS = 1;
+const DEFAULT_ADVANCE_NOTICE_DAYS = 3;
+const DEFAULT_FISCAL_YEAR_START = '01-01';
 
 interface BalanceRow {
     leaveType: string;
@@ -9,6 +23,167 @@ interface BalanceRow {
     used: number;
     remaining: number;
     carryOver: number;
+}
+
+interface EmployeeRow {
+    id: number;
+    employeeId: string | null;
+    firstName: string;
+    lastName: string;
+    department: string | null;
+    company: string | null;
+    startDate: string | null;
+    probationDays: number | null;
+    probationExtensionDays: number | null;
+    probationOverrideDate: string | null;
+}
+
+type Settings = {
+    probationStandardDays: number;
+    vacationAfterProbationYears: number;
+    advanceNoticeDays: number;
+    fiscalYearStart: string;
+};
+
+type SettingRow = {
+    settingKey: string;
+    settingValue: string | null;
+};
+
+type VacationEligibilityMetadata = {
+    probationEndDate: string | null;
+    vacationEligibleDate: string | null;
+    daysUntilEligible: number | null;
+    isEligibleToday: boolean;
+    entitledInCurrentFiscalYear: boolean;
+    fiscalYearStart: string;
+    fiscalYearStartDate: string;
+    fiscalYearEndDate: string;
+    advanceNoticeDays: number;
+};
+
+function parsePositiveInteger(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseFiscalYearStart(value: unknown): string {
+    if (typeof value !== 'string') {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    const match = value.match(/^(\d{2})-(\d{2})$/);
+    if (!match) {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    const month = Number(match[1]);
+    const day = Number(match[2]);
+    const daysInMonth = new Date(Date.UTC(2001, month, 0)).getUTCDate();
+
+    if (month < 1 || month > 12 || day < 1 || day > daysInMonth) {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    return value;
+}
+
+function buildSettings(rows: SettingRow[]): Settings {
+    const settings: Settings = {
+        probationStandardDays: DEFAULT_PROBATION_STANDARD_DAYS,
+        vacationAfterProbationYears: DEFAULT_VACATION_AFTER_PROBATION_YEARS,
+        advanceNoticeDays: DEFAULT_ADVANCE_NOTICE_DAYS,
+        fiscalYearStart: DEFAULT_FISCAL_YEAR_START,
+    };
+
+    for (const row of rows) {
+        if (row.settingKey === 'PROBATION_STANDARD_DAYS') {
+            settings.probationStandardDays = parsePositiveInteger(row.settingValue, DEFAULT_PROBATION_STANDARD_DAYS);
+        } else if (row.settingKey === 'VACATION_AFTER_PROBATION_YEARS') {
+            settings.vacationAfterProbationYears = parsePositiveInteger(row.settingValue, DEFAULT_VACATION_AFTER_PROBATION_YEARS);
+        } else if (row.settingKey === 'LEAVE_ADVANCE_DAYS') {
+            settings.advanceNoticeDays = parsePositiveInteger(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
+        } else if (row.settingKey === 'LEAVE_YEAR_START') {
+            settings.fiscalYearStart = parseFiscalYearStart(row.settingValue);
+        }
+    }
+
+    return settings;
+}
+
+function toDateText(date: Date): string {
+    return date.toISOString().slice(0, 10);
+}
+
+function toDateOnly(value: Date): Date {
+    return new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
+}
+
+function getCurrentFiscalYear(today: Date, fiscalYearStart: string): number {
+    const calendarYear = today.getFullYear();
+    const currentYearRange = getFiscalYearRange(calendarYear, fiscalYearStart);
+
+    return toDateOnly(today) >= currentYearRange.start ? calendarYear : calendarYear - 1;
+}
+
+function buildVacationEligibilityInput(
+    employee: EmployeeRow,
+    settings: Settings
+): VacationEligibilityInput | null {
+    if (!employee.startDate) {
+        return null;
+    }
+
+    return {
+        startDate: employee.startDate,
+        probationDays: employee.probationDays ?? settings.probationStandardDays,
+        probationExtensionDays: employee.probationExtensionDays,
+        probationOverrideDate: employee.probationOverrideDate,
+        vacationDelayYears: settings.vacationAfterProbationYears,
+    };
+}
+
+function buildVacationEligibilityMetadata(
+    employee: EmployeeRow,
+    settings: Settings,
+    today: Date
+): VacationEligibilityMetadata {
+    const currentFiscalYear = getCurrentFiscalYear(today, settings.fiscalYearStart);
+    const fiscalYearRange = getFiscalYearRange(currentFiscalYear, settings.fiscalYearStart);
+    const baseMetadata = {
+        fiscalYearStart: settings.fiscalYearStart,
+        fiscalYearStartDate: toDateText(fiscalYearRange.start),
+        fiscalYearEndDate: toDateText(fiscalYearRange.end),
+        advanceNoticeDays: settings.advanceNoticeDays,
+    };
+    const eligibilityInput = buildVacationEligibilityInput(employee, settings);
+
+    if (!eligibilityInput) {
+        return {
+            ...baseMetadata,
+            probationEndDate: null,
+            vacationEligibleDate: null,
+            daysUntilEligible: null,
+            isEligibleToday: false,
+            entitledInCurrentFiscalYear: false,
+        };
+    }
+
+    const probationEndDate = calculateProbationEndDate(eligibilityInput);
+    const vacationEligibleDate = calculateVacationEligibleDate(eligibilityInput);
+
+    return {
+        ...baseMetadata,
+        probationEndDate: toDateText(probationEndDate),
+        vacationEligibleDate: toDateText(vacationEligibleDate),
+        daysUntilEligible: daysUntilVacationEligible(eligibilityInput, today),
+        isEligibleToday: isVacationEligibleOnDate(eligibilityInput, today),
+        entitledInCurrentFiscalYear: isVacationEntitledInFiscalYear(
+            eligibilityInput,
+            currentFiscalYear,
+            settings.fiscalYearStart
+        ),
+    };
 }
 
 /**
@@ -26,7 +201,6 @@ export async function GET(
         }
 
         const { userId } = await params;
-        const currentYear = new Date().getFullYear();
         const pool = await getPool();
 
         // Check permissions: HR, ADMIN can view anyone, MANAGER can view their subordinates
@@ -47,12 +221,29 @@ export async function GET(
             }
         }
 
+        const settingsResult = await pool.request().query(`
+            SELECT settingKey, settingValue
+            FROM SystemSettings
+            WHERE settingKey IN (
+                'PROBATION_STANDARD_DAYS',
+                'VACATION_AFTER_PROBATION_YEARS',
+                'LEAVE_ADVANCE_DAYS',
+                'LEAVE_YEAR_START'
+            )
+        `);
+        const settings = buildSettings(settingsResult.recordset);
+        const today = new Date();
+        const currentYear = getCurrentFiscalYear(today, settings.fiscalYearStart);
+
         // Get employee info
         const empResult = await pool.request()
             .input('userId', userId)
             .query(`
                 SELECT id, employeeId, firstName, lastName, department, company, 
-                       CONVERT(varchar, startDate, 23) as startDate
+                       CONVERT(varchar, startDate, 23) as startDate,
+                       probationDays,
+                       probationExtensionDays,
+                       CONVERT(varchar, probationOverrideDate, 23) as probationOverrideDate
                 FROM Users 
                 WHERE id = @userId
             `);
@@ -61,7 +252,8 @@ export async function GET(
             return NextResponse.json({ error: 'Employee not found' }, { status: 404 });
         }
 
-        const employee = empResult.recordset[0];
+        const employee = empResult.recordset[0] as EmployeeRow;
+        const vacationEligibility = buildVacationEligibilityMetadata(employee, settings, today);
 
         // Get current year balance
         const balanceResult = await pool.request()
@@ -84,6 +276,10 @@ export async function GET(
 
             for (const quota of quotaResult.recordset) {
                 if (!existingTypes.has(quota.leaveType)) {
+                    if (quota.leaveType === 'VACATION' && !vacationEligibility.entitledInCurrentFiscalYear) {
+                        continue;
+                    }
+
                     await pool.request()
                         .input('userId', userId)
                         .input('leaveType', quota.leaveType)
@@ -186,6 +382,7 @@ export async function GET(
             data: {
                 employee,
                 year: currentYear,
+                vacationEligibility,
                 balances: enrichedBalances,
                 leaveHistory: historyResult.recordset.map(normalizeMedicalCertificateFileRecord)
             }

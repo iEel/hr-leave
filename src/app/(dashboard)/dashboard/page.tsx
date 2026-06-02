@@ -3,6 +3,11 @@ import { redirect } from 'next/navigation';
 import { getPool } from '@/lib/db';
 import { formatLeaveDays, formatMinutesToDisplay } from '@/lib/leave-utils';
 import {
+    getFiscalYearRange,
+    isVacationEntitledInFiscalYear,
+    type VacationEligibilityInput,
+} from '@/lib/vacation-eligibility';
+import {
     CalendarDays,
     Clock,
     TrendingUp,
@@ -57,11 +62,155 @@ const leaveTypeColors: Record<string, string> = {
     OTHER: 'from-gray-500 to-gray-600',
 };
 
+const DEFAULT_PROBATION_STANDARD_DAYS = 90;
+const DEFAULT_VACATION_AFTER_PROBATION_YEARS = 1;
+const DEFAULT_ADVANCE_NOTICE_DAYS = 3;
+const DEFAULT_FISCAL_YEAR_START = '01-01';
+
+type UserEligibilityRow = {
+    startDate: string | null;
+    probationDays: number | null;
+    probationExtensionDays: number | null;
+    probationOverrideDate: string | null;
+};
+
+type Settings = {
+    probationStandardDays: number;
+    vacationAfterProbationYears: number;
+    advanceNoticeDays: number;
+    fiscalYearStart: string;
+};
+
+type SettingRow = {
+    settingKey: string;
+    settingValue: string | null;
+};
+
+type LeaveBalanceRow = {
+    type: string;
+    entitlement: number;
+    used: number;
+    remaining: number;
+};
+
+function parsePositiveInteger(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseFiscalYearStart(value: unknown): string {
+    if (typeof value !== 'string') {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    const match = value.match(/^(\d{2})-(\d{2})$/);
+    if (!match) {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    const month = Number(match[1]);
+    const day = Number(match[2]);
+    const daysInMonth = new Date(Date.UTC(2001, month, 0)).getUTCDate();
+
+    if (month < 1 || month > 12 || day < 1 || day > daysInMonth) {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    return value;
+}
+
+function buildSettings(rows: SettingRow[]): Settings {
+    const settings: Settings = {
+        probationStandardDays: DEFAULT_PROBATION_STANDARD_DAYS,
+        vacationAfterProbationYears: DEFAULT_VACATION_AFTER_PROBATION_YEARS,
+        advanceNoticeDays: DEFAULT_ADVANCE_NOTICE_DAYS,
+        fiscalYearStart: DEFAULT_FISCAL_YEAR_START,
+    };
+
+    for (const row of rows) {
+        if (row.settingKey === 'PROBATION_STANDARD_DAYS') {
+            settings.probationStandardDays = parsePositiveInteger(row.settingValue, DEFAULT_PROBATION_STANDARD_DAYS);
+        } else if (row.settingKey === 'VACATION_AFTER_PROBATION_YEARS') {
+            settings.vacationAfterProbationYears = parsePositiveInteger(row.settingValue, DEFAULT_VACATION_AFTER_PROBATION_YEARS);
+        } else if (row.settingKey === 'LEAVE_ADVANCE_DAYS') {
+            settings.advanceNoticeDays = parsePositiveInteger(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
+        } else if (row.settingKey === 'LEAVE_YEAR_START') {
+            settings.fiscalYearStart = parseFiscalYearStart(row.settingValue);
+        }
+    }
+
+    return settings;
+}
+
+function toDateOnly(value: Date): Date {
+    return new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()));
+}
+
+function getCurrentFiscalYear(today: Date, fiscalYearStart: string): number {
+    const calendarYear = today.getFullYear();
+    const currentYearRange = getFiscalYearRange(calendarYear, fiscalYearStart);
+
+    return toDateOnly(today) >= currentYearRange.start ? calendarYear : calendarYear - 1;
+}
+
+function buildVacationEligibilityInput(
+    user: UserEligibilityRow,
+    settings: Settings
+): VacationEligibilityInput | null {
+    if (!user.startDate) {
+        return null;
+    }
+
+    return {
+        startDate: user.startDate,
+        probationDays: user.probationDays ?? settings.probationStandardDays,
+        probationExtensionDays: user.probationExtensionDays,
+        probationOverrideDate: user.probationOverrideDate,
+        vacationDelayYears: settings.vacationAfterProbationYears,
+    };
+}
+
+function canCreateVacationBalance(user: UserEligibilityRow | null, settings: Settings, year: number): boolean {
+    if (!user) {
+        return false;
+    }
+
+    const eligibilityInput = buildVacationEligibilityInput(user, settings);
+    return eligibilityInput
+        ? isVacationEntitledInFiscalYear(eligibilityInput, year, settings.fiscalYearStart)
+        : false;
+}
+
 // Fetch leave balances from database
 async function getLeaveBalances(userId: number) {
     try {
         const pool = await getPool();
-        const currentYear = new Date().getFullYear();
+        const settingsResult = await pool.request().query(`
+            SELECT settingKey, settingValue
+            FROM SystemSettings
+            WHERE settingKey IN (
+                'PROBATION_STANDARD_DAYS',
+                'VACATION_AFTER_PROBATION_YEARS',
+                'LEAVE_ADVANCE_DAYS',
+                'LEAVE_YEAR_START'
+            )
+        `);
+        const settings = buildSettings(settingsResult.recordset);
+        const currentYear = getCurrentFiscalYear(new Date(), settings.fiscalYearStart);
+
+        const userResult = await pool.request()
+            .input('userId', userId)
+            .query(`
+                SELECT
+                    CONVERT(varchar, startDate, 23) as startDate,
+                    probationDays,
+                    probationExtensionDays,
+                    CONVERT(varchar, probationOverrideDate, 23) as probationOverrideDate
+                FROM Users
+                WHERE id = @userId
+            `);
+        const user = (userResult.recordset[0] as UserEligibilityRow | undefined) ?? null;
+        const vacationBalanceAllowed = canCreateVacationBalance(user, settings, currentYear);
 
         // Query leave balances
         let result = await pool.request()
@@ -81,6 +230,10 @@ async function getLeaveBalances(userId: number) {
             `);
 
             for (const quota of quotaResult.recordset) {
+                if (quota.leaveType === 'VACATION' && !vacationBalanceAllowed) {
+                    continue;
+                }
+
                 await pool.request()
                     .input('userId', userId)
                     .input('leaveType', quota.leaveType)
@@ -135,7 +288,7 @@ async function getLeaveBalances(userId: number) {
             actualUsedMap[row.type] = row.totalUsedMinutes || 0;
         }
 
-        return result.recordset.map((b: any) => ({
+        return result.recordset.map((b: LeaveBalanceRow) => ({
             ...b,
             actualUsedMinutes: actualUsedMap[b.type] || 0,
         }));
