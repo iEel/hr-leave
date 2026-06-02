@@ -4,11 +4,22 @@ import { getPool } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { calculateNetWorkingDays, WorkingSaturdayData } from '@/lib/date-utils';
 import { calculateHourlyDuration } from '@/lib/leave-utils';
+import { TimeSlot } from '@/types';
+import {
+    calculateVacationEligibleDate,
+    isVacationEligibleOnDate,
+    isVacationEntitledInFiscalYear,
+    type VacationEligibilityInput,
+} from '@/lib/vacation-eligibility';
 
 const VALID_LEAVE_TYPES = [
     'VACATION', 'SICK', 'PERSONAL', 'MATERNITY', 'MILITARY',
     'ORDINATION', 'STERILIZATION', 'TRAINING', 'OTHER'
 ];
+
+const DEFAULT_PROBATION_STANDARD_DAYS = 90;
+const DEFAULT_VACATION_AFTER_PROBATION_YEARS = 1;
+const DEFAULT_FISCAL_YEAR_START = '01-01';
 
 interface ImportRow {
     employeeId: string;
@@ -21,6 +32,85 @@ interface ImportRow {
     endTime?: string;
 }
 
+interface SessionUserWithHRFlag {
+    isHRStaff?: boolean;
+}
+
+interface HolidayRow {
+    date: string | Date;
+}
+
+interface WorkingSaturdayRow {
+    date: string | Date;
+    startTime: string;
+    endTime: string;
+    workHours: number;
+}
+
+interface ImportUserRow {
+    id: number;
+    startDate: string | null;
+    probationDays: number | null;
+    probationExtensionDays: number | null;
+    probationOverrideDate: string | null;
+}
+
+interface VacationSettings {
+    probationStandardDays: number;
+    vacationAfterProbationYears: number;
+    fiscalYearStart: string;
+}
+
+function parsePositiveInteger(value: unknown, fallback: number): number {
+    const parsed = Number.parseInt(String(value), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseFiscalYearStart(value: unknown): string {
+    if (typeof value !== 'string') {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    const match = value.match(/^(\d{2})-(\d{2})$/);
+    if (!match) {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    const month = Number(match[1]);
+    const day = Number(match[2]);
+    const daysInMonth = new Date(Date.UTC(2001, month, 0)).getUTCDate();
+
+    if (month < 1 || month > 12 || day < 1 || day > daysInMonth) {
+        return DEFAULT_FISCAL_YEAR_START;
+    }
+
+    return value;
+}
+
+function buildVacationSettings(rows: Array<{ settingKey: string; settingValue: string | null }>): VacationSettings {
+    const settings: VacationSettings = {
+        probationStandardDays: DEFAULT_PROBATION_STANDARD_DAYS,
+        vacationAfterProbationYears: DEFAULT_VACATION_AFTER_PROBATION_YEARS,
+        fiscalYearStart: DEFAULT_FISCAL_YEAR_START,
+    };
+
+    for (const row of rows) {
+        if (row.settingKey === 'PROBATION_STANDARD_DAYS') {
+            settings.probationStandardDays = parsePositiveInteger(row.settingValue, DEFAULT_PROBATION_STANDARD_DAYS);
+        } else if (row.settingKey === 'VACATION_AFTER_PROBATION_YEARS') {
+            settings.vacationAfterProbationYears = parsePositiveInteger(row.settingValue, DEFAULT_VACATION_AFTER_PROBATION_YEARS);
+        } else if (row.settingKey === 'LEAVE_YEAR_START') {
+            settings.fiscalYearStart = parseFiscalYearStart(row.settingValue);
+        }
+    }
+
+    return settings;
+}
+
+function toDateText(date: Date): string {
+    return date.toISOString().slice(0, 10);
+}
+
 /**
  * POST /api/hr/leave-import
  * นำเข้าวันลาจำนวนมาก (Bulk Leave Import)
@@ -29,7 +119,7 @@ interface ImportRow {
 export async function POST(request: NextRequest) {
     try {
         const session = await auth();
-        const isHRStaff = (session?.user as any)?.isHRStaff === true;
+        const isHRStaff = (session?.user as SessionUserWithHRFlag | undefined)?.isHRStaff === true;
         if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
@@ -51,11 +141,11 @@ export async function POST(request: NextRequest) {
         // --- Fetch shared data for auto-calculation ---
         // Get all public holidays
         const holidayResult = await pool.request().query(`SELECT date FROM PublicHolidays`);
-        const holidays = holidayResult.recordset.map((r: any) => new Date(r.date));
+        const holidays = (holidayResult.recordset as HolidayRow[]).map((r) => new Date(r.date));
 
         // Get all working Saturdays
         const wSatResult = await pool.request().query(`SELECT date, startTime, endTime, workHours FROM WorkingSaturdays`);
-        const workingSaturdays: WorkingSaturdayData[] = wSatResult.recordset.map((r: any) => ({
+        const workingSaturdays: WorkingSaturdayData[] = (wSatResult.recordset as WorkingSaturdayRow[]).map((r) => ({
             date: new Date(r.date).toISOString().split('T')[0],
             startTime: r.startTime,
             endTime: r.endTime,
@@ -69,6 +159,17 @@ export async function POST(request: NextRequest) {
         const workHoursPerDay = whpdResult.recordset.length > 0
             ? parseFloat(whpdResult.recordset[0].settingValue)
             : 7.5;
+
+        const vacationSettingsResult = await pool.request().query(`
+            SELECT settingKey, settingValue
+            FROM SystemSettings
+            WHERE settingKey IN (
+                'PROBATION_STANDARD_DAYS',
+                'VACATION_AFTER_PROBATION_YEARS',
+                'LEAVE_YEAR_START'
+            )
+        `);
+        const vacationSettings = buildVacationSettings(vacationSettingsResult.recordset);
 
         let successCount = 0;
         let errorCount = 0;
@@ -119,7 +220,16 @@ export async function POST(request: NextRequest) {
                 // --- Look up user ---
                 const userResult = await pool.request()
                     .input('employeeId', row.employeeId.trim())
-                    .query(`SELECT id FROM Users WHERE employeeId = @employeeId AND isActive = 1`);
+                    .query(`
+                        SELECT
+                            id,
+                            CONVERT(varchar, startDate, 23) as startDate,
+                            probationDays,
+                            probationExtensionDays,
+                            CONVERT(varchar, probationOverrideDate, 23) as probationOverrideDate
+                        FROM Users
+                        WHERE employeeId = @employeeId AND isActive = 1
+                    `);
 
                 if (userResult.recordset.length === 0) {
                     errors.push({ row: rowNum, employeeId: row.employeeId, message: 'ไม่พบพนักงานในระบบ' });
@@ -127,10 +237,50 @@ export async function POST(request: NextRequest) {
                     continue;
                 }
 
-                const userId = userResult.recordset[0].id;
+                const user = userResult.recordset[0] as ImportUserRow;
+                const userId = user.id;
                 const startDateStr = startDate.toISOString().split('T')[0];
                 const endDateStr = endDate.toISOString().split('T')[0];
                 const leaveYear = startDate.getFullYear();
+                let vacationEligibilityInput: VacationEligibilityInput | null = null;
+                let vacationEligibleDateStr: string | null = null;
+
+                if (row.leaveType === 'VACATION') {
+                    if (!user.startDate) {
+                        errors.push({ row: rowNum, employeeId: row.employeeId, message: 'ไม่พบวันที่เริ่มงานสำหรับตรวจสอบสิทธิ์ลาพักร้อน' });
+                        errorCount++;
+                        continue;
+                    }
+
+                    vacationEligibilityInput = {
+                        startDate: user.startDate,
+                        probationDays: user.probationDays ?? vacationSettings.probationStandardDays,
+                        probationExtensionDays: user.probationExtensionDays,
+                        probationOverrideDate: user.probationOverrideDate,
+                        vacationDelayYears: vacationSettings.vacationAfterProbationYears,
+                    };
+                    vacationEligibleDateStr = toDateText(calculateVacationEligibleDate(vacationEligibilityInput));
+
+                    if (!isVacationEligibleOnDate(vacationEligibilityInput, startDateStr)) {
+                        errors.push({
+                            row: rowNum,
+                            employeeId: row.employeeId,
+                            message: `ใช้สิทธิ์ลาพักร้อนได้ตั้งแต่ ${vacationEligibleDateStr}`
+                        });
+                        errorCount++;
+                        continue;
+                    }
+
+                    if (!isVacationEntitledInFiscalYear(vacationEligibilityInput, leaveYear, vacationSettings.fiscalYearStart)) {
+                        errors.push({
+                            row: rowNum,
+                            employeeId: row.employeeId,
+                            message: `ยังไม่มีสิทธิ์ลาพักร้อนในปีงบประมาณ ${leaveYear} (ใช้สิทธิ์ได้ตั้งแต่ ${vacationEligibleDateStr})`
+                        });
+                        errorCount++;
+                        continue;
+                    }
+                }
 
                 // --- Check duplicate (same user, type, dates) ---
                 const dupCheck = await pool.request()
@@ -172,7 +322,7 @@ export async function POST(request: NextRequest) {
                         startDate,
                         endDate,
                         holidays,
-                        'FULL_DAY' as any,
+                        TimeSlot.FULL_DAY,
                         workingSaturdays,
                         workHoursPerDay
                     );
@@ -199,6 +349,22 @@ export async function POST(request: NextRequest) {
 
                     if (balanceResult.recordset.length === 0) {
                         // Auto-create balance from LeaveQuotaSettings (same as leave/request route)
+                        if (
+                            row.leaveType === 'VACATION'
+                            && (
+                                !vacationEligibilityInput
+                                || !isVacationEntitledInFiscalYear(vacationEligibilityInput, leaveYear, vacationSettings.fiscalYearStart)
+                            )
+                        ) {
+                            errors.push({
+                                row: rowNum,
+                                employeeId: row.employeeId,
+                                message: `ยังไม่มีสิทธิ์ลาพักร้อนในปีงบประมาณ ${leaveYear}${vacationEligibleDateStr ? ` (ใช้สิทธิ์ได้ตั้งแต่ ${vacationEligibleDateStr})` : ''}`
+                            });
+                            errorCount++;
+                            continue;
+                        }
+
                         const quotaResult = await pool.request()
                             .input('leaveType', row.leaveType)
                             .query(`SELECT defaultDays FROM LeaveQuotaSettings WHERE leaveType = @leaveType`);
@@ -235,7 +401,7 @@ export async function POST(request: NextRequest) {
 
 
                 // --- Insert leave request (status = APPROVED) ---
-                const insertResult = await pool.request()
+                await pool.request()
                     .input('userId', userId)
                     .input('leaveType', row.leaveType)
                     .input('startDatetime', startDateStr)
@@ -261,8 +427,6 @@ export async function POST(request: NextRequest) {
                             'APPROVED'
                         )
                     `);
-
-                const newId = insertResult.recordset[0].id;
 
                 // --- Deduct leave balance (skip for OTHER type) ---
                 if (row.leaveType !== 'OTHER') {
@@ -292,9 +456,9 @@ export async function POST(request: NextRequest) {
         // Audit log
         await logAudit({
             userId: hrUserId,
-            action: 'BULK_LEAVE_IMPORT' as any,
+            action: 'BULK_LEAVE_IMPORT' as Parameters<typeof logAudit>[0]['action'],
             targetTable: 'LeaveRequests',
-            targetId: null as any,
+            targetId: null,
             newValue: { total: data.length, success: successCount, errors: errorCount, skipped: skippedCount }
         });
 
