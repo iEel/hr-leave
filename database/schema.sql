@@ -27,6 +27,11 @@ BEGIN
         department NVARCHAR(100) NOT NULL,
         gender CHAR(1) NOT NULL, -- M, F
         startDate DATE NOT NULL,
+        probationDays INT NOT NULL DEFAULT 90,
+        probationExtensionDays INT NOT NULL DEFAULT 0,
+        probationOverrideDate DATE NULL,
+        probationEndDate DATE NULL,
+        probationNote NVARCHAR(500) NULL,
         departmentHeadId INT NULL,
         isActive BIT NOT NULL DEFAULT 1,
         isADUser BIT NOT NULL DEFAULT 0,
@@ -273,6 +278,10 @@ BEGIN
         'M',
         '2020-01-01'
     );
+
+    UPDATE Users
+    SET probationEndDate = DATEADD(day, probationDays + probationExtensionDays, startDate)
+    WHERE employeeId = 'ADMIN001' AND probationEndDate IS NULL;
 END
 GO
 
@@ -285,10 +294,25 @@ BEGIN
         id INT IDENTITY(1,1) PRIMARY KEY,
         settingKey NVARCHAR(50) NOT NULL UNIQUE,
         settingValue NVARCHAR(MAX) NULL,
+        description NVARCHAR(255) NULL,
         updatedAt DATETIME2 NOT NULL DEFAULT GETDATE()
     );
     
     CREATE INDEX IX_SystemSettings_Key ON SystemSettings(settingKey);
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM SystemSettings WHERE settingKey = 'PROBATION_STANDARD_DAYS')
+BEGIN
+    INSERT INTO SystemSettings (settingKey, settingValue, description)
+    VALUES ('PROBATION_STANDARD_DAYS', '90', N'ระยะทดลองงานมาตรฐาน (วัน)');
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM SystemSettings WHERE settingKey = 'VACATION_AFTER_PROBATION_YEARS')
+BEGIN
+    INSERT INTO SystemSettings (settingKey, settingValue, description)
+    VALUES ('VACATION_AFTER_PROBATION_YEARS', '1', N'ลาพักร้อนเริ่มใช้สิทธิ์หลังผ่านทดลองงาน (ปี)');
 END
 GO
 
