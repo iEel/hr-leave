@@ -57,10 +57,17 @@ interface Employee {
     createdAt: string;
 }
 
+interface SettingsRulesResponse {
+    success?: boolean;
+    rules?: {
+        probationStandardDays?: number | string | null;
+    };
+}
+
 const DEFAULT_PROBATION_DAYS = '90';
 const DEFAULT_PROBATION_EXTENSION_DAYS = '0';
 
-const createDefaultFormData = () => ({
+const createDefaultFormData = (probationDays = DEFAULT_PROBATION_DAYS) => ({
     employeeId: '',
     email: '',
     password: '',
@@ -74,7 +81,7 @@ const createDefaultFormData = () => ({
     isActive: true,
     departmentHeadId: '',
     isHRStaff: false,
-    probationDays: DEFAULT_PROBATION_DAYS,
+    probationDays,
     probationExtensionDays: DEFAULT_PROBATION_EXTENSION_DAYS,
     probationOverrideDate: '',
     probationEndDate: '',
@@ -82,6 +89,10 @@ const createDefaultFormData = () => ({
 });
 
 function parseFormNumber(value: string, fallback: number): number {
+    if (value.trim() === '') {
+        return fallback;
+    }
+
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
 }
@@ -104,6 +115,7 @@ export default function EmployeeManagementPage() {
     const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
     const [subordinates, setSubordinates] = useState<Employee[]>([]);
     const [transferTargetId, setTransferTargetId] = useState<string | number | null>(null);
+    const [probationStandardDays, setProbationStandardDays] = useState(DEFAULT_PROBATION_DAYS);
     const [formData, setFormData] = useState(createDefaultFormData);
     const [newPassword, setNewPassword] = useState('');
     const [formError, setFormError] = useState('');
@@ -191,6 +203,42 @@ export default function EmployeeManagementPage() {
     }, []);
 
     useEffect(() => {
+        const fetchProbationRules = async () => {
+            try {
+                const res = await fetch('/api/settings/rules');
+                if (!res.ok) {
+                    return;
+                }
+
+                const data: SettingsRulesResponse = await res.json();
+                const configuredDays = data.rules?.probationStandardDays;
+                if (!data.success || configuredDays === null || configuredDays === undefined) {
+                    return;
+                }
+
+                const nextProbationDays = String(configuredDays);
+                setProbationStandardDays(nextProbationDays);
+                setFormData(current => {
+                    const isUntouchedAddForm =
+                        !current.employeeId &&
+                        !current.email &&
+                        !current.firstName &&
+                        !current.lastName &&
+                        current.probationDays === DEFAULT_PROBATION_DAYS;
+
+                    return isUntouchedAddForm
+                        ? { ...current, probationDays: nextProbationDays }
+                        : current;
+                });
+            } catch (error) {
+                console.error('Error fetching probation rules:', error);
+            }
+        };
+
+        fetchProbationRules();
+    }, []);
+
+    useEffect(() => {
         if (isAddModalOpen || isEditModalOpen) {
             fetchManagers();
             fetchDepartments();
@@ -205,7 +253,7 @@ export default function EmployeeManagementPage() {
         try {
             return calculateProbationEndDate({
                 startDate: formData.startDate,
-                probationDays: parseFormNumber(formData.probationDays, Number(DEFAULT_PROBATION_DAYS)),
+                probationDays: parseFormNumber(formData.probationDays, Number(probationStandardDays)),
                 probationExtensionDays: parseFormNumber(formData.probationExtensionDays, Number(DEFAULT_PROBATION_EXTENSION_DAYS)),
                 probationOverrideDate: formData.probationOverrideDate || null
             }).toISOString().split('T')[0];
@@ -215,6 +263,25 @@ export default function EmployeeManagementPage() {
     };
 
     const probationEndDatePreview = getProbationEndDatePreview();
+
+    const openAddModal = () => {
+        setFormError('');
+        setSelectedEmployee(null);
+        setFormData(createDefaultFormData(probationStandardDays));
+        setIsAddModalOpen(true);
+    };
+
+    const closeAddModal = () => {
+        setIsAddModalOpen(false);
+        setFormError('');
+        setFormData(createDefaultFormData(probationStandardDays));
+    };
+
+    const closeEditModal = () => {
+        setIsEditModalOpen(false);
+        setFormError('');
+        setSelectedEmployee(null);
+    };
 
     const handleAddSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -233,10 +300,8 @@ export default function EmployeeManagementPage() {
             });
             const result = await res.json();
             if (result.success) {
-                setIsAddModalOpen(false);
+                closeAddModal();
                 fetchEmployees();
-                // Reset form
-                setFormData(createDefaultFormData());
                 // Show success toast briefly
                 setFormSuccess('เพิ่มพนักงานสำเร็จ');
                 setTimeout(() => setFormSuccess(''), 3000);
@@ -270,7 +335,7 @@ export default function EmployeeManagementPage() {
             });
             const result = await res.json();
             if (result.success) {
-                setIsEditModalOpen(false);
+                closeEditModal();
                 fetchEmployees();
                 // Show success toast briefly
                 setFormSuccess('แก้ไขข้อมูลสำเร็จ');
@@ -334,6 +399,7 @@ export default function EmployeeManagementPage() {
     };
 
     const openEditModal = (employee: Employee) => {
+        setFormError('');
         setSelectedEmployee(employee);
         setFormData({
             employeeId: employee.employeeId,
@@ -349,7 +415,7 @@ export default function EmployeeManagementPage() {
             isActive: employee.isActive,
             departmentHeadId: employee.departmentHeadId ? employee.departmentHeadId.toString() : '',
             isHRStaff: employee.isHRStaff || false,
-            probationDays: String(employee.probationDays ?? DEFAULT_PROBATION_DAYS),
+            probationDays: String(employee.probationDays ?? probationStandardDays),
             probationExtensionDays: String(employee.probationExtensionDays ?? DEFAULT_PROBATION_EXTENSION_DAYS),
             probationOverrideDate: employee.probationOverrideDate || '',
             probationEndDate: employee.probationEndDate || '',
@@ -644,10 +710,7 @@ export default function EmployeeManagementPage() {
 
                         {/* Add Employee Button */}
                         <button
-                            onClick={() => {
-                                setFormData(createDefaultFormData());
-                                setIsAddModalOpen(true);
-                            }}
+                            onClick={openAddModal}
                             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-sm"
                         >
                             <Plus className="w-5 h-5" />
@@ -859,7 +922,7 @@ export default function EmployeeManagementPage() {
                                     เพิ่มพนักงานใหม่
                                 </h2>
                                 <button
-                                    onClick={() => setIsAddModalOpen(false)}
+                                    onClick={closeAddModal}
                                     className="text-white/80 hover:text-white transition-colors"
                                 >
                                     <XCircle className="w-6 h-6" />
@@ -1025,7 +1088,7 @@ export default function EmployeeManagementPage() {
                                 <div className="pt-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
                                     <button
                                         type="button"
-                                        onClick={() => { setIsAddModalOpen(false); setFormError(''); }}
+                                        onClick={closeAddModal}
                                         className="px-5 py-2.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors font-medium"
                                     >
                                         ยกเลิก
@@ -1068,7 +1131,7 @@ export default function EmployeeManagementPage() {
                                     แก้ไขข้อมูลพนักงาน
                                 </h2>
                                 <button
-                                    onClick={() => setIsEditModalOpen(false)}
+                                    onClick={closeEditModal}
                                     className="text-white/80 hover:text-white transition-colors"
                                 >
                                     <XCircle className="w-6 h-6" />
@@ -1275,7 +1338,7 @@ export default function EmployeeManagementPage() {
                                 <div className="pt-4 border-t border-gray-100 dark:border-gray-700 flex justify-end gap-3">
                                     <button
                                         type="button"
-                                        onClick={() => { setIsEditModalOpen(false); setFormError(''); }}
+                                        onClick={closeEditModal}
                                         className="px-5 py-2.5 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors font-medium"
                                     >
                                         ยกเลิก

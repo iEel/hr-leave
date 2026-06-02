@@ -9,7 +9,7 @@ const DEFAULT_PROBATION_DAYS = 90;
 const DEFAULT_PROBATION_EXTENSION_DAYS = 0;
 
 function parseProbationDays(value: unknown, fallback: number): number {
-    if (value === null || value === undefined || value === '') {
+    if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) {
         return fallback;
     }
 
@@ -31,6 +31,19 @@ function formatDateOnly(date: Date): string {
 
 function isHRStaffSessionUser(user: unknown): boolean {
     return typeof user === 'object' && user !== null && 'isHRStaff' in user && user.isHRStaff === true;
+}
+
+async function getConfiguredProbationStandardDays(pool: Awaited<ReturnType<typeof getPool>>): Promise<number> {
+    const result = await pool.request()
+        .input('settingKey', 'PROBATION_STANDARD_DAYS')
+        .query(`
+            SELECT settingValue
+            FROM SystemSettings
+            WHERE settingKey = @settingKey
+        `);
+
+    const row = result.recordset[0] as { settingValue?: string } | undefined;
+    return parseProbationDays(row?.settingValue, DEFAULT_PROBATION_DAYS);
 }
 
 /**
@@ -180,7 +193,8 @@ export async function POST(request: NextRequest) {
 
         // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
-        const probationDays = parseProbationDays(rawProbationDays, DEFAULT_PROBATION_DAYS);
+        const probationStandardDays = await getConfiguredProbationStandardDays(pool);
+        const probationDays = parseProbationDays(rawProbationDays, probationStandardDays);
         const probationExtensionDays = parseProbationDays(rawProbationExtensionDays, DEFAULT_PROBATION_EXTENSION_DAYS);
         const probationOverrideDate = normalizeOptionalDate(rawProbationOverrideDate);
         const probationNote = normalizeOptionalText(rawProbationNote);
@@ -268,7 +282,8 @@ export async function PUT(request: NextRequest) {
         }
 
         const pool = await getPool();
-        const probationDays = parseProbationDays(rawProbationDays, DEFAULT_PROBATION_DAYS);
+        const probationStandardDays = await getConfiguredProbationStandardDays(pool);
+        const probationDays = parseProbationDays(rawProbationDays, probationStandardDays);
         const probationExtensionDays = parseProbationDays(rawProbationExtensionDays, DEFAULT_PROBATION_EXTENSION_DAYS);
         const probationOverrideDate = normalizeOptionalDate(rawProbationOverrideDate);
         const probationNote = normalizeOptionalText(rawProbationNote);
