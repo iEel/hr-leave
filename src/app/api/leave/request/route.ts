@@ -5,6 +5,11 @@ import { logAudit } from '@/lib/audit';
 import { notifyPendingApproval } from '@/lib/notifications';
 import { TimeSlot } from '@/types';
 import {
+    formatVacationAdvanceNoticeError,
+    isLeaveDateAllowedByAdvanceNotice,
+    parseAdvanceNoticeDays,
+} from '@/lib/leave-advance-notice';
+import {
     calculateVacationEligibleDate,
     getFiscalYearForDate,
     isVacationEligibleOnDate,
@@ -18,7 +23,6 @@ const DEFAULT_PROBATION_STANDARD_DAYS = 90;
 const DEFAULT_VACATION_AFTER_PROBATION_YEARS = 1;
 const DEFAULT_ADVANCE_NOTICE_DAYS = 3;
 const DEFAULT_FISCAL_YEAR_START = '01-01';
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 type UserEligibilityRow = {
     startDate: string | null;
@@ -105,17 +109,13 @@ function buildSettings(rows: SettingRow[]): Settings {
                 DEFAULT_VACATION_AFTER_PROBATION_YEARS
             );
         } else if (row.settingKey === 'LEAVE_ADVANCE_DAYS') {
-            settings.advanceNoticeDays = parseNonNegativeInteger(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
+            settings.advanceNoticeDays = parseAdvanceNoticeDays(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
         } else if (row.settingKey === 'LEAVE_YEAR_START') {
             settings.fiscalYearStart = parseFiscalYearStart(row.settingValue);
         }
     }
 
     return settings;
-}
-
-function getDateOnlyDifferenceInDays(from: string | Date, to: string | Date): number {
-    return Math.floor((toDateOnly(to).getTime() - toDateOnly(from).getTime()) / DAY_MS);
 }
 
 function addUtcDays(date: Date, days: number): Date {
@@ -393,12 +393,11 @@ export async function POST(request: NextRequest) {
                 );
             }
 
-            // Rule 2: Dynamic Advance Notice (Default: 3 days)
-            const diffDays = getDateOnlyDifferenceInDays(new Date(), startDate);
-
-            if (diffDays < vacationSettings.advanceNoticeDays) {
+            // Rule 2: Signed advance notice.
+            // Positive values require future notice; negative values allow limited backdating.
+            if (!isLeaveDateAllowedByAdvanceNotice(startDate, new Date(), vacationSettings.advanceNoticeDays)) {
                 return NextResponse.json(
-                    { error: `การลาพักร้อนต้องแจ้งล่วงหน้าอย่างน้อย ${vacationSettings.advanceNoticeDays} วัน` },
+                    { error: formatVacationAdvanceNoticeError(vacationSettings.advanceNoticeDays) },
                     { status: 400 }
                 );
             }

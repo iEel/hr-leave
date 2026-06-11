@@ -608,6 +608,7 @@ sequenceDiagram
   - แก้ไข: เพิ่ม sync `LEAVE_CARRYOVER_LIMIT` → `LeaveQuotaSettings` (maxCarryOverDays + allowCarryOver) สำหรับ VACATION
 - [x] **Vacation Probation Eligibility** - ลาพักร้อนเริ่มใช้สิทธิ์จากวันที่ผ่านทดลองงานจริง + จำนวนปีที่ตั้งค่า
   - HR ตั้งค่า `PROBATION_STANDARD_DAYS`, `VACATION_AFTER_PROBATION_YEARS`, `LEAVE_ADVANCE_DAYS` ใน `/hr/settings` กลุ่ม `กฏการลา`
+  - `LEAVE_ADVANCE_DAYS` เป็น signed integer: `3` = ต้องขอล่วงหน้า 3 วัน, `0` = ขอวันเดียวกันได้, `-30` = ลาย้อนหลังได้ไม่เกิน 30 วัน
   - HR กรอก `probationExtensionDays`, `probationOverrideDate`, `probationNote` ได้ที่ `/hr/employees`
   - ถ้า eligible date อยู่ภายในปีงบประมาณ ให้สิทธิ์พักร้อนเต็มปี ไม่มี prorate
   - การสร้าง balance, request, bulk import และ year-end ใช้ปีงบประมาณจาก `LEAVE_YEAR_START`
@@ -878,7 +879,7 @@ sequenceDiagram
 ### ประเภทการลา (9 ประเภท):
 | Type | ชื่อ | สิทธิ์/ปี | เงื่อนไข |
 |------|------|----------|----------|
-| VACATION | พักร้อน | 6 วัน | ผ่านทดลองงานจริง + `VACATION_AFTER_PROBATION_YEARS` |
+| VACATION | พักร้อน | 6 วัน | ผ่านทดลองงานจริง + `VACATION_AFTER_PROBATION_YEARS`, `LEAVE_ADVANCE_DAYS` รองรับค่าติดลบเพื่ออนุญาตย้อนหลัง |
 | SICK | ลาป่วย | 30 วัน | >= 3 วัน ต้องมีใบแพทย์ |
 | PERSONAL | ลากิจ | 10 วัน | - |
 | MATERNITY | ลาคลอด | 120 วัน | ผู้หญิงเท่านั้น |

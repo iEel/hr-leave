@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getPool } from '@/lib/db';
+import { parseAdvanceNoticeDays } from '@/lib/leave-advance-notice';
 import {
     calculateProbationEndDate,
     calculateVacationEligibleDate,
@@ -93,7 +94,7 @@ function buildSettings(rows: Array<{ settingKey: string; settingValue: string | 
                 DEFAULT_VACATION_AFTER_PROBATION_YEARS
             );
         } else if (row.settingKey === 'LEAVE_ADVANCE_DAYS') {
-            settings.advanceNoticeDays = parseNonNegativeInteger(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
+            settings.advanceNoticeDays = parseAdvanceNoticeDays(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
         } else if (row.settingKey === 'LEAVE_YEAR_START') {
             settings.fiscalYearStart = parseFiscalYearStart(row.settingValue);
         }

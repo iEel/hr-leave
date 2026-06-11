@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { redirect } from 'next/navigation';
 import { getPool } from '@/lib/db';
 import { formatLeaveDays, formatMinutesToDisplay } from '@/lib/leave-utils';
+import { parseAdvanceNoticeDays } from '@/lib/leave-advance-notice';
 import {
     getFiscalYearRange,
     isVacationEligibleOnDate,
@@ -142,7 +143,7 @@ function buildSettings(rows: SettingRow[]): Settings {
                 DEFAULT_VACATION_AFTER_PROBATION_YEARS
             );
         } else if (row.settingKey === 'LEAVE_ADVANCE_DAYS') {
-            settings.advanceNoticeDays = parseNonNegativeInteger(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
+            settings.advanceNoticeDays = parseAdvanceNoticeDays(row.settingValue, DEFAULT_ADVANCE_NOTICE_DAYS);
         } else if (row.settingKey === 'LEAVE_YEAR_START') {
             settings.fiscalYearStart = parseFiscalYearStart(row.settingValue);
         }

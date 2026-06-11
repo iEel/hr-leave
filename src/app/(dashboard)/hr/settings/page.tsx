@@ -40,7 +40,7 @@ const SETTING_GROUPS = [
         settings: [
             { key: 'PROBATION_STANDARD_DAYS', label: 'ระยะทดลองงานมาตรฐาน (วัน)', type: 'number' },
             { key: 'VACATION_AFTER_PROBATION_YEARS', label: 'ลาพักร้อนเริ่มหลังผ่านทดลองงาน (ปี)', type: 'number' },
-            { key: 'LEAVE_ADVANCE_DAYS', label: 'ลาพักร้อนต้องขอล่วงหน้า (วัน)', type: 'number' },
+            { key: 'LEAVE_ADVANCE_DAYS', label: 'ลาพักร้อนล่วงหน้า/ย้อนหลัง (วัน)', type: 'number' },
             { key: 'LEAVE_SICK_CERT_DAYS', label: 'ลาป่วยกี่วันต้องมีใบรับรองแพทย์', type: 'number' },
         ]
     },
@@ -53,6 +53,14 @@ const SETTING_GROUPS = [
         ]
     }
 ];
+
+function getSettingDescription(key: string, fallback?: string) {
+    if (key === 'LEAVE_ADVANCE_DAYS') {
+        return 'เลขบวก = ต้องขอล่วงหน้า, 0 = ขอวันเดียวกันได้, เลขติดลบ = ย้อนหลังได้ไม่เกินจำนวนวัน';
+    }
+
+    return fallback;
+}
 
 export default function SystemSettingsPage() {
     const [settings, setSettings] = useState<SettingsData>({});
@@ -173,8 +181,10 @@ export default function SystemSettingsPage() {
                                             onChange={(e) => handleChange(setting.key, e.target.value)}
                                             className="w-full p-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-900 dark:text-white"
                                         />
-                                        {settings[setting.key]?.description && (
-                                            <p className="mt-1 text-xs text-gray-500">{settings[setting.key].description}</p>
+                                        {getSettingDescription(setting.key, settings[setting.key]?.description) && (
+                                            <p className="mt-1 text-xs text-gray-500">
+                                                {getSettingDescription(setting.key, settings[setting.key]?.description)}
+                                            </p>
                                         )}
                                     </div>
                                 ))}

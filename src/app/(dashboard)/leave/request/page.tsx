@@ -32,6 +32,11 @@ import {
     validateTimeRange,
     hoursToDays,
 } from '@/lib/leave-utils';
+import {
+    formatAdvanceNoticeRule,
+    formatVacationAdvanceNoticeError,
+    isLeaveDateAllowedByAdvanceNotice,
+} from '@/lib/leave-advance-notice';
 
 type LeaveTypeOption = {
     value: string;
@@ -414,6 +419,7 @@ export default function LeaveRequestPage() {
         !vacationEligibilityFetchFailed &&
         vacationEligibility?.isEligibleToday === true &&
         vacationEligibility.entitledInCurrentFiscalYear === true;
+    const vacationAdvanceNoticeDays = vacationEligibility?.advanceNoticeDays ?? leaveRules.advanceNoticeDays;
     const vacationEligibilityPanelClasses = isVacationReady
         ? 'mt-4 p-4 rounded-xl bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800'
         : 'mt-4 p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
@@ -455,6 +461,9 @@ export default function LeaveRequestPage() {
                 }
                 if (!vacationEligibility.entitledInCurrentFiscalYear) {
                     throw new Error('ยังไม่มีสิทธิ์ลาพักร้อนในปีงบประมาณปัจจุบัน กรุณาติดต่อฝ่าย HR');
+                }
+                if (!isLeaveDateAllowedByAdvanceNotice(startDate, new Date(), vacationAdvanceNoticeDays)) {
+                    throw new Error(formatVacationAdvanceNoticeError(vacationAdvanceNoticeDays));
                 }
             }
             if (isHourlyMode) {
@@ -738,7 +747,7 @@ export default function LeaveRequestPage() {
                                                 มีสิทธิ์ลาพักร้อนแล้ว
                                             </p>
                                             <p className={vacationEligibilityBodyClasses}>
-                                                สามารถยื่นคำขอลาพักร้อนได้ตามเงื่อนไขการแจ้งล่วงหน้า
+                                                สามารถยื่นคำขอลาพักร้อนได้ตามเงื่อนไขวันที่ลา
                                             </p>
                                         </>
                                     )}
@@ -757,9 +766,9 @@ export default function LeaveRequestPage() {
                                             </dd>
                                         </div>
                                         <div>
-                                            <dt className="text-gray-500 dark:text-gray-400">แจ้งล่วงหน้า</dt>
+                                            <dt className="text-gray-500 dark:text-gray-400">เงื่อนไขวันที่ลา</dt>
                                             <dd className="font-medium text-gray-800 dark:text-gray-200">
-                                                อย่างน้อย {vacationEligibility?.advanceNoticeDays ?? leaveRules.advanceNoticeDays} วัน
+                                                {formatAdvanceNoticeRule(vacationAdvanceNoticeDays)}
                                             </dd>
                                         </div>
                                         <div>
