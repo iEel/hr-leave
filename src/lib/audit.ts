@@ -26,7 +26,11 @@ export type AuditAction =
     | 'CREATE_WORKING_SATURDAY'
     | 'DELETE_WORKING_SATURDAY'
     | 'CREATE_DELEGATE'
-    | 'CANCEL_DELEGATE';
+    | 'CANCEL_DELEGATE'
+    | 'CREATE_ATTENDANCE_DEVICE'
+    | 'UPDATE_ATTENDANCE_DEVICE'
+    | 'TEST_ATTENDANCE_DEVICE'
+    | 'SYNC_ATTENDANCE_DEVICE';
 
 export type TargetTable =
     | 'Users'
@@ -37,7 +41,9 @@ export type TargetTable =
     | 'SystemSettings'
     | 'Companies'
     | 'WorkingSaturdays'
-    | 'DelegateApprovers';
+    | 'DelegateApprovers'
+    | 'AttendanceDevices'
+    | 'AttendanceSyncRuns';
 
 interface AuditLogParams {
     userId: number;
@@ -116,7 +122,11 @@ export function getActionDisplayName(action: AuditAction): string {
         'CREATE_WORKING_SATURDAY': 'เพิ่มวันเสาร์ทำงาน',
         'DELETE_WORKING_SATURDAY': 'ลบวันเสาร์ทำงาน',
         'CREATE_DELEGATE': 'มอบหมายผู้อนุมัติแทน',
-        'CANCEL_DELEGATE': 'ยกเลิกผู้อนุมัติแทน'
+        'CANCEL_DELEGATE': 'ยกเลิกผู้อนุมัติแทน',
+        'CREATE_ATTENDANCE_DEVICE': 'เพิ่มเครื่องบันทึกเวลา',
+        'UPDATE_ATTENDANCE_DEVICE': 'แก้ไขเครื่องบันทึกเวลา',
+        'TEST_ATTENDANCE_DEVICE': 'ทดสอบเครื่องบันทึกเวลา',
+        'SYNC_ATTENDANCE_DEVICE': 'ซิงก์เครื่องบันทึกเวลา'
     };
     return names[action] || action;
 }
