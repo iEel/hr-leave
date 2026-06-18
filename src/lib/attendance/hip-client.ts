@@ -1,6 +1,7 @@
 import net from 'node:net';
 import {
     buildHipFrame,
+    buildHipHandshakeFrame,
     decodeHipRecord,
     parseNewCountResponse,
     splitA1Records,
@@ -11,6 +12,8 @@ export interface HipClientConfig {
     ipAddress: string;
     port: number;
     timeoutMs: number;
+    passCode?: string | number | null;
+    retryCount?: number;
 }
 
 export interface HipIncrementalClient {
@@ -20,34 +23,35 @@ export interface HipIncrementalClient {
     confirmRead(newCount: number): Promise<void>;
 }
 
+type HipCommandInput = Omit<Parameters<typeof buildHipFrame>[0], 'seq'>;
+
 export class HipCmif68sClient implements HipIncrementalClient {
     private sequence = 0;
+    private readonly passCode: number;
+    private readonly retryCount: number;
 
-    constructor(private readonly config: HipClientConfig) {}
+    constructor(private readonly config: HipClientConfig) {
+        this.passCode = normalizePassCode(config.passCode);
+        this.retryCount = normalizeRetryCount(config.retryCount);
+    }
 
     async testConnection(): Promise<void> {
-        const seq = this.nextSequence();
-        const frame = buildHipFrame({
-            cmd: 0xb4,
-            field4: 6,
-            field8: 0xffff0000,
-            length: 0,
-            seq,
-        });
-
-        await this.sendFrame(frame, 10);
+        await this.getNewCount();
     }
 
     async getNewCount(): Promise<number> {
-        const seq = this.nextSequence();
-        const frame = buildHipFrame({
-            cmd: 0xb4,
-            field4: 6,
-            field8: 0xffff0000,
-            length: 0,
-            seq,
-        });
-        const response = await this.sendFrame(frame, 10);
+        const { response, seq } = await this.withRetries(
+            () => this.sendCommand(
+                {
+                    cmd: 0xb4,
+                    field4: 6,
+                    field8: 0xffff0000,
+                    length: 0,
+                },
+                10
+            ),
+            'get new attendance count'
+        );
 
         return parseNewCountResponse(response, seq);
     }
@@ -57,15 +61,18 @@ export class HipCmif68sClient implements HipIncrementalClient {
             return [];
         }
 
-        const seq = this.nextSequence();
-        const frame = buildHipFrame({
-            cmd: 0xa1,
-            field4: 0,
-            field8: newCount,
-            length: newCount * 20,
-            seq,
-        });
-        const response = await this.sendFrame(frame, 12 + newCount * 20);
+        const { response } = await this.withRetries(
+            () => this.sendCommand(
+                {
+                    cmd: 0xa1,
+                    field4: 0,
+                    field8: newCount,
+                    length: newCount * 20,
+                },
+                12 + newCount * 20
+            ),
+            'read new attendance records'
+        );
 
         return splitA1Records(response, newCount).map((record) => ({
             ...decodeHipRecord(record),
@@ -79,16 +86,51 @@ export class HipCmif68sClient implements HipIncrementalClient {
             return;
         }
 
-        const seq = this.nextSequence();
-        const frame = buildHipFrame({
-            cmd: 0xa2,
-            field4: newCount,
-            field8: 0xffff0000,
-            length: 0,
-            seq,
-        });
+        // Do not retry A2 blindly: the command advances the device cursor if the device received it.
+        await this.sendCommand(
+            {
+                cmd: 0xa2,
+                field4: newCount,
+                field8: 0xffff0000,
+                length: 0,
+            },
+            10
+        );
+    }
 
-        await this.sendFrame(frame, 10);
+    private async sendCommand(
+        frameInput: HipCommandInput,
+        minimumBytes: number
+    ): Promise<{ response: Buffer; seq: number }> {
+        const handshakeSeq = this.nextSequence();
+        const commandSeq = this.nextSequence();
+        const handshakeFrame = buildHipHandshakeFrame(this.passCode, handshakeSeq);
+        const commandFrame = buildHipFrame({
+            ...frameInput,
+            seq: commandSeq,
+        });
+        const response = await this.sendFrame(handshakeFrame, commandFrame, minimumBytes);
+
+        return { response, seq: commandSeq };
+    }
+
+    private async withRetries<T>(operation: () => Promise<T>, action: string): Promise<T> {
+        const attempts = this.retryCount + 1;
+        let lastError: unknown;
+
+        for (let attempt = 1; attempt <= attempts; attempt += 1) {
+            try {
+                return await operation();
+            } catch (error) {
+                lastError = error;
+                if (attempt === attempts) {
+                    break;
+                }
+            }
+        }
+
+        const message = lastError instanceof Error ? lastError.message : String(lastError);
+        throw new Error(`HIP ${action} failed after ${attempts} attempt(s): ${message}`);
     }
 
     private nextSequence(): number {
@@ -96,9 +138,10 @@ export class HipCmif68sClient implements HipIncrementalClient {
         return this.sequence;
     }
 
-    private sendFrame(frame: Buffer, minimumBytes: number): Promise<Buffer> {
+    private sendFrame(handshakeFrame: Buffer, commandFrame: Buffer, minimumBytes: number): Promise<Buffer> {
         return new Promise((resolve, reject) => {
             const chunks: Buffer[] = [];
+            let phase: 'handshake' | 'command' = 'handshake';
             let settled = false;
             const socket = net.createConnection({
                 host: this.config.ipAddress,
@@ -122,13 +165,21 @@ export class HipCmif68sClient implements HipIncrementalClient {
             }, this.config.timeoutMs);
 
             socket.once('connect', () => {
-                socket.write(frame);
+                socket.write(handshakeFrame);
             });
 
             socket.on('data', (chunk) => {
                 chunks.push(chunk);
                 const response = Buffer.concat(chunks);
-                if (response.length >= minimumBytes) {
+
+                if (phase === 'handshake' && response.length >= 10) {
+                    chunks.length = 0;
+                    phase = 'command';
+                    socket.write(commandFrame);
+                    return;
+                }
+
+                if (phase === 'command' && response.length >= minimumBytes) {
                     settle(() => {
                         clearTimeout(timeout);
                         socket.end();
@@ -147,7 +198,7 @@ export class HipCmif68sClient implements HipIncrementalClient {
 
             socket.once('close', () => {
                 const response = Buffer.concat(chunks);
-                if (response.length >= minimumBytes) {
+                if (phase === 'command' && response.length >= minimumBytes) {
                     settle(() => {
                         clearTimeout(timeout);
                         resolve(response);
@@ -159,11 +210,32 @@ export class HipCmif68sClient implements HipIncrementalClient {
                     clearTimeout(timeout);
                     reject(
                         new Error(
-                            `HIP TCP socket closed before ${minimumBytes} bytes were received; received ${response.length}`
+                            `HIP TCP socket closed during ${phase} after ${response.length} byte(s); expected ${phase === 'handshake' ? 10 : minimumBytes}`
                         )
                     );
                 });
             });
         });
     }
+}
+
+function normalizePassCode(passCode: string | number | null | undefined): number {
+    const normalized = passCode == null || passCode === '' ? 0 : Number(passCode);
+    if (!Number.isInteger(normalized) || normalized < 0 || normalized > 0xffffffff) {
+        throw new Error('HIP pass code must be an unsigned 32-bit integer');
+    }
+
+    return normalized;
+}
+
+function normalizeRetryCount(retryCount: number | null | undefined): number {
+    if (retryCount == null) {
+        return 0;
+    }
+
+    if (!Number.isInteger(retryCount) || retryCount < 0 || retryCount > 5) {
+        throw new Error('HIP retry count must be an integer between 0 and 5');
+    }
+
+    return retryCount;
 }

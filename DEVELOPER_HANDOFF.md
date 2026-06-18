@@ -341,6 +341,7 @@ npm run dev
 - `AttendanceDevices.lastSyncAt`, `nextSyncAt`, `syncLockUntil`: ใช้ควบคุม incremental sync และกัน sync ซ้อน
 - `AttendanceLogs.deviceId`: FK → AttendanceDevices
 - `AttendanceLogs.userKey`: เลขพนักงานจากเครื่อง HIP
+- `AttendanceLogs.employeeId`: ค่า `userKey` ที่แปลงเป็น string เพื่อผูกกับ `Users.employeeId`
 - `AttendanceLogs.recordTime`: เวลาที่ระบบใช้แสดงผล หลัง apply calibration
 - `AttendanceLogs.rawRecordTime`: เวลา raw ที่ decode ได้ก่อนปรับปี
 - `AttendanceLogs.verifyType`, `verifyCode`: FP/FACE/UNKNOWN_0x30 และ code จากเครื่อง
@@ -981,6 +982,7 @@ sequenceDiagram
 - ถ้า sync ล่มหลังอ่าน `A1` แต่ก่อนบันทึก DB ห้ามส่ง `A2` เพื่อให้ดึงซ้ำได้รอบถัดไป
 - `AttendanceLogs` มี unique dedupe key ป้องกันข้อมูลซ้ำเมื่อ retry
 - หน้า Employee (`/attendance`) แสดงเฉพาะ `วันที่`, `เวลาเข้า`, `เวลาออก` ของตัวเอง พร้อม filter เดือน/ช่วงวันที่/เวลาเข้าเกินค่าที่ระบุ
+- เวอร์ชันนี้ใช้ `HIP user_key = Users.employeeId` เป็นเงื่อนไข mapping พนักงาน; ก่อนเปิดใช้จริงต้องตรวจว่าเลขบนเครื่อง HIP ตรงกับรหัสพนักงานในระบบ หากไม่ตรงให้เพิ่ม mapping table/UI เป็นงานถัดไปก่อน sync production
 - เวอร์ชันนี้ยังไม่คำนวณกะ, ชั่วโมงทำงาน, สาย, ออกก่อน หรือสถานะทำงาน เพื่อไม่กระทบ module อื่น
 
 ### Timezone:
@@ -1000,8 +1002,9 @@ sequenceDiagram
    ```
 4. เข้า System Admin → `เครื่องบันทึกเวลา` เพื่อเปิดใช้งานเครื่อง, ตั้งสาขา, IP, port, pass และความถี่ sync
 5. กด `ทดสอบ` ก่อน `Sync now` ทุกครั้งหลังแก้ IP/port/pass
-6. Sync ครั้งแรกของ incremental endpoint จะดึงเฉพาะ records ที่เครื่องนับเป็น "new" ตาม protocol; หากต้อง backfill ประวัติย้อนหลังทั้งหมดให้ทำเป็นงานแยก ไม่ควรส่ง `A2` ก่อนบันทึก DB สำเร็จ
-7. ไม่ควรรัน cron ซ้อนกันหลายเครื่อง scheduler; ระบบมี lock ใน DB แต่ควรตั้ง scheduler ให้มีตัวเดียวต่อ environment
+6. ตรวจว่า `user_key` บนเครื่อง HIP ตรงกับ `Users.employeeId` ในระบบก่อนเปิด sync; ถ้าเลขไม่ตรง ข้อมูลจะไม่แสดงในหน้า Employee จนกว่าจะมี mapping layer
+7. Sync ครั้งแรกของ incremental endpoint จะดึงเฉพาะ records ที่เครื่องนับเป็น "new" ตาม protocol; หากต้อง backfill ประวัติย้อนหลังทั้งหมดให้ทำเป็นงานแยก ไม่ควรส่ง `A2` ก่อนบันทึก DB สำเร็จ
+8. ไม่ควรรัน cron ซ้อนกันหลายเครื่อง scheduler; ระบบมี lock ใน DB แต่ควรตั้ง scheduler ให้มีตัวเดียวต่อ environment
 
 ### 🛠️ Modal & Popup Positioning (Frontend)
 หากพบปัญหา **Modal เด้งอยู่ข้างล่าง** หรือไม่อยู่กึ่งกลางหน้าจอ สาเหตุเกิดจาก `transform` property ใน class `animate-fade-in` ของ Parent Container ทำให้ `fixed` positioning ทำงานผิดพลาด

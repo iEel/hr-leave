@@ -1,4 +1,3 @@
-import { sql, getPool } from '@/lib/db';
 import { HipCmif68sClient, type HipIncrementalClient } from './hip-client';
 import {
     createSyncRun,
@@ -8,6 +7,9 @@ import {
     releaseDeviceSyncLock,
     tryAcquireDeviceSyncLock,
     updateDeviceSyncStatus,
+    type AttendanceDeviceConfigRecord,
+    type AttendanceRecordInsertInput,
+    type InsertAttendanceRecordsResult,
 } from './repository';
 import type { AttendanceSyncStatus, AttendanceTriggerType } from './types';
 
@@ -29,16 +31,39 @@ export interface RunAttendanceIncrementalSyncResult {
     errorMessage: string | null;
 }
 
+interface AttendanceSyncTransaction {
+    begin(): Promise<unknown>;
+    commit(): Promise<unknown>;
+    rollback(): Promise<unknown>;
+}
+
+export interface AttendanceSyncDependencies {
+    getDeviceConfig(deviceId: number | string): Promise<AttendanceDeviceConfigRecord | null>;
+    tryAcquireLock(deviceId: number, owner: string): Promise<boolean>;
+    releaseLock(deviceId: number, owner: string): Promise<boolean>;
+    createRun(input: Parameters<typeof createSyncRun>[0]): Promise<number>;
+    finishRun(input: Parameters<typeof finishSyncRun>[0]): Promise<boolean>;
+    updateDeviceStatus(deviceId: number, result: Parameters<typeof updateDeviceSyncStatus>[1]): Promise<boolean>;
+    createTransaction(): Promise<AttendanceSyncTransaction>;
+    insertRecords(
+        transaction: AttendanceSyncTransaction,
+        deviceId: number,
+        records: AttendanceRecordInsertInput[]
+    ): Promise<InsertAttendanceRecordsResult>;
+    createClient(device: AttendanceDeviceConfigRecord): HipIncrementalClient;
+}
+
 export async function runAttendanceIncrementalSync(
-    input: RunAttendanceIncrementalSyncInput
+    input: RunAttendanceIncrementalSyncInput,
+    dependencies = createDefaultDependencies()
 ): Promise<RunAttendanceIncrementalSyncResult> {
-    const device = await getAttendanceDeviceConfig(input.deviceId);
+    const device = await dependencies.getDeviceConfig(input.deviceId);
     if (!device) {
         throw new Error(`Attendance device ${input.deviceId} was not found`);
     }
 
     const owner = createLockOwner(device.id);
-    const lockAcquired = await tryAcquireDeviceSyncLock(device.id, owner);
+    const lockAcquired = await dependencies.tryAcquireLock(device.id, owner);
 
     if (!lockAcquired) {
         return {
@@ -61,23 +86,19 @@ export async function runAttendanceIncrementalSync(
     let confirmedCount = 0;
 
     try {
-        runId = await createSyncRun({
+        runId = await dependencies.createRun({
             deviceId: device.id,
             mode: 'INCREMENTAL',
             triggerType: input.triggerType,
             triggeredByUserId: input.triggeredByUserId ?? null,
         });
 
-        const client = input.client ?? new HipCmif68sClient({
-            ipAddress: device.host,
-            port: device.port,
-            timeoutMs: device.timeoutMs,
-        });
+        const client = input.client ?? dependencies.createClient(device);
 
         newCount = await client.getNewCount();
 
         if (newCount === 0) {
-            await finishSyncRun({
+            await dependencies.finishRun({
                 syncRunId: runId,
                 status: 'SUCCESS',
                 newCount,
@@ -87,7 +108,7 @@ export async function runAttendanceIncrementalSync(
                 confirmedCount: 0,
                 errorMessage: null,
             });
-            await updateDeviceSyncStatus(device.id, {
+            await dependencies.updateDeviceStatus(device.id, {
                 status: 'SUCCESS',
                 lastError: null,
                 lastNewCount: 0,
@@ -111,12 +132,11 @@ export async function runAttendanceIncrementalSync(
             throw new Error(`HIP A1 returned ${records.length} records for new count ${newCount}`);
         }
 
-        const pool = await getPool();
-        const transaction = new sql.Transaction(pool);
+        const transaction = await dependencies.createTransaction();
 
         try {
             await transaction.begin();
-            const insertResult = await insertAttendanceRecordsInTransaction(transaction, device.id, records);
+            const insertResult = await dependencies.insertRecords(transaction, device.id, records);
             insertedCount = insertResult.insertedCount;
             duplicateCount = insertResult.duplicateCount;
             await transaction.commit();
@@ -128,7 +148,7 @@ export async function runAttendanceIncrementalSync(
         await client.confirmRead(newCount);
         confirmedCount = newCount;
 
-        await finishSyncRun({
+        await dependencies.finishRun({
             syncRunId: runId,
             status: 'SUCCESS',
             newCount,
@@ -138,7 +158,7 @@ export async function runAttendanceIncrementalSync(
             confirmedCount,
             errorMessage: null,
         });
-        await updateDeviceSyncStatus(device.id, {
+        await dependencies.updateDeviceStatus(device.id, {
             status: 'SUCCESS',
             lastError: null,
             lastNewCount: newCount,
@@ -158,7 +178,7 @@ export async function runAttendanceIncrementalSync(
         const errorMessage = error instanceof Error ? error.message : String(error);
 
         if (runId !== 0) {
-            await finishSyncRun({
+            await dependencies.finishRun({
                 syncRunId: runId,
                 status: 'FAILED',
                 newCount,
@@ -170,7 +190,7 @@ export async function runAttendanceIncrementalSync(
             });
         }
 
-        await updateDeviceSyncStatus(device.id, {
+        await dependencies.updateDeviceStatus(device.id, {
             status: 'FAILED',
             lastError: errorMessage,
             lastNewCount: newCount,
@@ -189,7 +209,7 @@ export async function runAttendanceIncrementalSync(
             errorMessage,
         };
     } finally {
-        await releaseDeviceSyncLock(device.id, owner);
+        await dependencies.releaseLock(device.id, owner);
     }
 }
 
@@ -197,7 +217,36 @@ function createLockOwner(deviceId: number): string {
     return `attendance-sync:${deviceId}:${process.pid}:${Date.now()}`;
 }
 
-async function rollbackTransaction(transaction: InstanceType<typeof sql.Transaction>): Promise<void> {
+function createDefaultDependencies(): AttendanceSyncDependencies {
+    return {
+        getDeviceConfig: getAttendanceDeviceConfig,
+        tryAcquireLock: tryAcquireDeviceSyncLock,
+        releaseLock: releaseDeviceSyncLock,
+        createRun: createSyncRun,
+        finishRun: finishSyncRun,
+        updateDeviceStatus: updateDeviceSyncStatus,
+        createTransaction: async () => {
+            const { sql, getPool } = await import('@/lib/db');
+            const pool = await getPool();
+            return new sql.Transaction(pool);
+        },
+        insertRecords: (transaction, deviceId, records) =>
+            insertAttendanceRecordsInTransaction(
+                transaction as unknown as Parameters<typeof insertAttendanceRecordsInTransaction>[0],
+                deviceId,
+                records
+            ),
+        createClient: (device) => new HipCmif68sClient({
+            ipAddress: device.host,
+            port: device.port,
+            timeoutMs: device.timeoutMs,
+            passCode: device.passCode,
+            retryCount: device.retryCount,
+        }),
+    };
+}
+
+async function rollbackTransaction(transaction: AttendanceSyncTransaction): Promise<void> {
     try {
         await transaction.rollback();
     } catch {

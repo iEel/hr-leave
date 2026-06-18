@@ -33,6 +33,16 @@ export function buildHipFrame(input: HipFrameInput): Buffer {
     return frame;
 }
 
+export function buildHipHandshakeFrame(passCode: number, seq: number): Buffer {
+    return buildHipFrame({
+        cmd: 0x80,
+        field4: passCode,
+        field8: 0xffff0000,
+        length: 0,
+        seq,
+    });
+}
+
 export function parseNewCountResponse(response: Buffer, expectedSeq: number): number {
     if (response.length < 10) {
         throw new Error(`HIP new-count response is too short: ${response.length} bytes`);

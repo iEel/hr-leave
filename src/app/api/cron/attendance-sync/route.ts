@@ -3,6 +3,14 @@ import { listDueAttendanceDevices } from '@/lib/attendance/repository';
 import { runAttendanceIncrementalSync } from '@/lib/attendance/sync-service';
 
 export async function GET(request: NextRequest) {
+    return runCronAttendanceSync(request);
+}
+
+export async function POST(request: NextRequest) {
+    return runCronAttendanceSync(request);
+}
+
+async function runCronAttendanceSync(request: NextRequest) {
     if (!isAuthorized(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }

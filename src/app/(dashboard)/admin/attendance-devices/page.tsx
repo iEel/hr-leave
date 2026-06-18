@@ -219,7 +219,7 @@ export default function AttendanceDevicesPage() {
             } else {
                 setMessage({ type: 'error', text: getErrorMessage(data, 'ไม่สามารถโหลดข้อมูลเครื่องบันทึกเวลาได้') });
             }
-        } catch (error) {
+        } catch {
             setMessage({ type: 'error', text: 'ไม่สามารถโหลดข้อมูลเครื่องบันทึกเวลาได้' });
         } finally {
             setLoadingDevices(false);
@@ -243,7 +243,7 @@ export default function AttendanceDevicesPage() {
             } else {
                 setMessage({ type: 'error', text: getErrorMessage(data, 'ไม่สามารถโหลดประวัติ Sync ได้') });
             }
-        } catch (error) {
+        } catch {
             setMessage({ type: 'error', text: 'ไม่สามารถโหลดประวัติ Sync ได้' });
         } finally {
             setLoadingRuns(false);
@@ -298,7 +298,7 @@ export default function AttendanceDevicesPage() {
             } else {
                 setMessage({ type: 'error', text: getErrorMessage(data, 'ไม่สามารถบันทึกเครื่องบันทึกเวลาได้') });
             }
-        } catch (error) {
+        } catch {
             setMessage({ type: 'error', text: 'ไม่สามารถบันทึกเครื่องบันทึกเวลาได้' });
         } finally {
             setSaving(false);
@@ -327,7 +327,7 @@ export default function AttendanceDevicesPage() {
                     text: getErrorMessage(data, action === 'test' ? 'ทดสอบการเชื่อมต่อไม่สำเร็จ' : 'Sync ไม่สำเร็จ'),
                 });
             }
-        } catch (error) {
+        } catch {
             setMessage({
                 type: 'error',
                 text: action === 'test' ? 'ทดสอบการเชื่อมต่อไม่สำเร็จ' : 'Sync ไม่สำเร็จ',

@@ -139,6 +139,11 @@ function parseDeviceInput(body: DeviceRequestBody): { input: UpsertAttendanceDev
         return retryCount;
     }
 
+    const passCode = parsePassCode(body.passCode, id == null);
+    if ('error' in passCode) {
+        return passCode;
+    }
+
     return {
         input: {
             id,
@@ -146,7 +151,7 @@ function parseDeviceInput(body: DeviceRequestBody): { input: UpsertAttendanceDev
             branchName: parseOptionalString(body.branchName),
             host,
             port: port.value,
-            passCode: id == null ? parseOptionalString(body.passCode) ?? '0' : parseOptionalString(body.passCode),
+            passCode: passCode.value,
             isActive: parseBoolean(body.isActive, true),
             syncEnabled: parseBoolean(body.syncEnabled, false),
             syncFrequencyMinutes: syncFrequencyMinutes.value,
@@ -210,6 +215,24 @@ function parseNumberInRange(
     const parsed = value == null || value === '' ? defaultValue : Number(value);
     if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
         return { error: `${fieldName} must be between ${min} and ${max}` };
+    }
+
+    return { value: parsed };
+}
+
+function parsePassCode(value: unknown, isCreate: boolean): { value: string | null } | { error: string } {
+    const parsed = parseOptionalString(value);
+    if (parsed == null) {
+        return { value: isCreate ? '0' : null };
+    }
+
+    if (!/^\d+$/.test(parsed)) {
+        return { error: 'passCode must be a numeric HIP pass value' };
+    }
+
+    const numeric = Number(parsed);
+    if (!Number.isSafeInteger(numeric) || numeric < 0 || numeric > 0xffffffff) {
+        return { error: 'passCode must be between 0 and 4294967295' };
     }
 
     return { value: parsed };

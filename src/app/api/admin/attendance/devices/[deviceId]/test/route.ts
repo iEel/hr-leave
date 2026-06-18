@@ -30,6 +30,8 @@ export async function POST(
             ipAddress: device.host,
             port: device.port,
             timeoutMs: device.timeoutMs,
+            passCode: device.passCode,
+            retryCount: device.retryCount,
         });
 
         await client.testConnection();

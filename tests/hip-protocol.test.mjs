@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
     buildHipFrame,
+    buildHipHandshakeFrame,
     decodeHipRecord,
     parseNewCountResponse,
     splitA1Records,
@@ -11,6 +12,18 @@ assert.equal(
     buildHipFrame({ cmd: 0xb4, field4: 6, field8: 0xffff0000, length: 0, seq: 0x1234 }).toString('hex'),
     '55aa01b4060000000000ffff00003412',
     'B4 frame should use the documented 16-byte HIP header layout'
+);
+
+assert.equal(
+    buildHipHandshakeFrame(0, 0x0001).toString('hex'),
+    '55aa0180000000000000ffff00000100',
+    'handshake frame should match the documented pass=0 layout'
+);
+
+assert.equal(
+    buildHipHandshakeFrame(1234, 0x0002).subarray(4, 8).toString('hex'),
+    'd2040000',
+    'handshake frame should encode non-zero pass code in field4 little-endian'
 );
 
 assert.equal(
