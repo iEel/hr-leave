@@ -103,6 +103,7 @@ async function readDeviceRequestBody(request: NextRequest): Promise<{ body: Devi
 }
 
 function parseDeviceInput(body: DeviceRequestBody): { input: UpsertAttendanceDeviceInput } | { error: string } {
+    const id = normalizeOptionalId(body.id);
     const name = parseRequiredString(body.name);
     if (!name) {
         return { error: 'name is required' };
@@ -140,12 +141,12 @@ function parseDeviceInput(body: DeviceRequestBody): { input: UpsertAttendanceDev
 
     return {
         input: {
-            id: normalizeOptionalId(body.id),
+            id,
             name,
             branchName: parseOptionalString(body.branchName),
             host,
             port: port.value,
-            passCode: parseOptionalString(body.passCode) ?? '0',
+            passCode: id == null ? parseOptionalString(body.passCode) ?? '0' : parseOptionalString(body.passCode),
             isActive: parseBoolean(body.isActive, true),
             syncEnabled: parseBoolean(body.syncEnabled, false),
             syncFrequencyMinutes: syncFrequencyMinutes.value,

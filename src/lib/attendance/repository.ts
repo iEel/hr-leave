@@ -121,6 +121,14 @@ function normalizePassCode(passCode: string | null | undefined): string {
     return trimmed ? trimmed : '0';
 }
 
+function normalizeOptionalPassCode(passCode: string | null | undefined): string | null {
+    if (passCode == null) {
+        return null;
+    }
+
+    return normalizePassCode(passCode);
+}
+
 function toNullableIso(value: Date | string | null | undefined): string | null {
     if (!value) {
         return null;
@@ -244,7 +252,7 @@ function bindUpsertDeviceInput(request: import('mssql').Request, input: UpsertAt
         .input('protocol', input.protocol ?? 'HIP_CMIF68S')
         .input('ipAddress', input.host)
         .input('port', input.port ?? 5005)
-        .input('passCode', normalizePassCode(input.passCode))
+        .input('passCode', normalizeOptionalPassCode(input.passCode))
         .input('isActive', input.isActive ?? true)
         .input('syncEnabled', input.syncEnabled ?? false)
         .input('syncFrequencyMinutes', input.syncFrequencyMinutes ?? 60)
@@ -302,7 +310,7 @@ export async function upsertAttendanceDevice(
                     protocol = @protocol,
                     ipAddress = @ipAddress,
                     port = @port,
-                    passCode = @passCode,
+                    passCode = CASE WHEN @passCode IS NULL THEN passCode ELSE @passCode END,
                     isActive = @isActive,
                     syncEnabled = @syncEnabled,
                     syncFrequencyMinutes = @syncFrequencyMinutes,
@@ -341,7 +349,7 @@ export async function upsertAttendanceDevice(
             @protocol,
             @ipAddress,
             @port,
-            @passCode,
+            COALESCE(@passCode, '0'),
             @isActive,
             @syncEnabled,
             @syncFrequencyMinutes,

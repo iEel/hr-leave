@@ -25,6 +25,7 @@ import {
     HelpCircle,
     UserCheck,
     FileSpreadsheet,
+    Fingerprint,
 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { UserRole } from '@/types';
@@ -93,6 +94,7 @@ const hrNavItems: NavItem[] = [
 
 const adminNavItems: NavItem[] = [
     { href: '/admin/auth-settings', label: 'ตั้งค่า Authentication', icon: <Shield className="w-5 h-5" />, roles: [UserRole.ADMIN] },
+    { href: '/admin/attendance-devices', label: 'เครื่องบันทึกเวลา', icon: <Fingerprint className="w-5 h-5" />, roles: [UserRole.ADMIN] },
     { href: '/admin/rate-limit', label: 'Rate Limiting', icon: <Shield className="w-5 h-5" />, roles: [UserRole.ADMIN] },
     { href: '/admin/user-lifecycle', label: 'AD User Lifecycle', icon: <Users className="w-5 h-5" />, roles: [UserRole.ADMIN] },
     { href: '/admin/audit-logs', label: 'Audit Logs', icon: <Shield className="w-5 h-5" />, roles: [UserRole.ADMIN] },
