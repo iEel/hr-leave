@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 2 มิถุนายน 2026 (Manager Medical Attachments + Login UX)
+> 📅 อัปเดตล่าสุด: 18 มิถุนายน 2026 (HIP CMiF68S Attendance Sync)
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -40,6 +40,7 @@
 - ✅ HR จัดการพนักงาน
 - ✅ จัดการวันหยุด + วันเสาร์ทำงาน
 - ✅ System Security (Rate Limiting, Audit Logs)
+- ✅ เครื่องบันทึกเวลา HIP CMiF68S: ตั้งค่าอุปกรณ์, ดึงเวลาเข้า-ออกแบบ incremental, พนักงานดูประวัติของตัวเอง
 - ✅ Reports & Analytics
 - ✅ PWA Support (ติดตั้งเป็น App บน Mobile)
 
@@ -76,6 +77,7 @@ hr-leave/
 │       ├── add_ad_lifecycle_support.sql
 │       ├── add_companies_table.sql
 │       ├── add_cross_year_leave_support.sql
+│       ├── add_attendance_tables.sql
 │       ├── add_ishrstaff_column.sql
 │       ├── add_work_schedule.sql
 │       └── increase_decimal_precision.sql
@@ -100,6 +102,7 @@ hr-leave/
 │   │   │   │   └── history/page.tsx   # ประวัติการลา
 │   │   │   ├── approvals/page.tsx     # หน้าอนุมัติ (Manager)
 │   │   │   ├── holidays/page.tsx      # ดูวันหยุด (Employee)
+│   │   │   ├── attendance/page.tsx    # เวลาเข้า-ออกของพนักงาน
 │   │   │   ├── notifications/page.tsx # การแจ้งเตือน
 │   │   │   ├── profile/page.tsx       # โปรไฟล์
 │   │   │   ├── manager/              # หน้าสำหรับ Manager
@@ -121,6 +124,7 @@ hr-leave/
 │   │   │   │   └── leave-import/page.tsx # นำเข้าวันลา (Bulk Import)
 │   │   │   └── admin/                 # หน้าสำหรับ Admin
 │   │   │       ├── audit-logs/page.tsx     # Audit Logs
+│   │   │       ├── attendance-devices/page.tsx # ตั้งค่าเครื่องบันทึกเวลา
 │   │   │       ├── auth-settings/page.tsx  # ตั้งค่า Auth Mode
 │   │   │       ├── rate-limit/page.tsx     # Rate Limiting
 │   │   │       └── user-lifecycle/page.tsx # AD User Lifecycle
@@ -134,6 +138,8 @@ hr-leave/
 │   │   │   ├── leave/                 # Leave APIs
 │   │   │   ├── hr/                    # HR APIs (21 routes)
 │   │   │   ├── admin/                 # Admin APIs
+│   │   │   │   └── attendance/        # ตั้งค่า/ทดสอบ/ซิงก์เครื่องบันทึกเวลา
+│   │   │   ├── attendance/            # API เวลาเข้า-ออกของพนักงาน
 │   │   │   ├── manager/               # Manager APIs
 │   │   │   ├── email/                 # Email action (Magic Link)
 │   │   │   ├── cron/                  # Scheduled tasks
@@ -164,6 +170,7 @@ hr-leave/
 │   │   └── useTour.ts                 # Interactive tour hook
 │   ├── lib/
 │   │   ├── db.ts                      # Database connection (Singleton)
+│   │   ├── attendance/                # HIP protocol, TCP client, repository, sync service
 │   │   ├── date-utils.ts              # Timezone, Working days calc
 │   │   ├── leave-utils.ts             # Leave duration formatting + formatHourlyDuration
 │   │   ├── audit.ts                   # Audit logging helper
@@ -219,7 +226,8 @@ npm install
 1. เปิด SSMS และเชื่อมต่อไปที่ `192.168.110.106`
 2. สร้าง Database: `CREATE DATABASE HRLeave`
 3. รัน Script: `database/schema.sql`
-4. อัปเดต Password Admin:
+4. ถ้าเป็นฐานข้อมูลเดิม ให้รัน migration ที่ยังไม่ได้ลงตามลำดับ โดยฟีเจอร์เครื่องบันทึกเวลาใช้ `database/migrations/add_attendance_tables.sql`
+5. อัปเดต Password Admin:
 ```sql
 UPDATE Users 
 SET password = '$2b$10$SzYMuUujRokPSvpiekAVy.WtdlUebE.uMBDehf5BDXkdll8mBQQvU.' 
@@ -242,6 +250,7 @@ NEXTAUTH_URL=http://localhost:3002
 UPLOAD_DIR=./public/uploads
 TZ=Asia/Bangkok
 SESSION_TIMEOUT_MINUTES=15
+CRON_SECRET=change-this-for-production
 ```
 
 ### 4.5 Run Development
@@ -285,6 +294,9 @@ npm run dev
 | `LeaveRequestsArchive` | เก็บใบลาของพนักงานที่ถูก Archive |
 | `Companies` | ข้อมูลบริษัท (Dynamic CRUD, Color picker) |
 | `WorkingSaturdays` | วันเสาร์ทำงาน (date, startTime, endTime, workHours) |
+| `AttendanceDevices` | ตั้งค่าเครื่องบันทึกเวลาแต่ละสาขา/อุปกรณ์ |
+| `AttendanceLogs` | บันทึกเวลาเข้า-ออกที่ดึงจากเครื่อง HIP พร้อม raw hex สำหรับ audit |
+| `AttendanceSyncRuns` | ประวัติการ sync, จำนวน record, สถานะ, error message |
 
 ### Key Columns ใน Users (AD Lifecycle):
 - `isADUser`: BIT - ระบุว่าเป็น AD User หรือไม่
@@ -321,6 +333,19 @@ npm run dev
 - `leaveRequestId`: INT FK → LeaveRequests - ใบลาที่เกี่ยวข้อง
 - `year`: INT - ปีงบประมาณที่หักยอด (`LEAVE_YEAR_START`)
 - `usageAmount`: DECIMAL(8,4) - จำนวนวันที่หักในปีนั้น
+
+### Key Columns ใน AttendanceDevices / AttendanceLogs:
+- `AttendanceDevices.branchName`: NVARCHAR - ชื่อสาขา/พื้นที่ติดตั้งเครื่อง
+- `AttendanceDevices.ipAddress`, `port`, `pass`: ข้อมูลเชื่อมต่อ HIP CMiF68S ผ่าน TCP (`pass` ค่า default ของรุ่นนี้คือ `0`)
+- `AttendanceDevices.syncFrequencyMinutes`: ความถี่ sync อัตโนมัติ
+- `AttendanceDevices.lastSyncAt`, `nextSyncAt`, `syncLockUntil`: ใช้ควบคุม incremental sync และกัน sync ซ้อน
+- `AttendanceLogs.deviceId`: FK → AttendanceDevices
+- `AttendanceLogs.userKey`: เลขพนักงานจากเครื่อง HIP
+- `AttendanceLogs.recordTime`: เวลาที่ระบบใช้แสดงผล หลัง apply calibration
+- `AttendanceLogs.rawRecordTime`: เวลา raw ที่ decode ได้ก่อนปรับปี
+- `AttendanceLogs.verifyType`, `verifyCode`: FP/FACE/UNKNOWN_0x30 และ code จากเครื่อง
+- `AttendanceLogs.recordHex`: raw 20-byte record hex สำหรับ audit
+- `AttendanceLogs.dedupeKey`: unique key ป้องกันบันทึกซ้ำ (`deviceId + userKey + recordTime + verifyType + recordHex`)
 
 ---
 
@@ -692,6 +717,20 @@ sequenceDiagram
   - เปลี่ยน copy หน้า login เป็น `ชื่อผู้ใช้` / `กรอกชื่อ AD หรือรหัสพนักงาน`
   - เพิ่ม error mapping เพื่อไม่ให้ผู้ใช้เห็น error ดิบแบบ `ConfigurationConfiguration`
 
+### ✅ Phase 12: HIP CMiF68S Attendance Sync (18 มิ.ย. 2026)
+- [x] **Database Migration** - เพิ่ม `AttendanceDevices`, `AttendanceLogs`, `AttendanceSyncRuns` ใน `database/migrations/add_attendance_tables.sql`
+- [x] **HIP Custom Protocol** - ดึงข้อมูลจากเครื่อง HIP CMiF68S ผ่าน TCP โดยตรง ไม่ใช้ `node-zklib`
+  - เช็คจำนวนใหม่ด้วย `cmd 0xB4 / field4=6`
+  - อ่าน records ใหม่ด้วย `cmd 0xA1`
+  - ยืนยัน/mark ว่าดึงแล้วด้วย `cmd 0xA2` เฉพาะหลัง commit database สำเร็จเท่านั้น
+  - Decode เป็น `recordTime`, `rawRecordTime`, `userKey`, `verifyType`, `verifyCode`, `yearCode`, `recordHex`
+- [x] **Incremental Sync Service** - sync เฉพาะ record ใหม่, มี lock กัน sync ซ้อน, timeout/retry, transaction + dedupe ก่อน confirm เครื่อง
+- [x] **System Admin UI** (`/admin/attendance-devices`) - เพิ่ม/แก้ไขเครื่อง, ตั้งสาขา, IP, port, pass, ความถี่ sync, test connection, sync now, ดูประวัติ sync
+- [x] **Cron Endpoint** - `POST /api/cron/attendance-sync` ใช้ `x-cron-secret` header และเลือกเฉพาะเครื่องที่ถึงรอบ sync
+- [x] **Employee UI** (`/attendance`) - พนักงานดูเวลาเข้า/ออกของตัวเองเป็นเดือนหรือช่วงวันที่ และ filter เวลาเข้าเกินค่าที่ระบุ เช่น `08:45`
+- [x] **Dashboard Card** - เพิ่ม card เวลาเข้า-ออกวันนี้ โดยแสดงเฉพาะ `เวลาเข้า` และ `เวลาออก`
+- [x] **Tests** - `tests/hip-protocol.test.mjs`, `tests/attendance-summary.test.mjs`
+
 ### 🔲 สิ่งที่ยังรอ (Remaining)
 - [ ] LINE Notify Integration (optional)
 - [ ] Calendar iCal Export (optional)
@@ -717,6 +756,26 @@ sequenceDiagram
 | `src/types/index.ts` | All TypeScript types |
 | `src/lib/rate-limiter.ts` | Rate Limiting Logic |
 | `.env` | Environment variables |
+
+### 🕒 Attendance / HIP Time Clock
+
+| File | Purpose |
+|------|---------|
+| `src/lib/attendance/hip-protocol.ts` | Build/decode HIP CMiF68S frames and attendance records |
+| `src/lib/attendance/hip-client.ts` | Server-side TCP client สำหรับ B4/A1/A2 commands |
+| `src/lib/attendance/repository.ts` | Database helper สำหรับ devices, logs, sync runs, employee summary |
+| `src/lib/attendance/sync-service.ts` | Incremental sync orchestration: lock, pull, transaction, confirm |
+| `src/app/api/admin/attendance/devices/route.ts` | Admin CRUD สำหรับเครื่องบันทึกเวลา |
+| `src/app/api/admin/attendance/devices/[deviceId]/test/route.ts` | Test connection/read new count |
+| `src/app/api/admin/attendance/devices/[deviceId]/sync/route.ts` | Manual sync now |
+| `src/app/api/admin/attendance/sync-runs/route.ts` | ประวัติ sync runs |
+| `src/app/api/cron/attendance-sync/route.ts` | Scheduled incremental sync endpoint |
+| `src/app/api/attendance/me/route.ts` | Employee attendance history ของ user ปัจจุบัน |
+| `src/app/(dashboard)/admin/attendance-devices/page.tsx` | System Admin UI สำหรับเครื่องบันทึกเวลา |
+| `src/app/(dashboard)/attendance/page.tsx` | Employee UI เวลาเข้า-ออก |
+| `database/migrations/add_attendance_tables.sql` | Migration script |
+| `tests/hip-protocol.test.mjs` | Protocol/frame/decode tests |
+| `tests/attendance-summary.test.mjs` | Attendance summary/filter tests |
 
 ### 🔐 AD Lifecycle Management
 
@@ -850,6 +909,7 @@ sequenceDiagram
 | `/leave/request` | `app/(dashboard)/leave/request/page.tsx` | ฟอร์มขอลา |
 | `/leave/history` | `app/(dashboard)/leave/history/page.tsx` | ประวัติการลา |
 | `/holidays` | `app/(dashboard)/holidays/page.tsx` | ดูวันหยุด (Employee) |
+| `/attendance` | `app/(dashboard)/attendance/page.tsx` | เวลาเข้า-ออกของพนักงาน |
 | `/notifications` | `app/(dashboard)/notifications/page.tsx` | การแจ้งเตือน |
 | `/profile` | `app/(dashboard)/profile/page.tsx` | โปรไฟล์ |
 | `/approvals` | `app/(dashboard)/approvals/page.tsx` | หน้าอนุมัติ |
@@ -868,6 +928,7 @@ sequenceDiagram
 | `/hr/reports` | `app/(dashboard)/hr/reports/page.tsx` | รายงาน |
 | `/hr/leave-import` | `app/(dashboard)/hr/leave-import/page.tsx` | นำเข้าวันลา (Bulk Import) |
 | `/admin/audit-logs` | `app/(dashboard)/admin/audit-logs/page.tsx` | Audit Logs |
+| `/admin/attendance-devices` | `app/(dashboard)/admin/attendance-devices/page.tsx` | เครื่องบันทึกเวลา |
 | `/admin/auth-settings` | `app/(dashboard)/admin/auth-settings/page.tsx` | ตั้งค่า Auth Mode |
 | `/admin/rate-limit` | `app/(dashboard)/admin/rate-limit/page.tsx` | Rate Limiting |
 | `/admin/user-lifecycle` | `app/(dashboard)/admin/user-lifecycle/page.tsx` | Archive/Purge AD Users |
@@ -913,6 +974,15 @@ sequenceDiagram
 - ยกยอดพักร้อนได้เฉพาะเมื่อพนักงานมีสิทธิ์พักร้อนในปีงบต้นทาง
 - ปีงบปลายทางจะได้สิทธิ์พักร้อนเต็ม `LEAVE_QUOTA_VACATION` เมื่อ eligible date อยู่ในปีงบนั้น ไม่มี prorate
 
+### Attendance / HIP CMiF68S:
+- เมนูตั้งค่าอยู่ที่ System Admin → `เครื่องบันทึกเวลา` (`/admin/attendance-devices`)
+- ระบบเชื่อมต่อเครื่องจาก server-side เท่านั้น ผ่าน TCP/IP; ห้ามใช้ `node-zklib` กับรุ่น HIP CMiF68S นี้
+- Incremental sync ใช้ flow: `B4 field4=6` เช็คจำนวนใหม่ → `A1` อ่าน records → บันทึก DB ใน transaction → `A2` confirm เฉพาะเมื่อ commit สำเร็จ
+- ถ้า sync ล่มหลังอ่าน `A1` แต่ก่อนบันทึก DB ห้ามส่ง `A2` เพื่อให้ดึงซ้ำได้รอบถัดไป
+- `AttendanceLogs` มี unique dedupe key ป้องกันข้อมูลซ้ำเมื่อ retry
+- หน้า Employee (`/attendance`) แสดงเฉพาะ `วันที่`, `เวลาเข้า`, `เวลาออก` ของตัวเอง พร้อม filter เดือน/ช่วงวันที่/เวลาเข้าเกินค่าที่ระบุ
+- เวอร์ชันนี้ยังไม่คำนวณกะ, ชั่วโมงทำงาน, สาย, ออกก่อน หรือสถานะทำงาน เพื่อไม่กระทบ module อื่น
+
 ### Timezone:
 - ระบบใช้ `Asia/Bangkok (UTC+7)`
 - แสดงเวลาแบบ 24 ชั่วโมง
@@ -920,6 +990,18 @@ sequenceDiagram
 ---
 
 ## 11. Developer Guidelines
+
+### 🚀 Production Notes: Attendance Sync
+1. Backup production database ก่อนรัน migration ทุกครั้ง
+2. รัน `database/migrations/add_attendance_tables.sql` บน production database ก่อนเปิดเมนู/cron เครื่องบันทึกเวลา
+3. ตั้ง `CRON_SECRET` ใน `.env` production และตั้ง Task Scheduler ให้เรียก:
+   ```powershell
+   Invoke-WebRequest -Method POST -Uri "https://<domain>/api/cron/attendance-sync" -Headers @{ "x-cron-secret" = "<CRON_SECRET>" }
+   ```
+4. เข้า System Admin → `เครื่องบันทึกเวลา` เพื่อเปิดใช้งานเครื่อง, ตั้งสาขา, IP, port, pass และความถี่ sync
+5. กด `ทดสอบ` ก่อน `Sync now` ทุกครั้งหลังแก้ IP/port/pass
+6. Sync ครั้งแรกของ incremental endpoint จะดึงเฉพาะ records ที่เครื่องนับเป็น "new" ตาม protocol; หากต้อง backfill ประวัติย้อนหลังทั้งหมดให้ทำเป็นงานแยก ไม่ควรส่ง `A2` ก่อนบันทึก DB สำเร็จ
+7. ไม่ควรรัน cron ซ้อนกันหลายเครื่อง scheduler; ระบบมี lock ใน DB แต่ควรตั้ง scheduler ให้มีตัวเดียวต่อ environment
 
 ### 🛠️ Modal & Popup Positioning (Frontend)
 หากพบปัญหา **Modal เด้งอยู่ข้างล่าง** หรือไม่อยู่กึ่งกลางหน้าจอ สาเหตุเกิดจาก `transform` property ใน class `animate-fade-in` ของ Parent Container ทำให้ `fixed` positioning ทำงานผิดพลาด
