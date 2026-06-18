@@ -19,6 +19,7 @@ import {
     LogOut,
     Menu,
     X,
+    Clock3,
     Building2,
     ChevronDown,
     CalendarClock,
@@ -64,6 +65,7 @@ function NavLink({ item, pathname, onClick }: { item: NavItem; pathname: string;
 
 const navItems: NavItem[] = [
     { href: '/dashboard', label: 'แดชบอร์ด', icon: <LayoutDashboard className="w-5 h-5" /> },
+    { href: '/attendance', label: 'เวลาเข้า-ออก', icon: <Clock3 className="w-5 h-5" /> },
     { href: '/leave/request', label: 'ขอลางาน', icon: <CalendarPlus className="w-5 h-5" /> },
     { href: '/leave/history', label: 'ประวัติการลา', icon: <History className="w-5 h-5" /> },
     { href: '/holidays', label: 'ปฏิทินวันหยุด', icon: <CalendarDays className="w-5 h-5" /> },

@@ -1,6 +1,7 @@
 import { auth } from '@/auth';
 import { redirect } from 'next/navigation';
 import { getPool } from '@/lib/db';
+import { getEmployeeAttendanceSummary } from '@/lib/attendance/repository';
 import { formatLeaveDays, formatMinutesToDisplay } from '@/lib/leave-utils';
 import { parseAdvanceNoticeDays } from '@/lib/leave-advance-notice';
 import {
@@ -12,6 +13,7 @@ import {
 import {
     CalendarDays,
     Clock,
+    Clock3,
     TrendingUp,
     AlertCircle,
     ArrowRight,
@@ -204,6 +206,13 @@ function filterVacationBalanceRows<T extends { type: string }>(
     return showVacationBalance ? rows : rows.filter((row) => row.type !== 'VACATION');
 }
 
+function formatDate(value: Date): string {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
 // Fetch leave balances from database
 async function getLeaveBalances(userId: number) {
     try {
@@ -366,10 +375,20 @@ export default async function DashboardPage() {
 
     const userId = Number(session.user.id);
 
+    const today = formatDate(new Date());
+
     // Fetch data from database
     const leaveBalances = await getLeaveBalances(userId);
     const recentRequests = await getRecentRequests(userId);
     const upcomingHolidays = await getUpcomingHolidays();
+    const todayAttendance = session.user.employeeId
+        ? await getEmployeeAttendanceSummary({
+            employeeId: session.user.employeeId,
+            fromDate: today,
+            toDate: today,
+        })
+        : [];
+    const todayAttendanceDay = todayAttendance[0];
 
     const statusColors: Record<string, string> = {
         PENDING: 'bg-yellow-100 text-yellow-800',
@@ -409,6 +428,40 @@ export default async function DashboardPage() {
                     <CalendarDays className="w-5 h-5" />
                     ขอลางาน
                 </Link>
+            </div>
+
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
+                <div className="flex items-start justify-between gap-4">
+                    <div>
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-cyan-600 flex items-center justify-center text-white">
+                                <Clock3 className="w-5 h-5" />
+                            </div>
+                            <h2 className="font-semibold text-gray-900 dark:text-white">เวลาเข้า-ออกวันนี้</h2>
+                        </div>
+                        <div className="grid grid-cols-2 gap-6">
+                            <div>
+                                <p className="text-sm text-gray-500 mb-1">เวลาเข้า</p>
+                                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                                    {todayAttendanceDay?.checkIn ?? '--:--'}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-sm text-gray-500 mb-1">เวลาออก</p>
+                                <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                                    {todayAttendanceDay?.checkOut ?? '--:--'}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <Link
+                        href="/attendance"
+                        className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 whitespace-nowrap"
+                    >
+                        ดูย้อนหลัง
+                        <ArrowRight className="w-4 h-4" />
+                    </Link>
+                </div>
             </div>
 
             {/* Stats Cards - Leave Balances */}
