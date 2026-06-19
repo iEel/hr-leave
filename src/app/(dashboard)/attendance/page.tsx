@@ -124,6 +124,10 @@ export default function AttendancePage() {
             setSettings(data.settings ?? null);
             setPeriod(data.period ?? null);
         } catch (fetchError) {
+            if (signal.aborted) {
+                return;
+            }
+
             if (fetchError instanceof DOMException && fetchError.name === 'AbortError') {
                 return;
             }
