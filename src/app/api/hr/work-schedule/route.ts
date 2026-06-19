@@ -90,8 +90,13 @@ export async function PUT(request: NextRequest) {
         const breakMins = calculateHours(breakStartTime, breakEndTime) * 60;
         const workHoursPerDay = calculateHours(workStartTime, workEndTime, breakMins);
         const satWorkHours = calculateHours(satWorkStartTime, satWorkEndTime);
-        const normalizedWeekdayGraceMinutes = parseInt(weekdayGraceMinutes || '15', 10);
-        const normalizedAttendancePeriodStartDay = parseInt(attendancePeriodStartDay || '21', 10);
+        const normalizeIntegerInput = (value: unknown, fallback: number): number => {
+            if (value === undefined || value === null || value === '') return fallback;
+            return Number(value);
+        };
+
+        const normalizedWeekdayGraceMinutes = normalizeIntegerInput(weekdayGraceMinutes, 15);
+        const normalizedAttendancePeriodStartDay = normalizeIntegerInput(attendancePeriodStartDay, 21);
 
         if (!Number.isInteger(normalizedWeekdayGraceMinutes) || normalizedWeekdayGraceMinutes < 0 || normalizedWeekdayGraceMinutes > 240) {
             return NextResponse.json({ error: 'นาทีอนุโลมสายต้องอยู่ระหว่าง 0-240 นาที' }, { status: 400 });
