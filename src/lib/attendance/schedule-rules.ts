@@ -12,9 +12,10 @@ export interface AttendanceScheduleSettings {
 }
 
 export interface WorkingSaturdaySchedule {
-    workDate: string;
-    startTime?: string | null;
-    endTime?: string | null;
+    date: string;
+    startTime: string;
+    endTime: string;
+    workHours: number;
 }
 
 export interface DailyAttendanceRow {
@@ -72,7 +73,7 @@ export function summarizeDailyAttendanceRowsWithSchedule(
 ): AttendanceDaySummary[] {
     const settings = context.settings ?? DEFAULT_ATTENDANCE_SCHEDULE_SETTINGS;
     const workingSaturdays = new Map(
-        (context.workingSaturdays ?? []).map((schedule) => [schedule.workDate, schedule])
+        (context.workingSaturdays ?? []).map((schedule) => [schedule.date, schedule])
     );
     const rowsByDate = new Map<string, string[]>();
 
@@ -137,8 +138,8 @@ function getDaySchedule(
     }
 
     if (dayOfWeek === 6 && workingSaturday) {
-        const scheduledStartTime = workingSaturday.startTime ?? settings.satWorkStartTime;
-        const scheduledEndTime = workingSaturday.endTime ?? settings.satWorkEndTime;
+        const scheduledStartTime = workingSaturday.startTime;
+        const scheduledEndTime = workingSaturday.endTime;
 
         return {
             dayType: 'WORKING_SATURDAY',

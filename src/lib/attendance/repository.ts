@@ -18,8 +18,10 @@ import type {
 
 export type {
     AttendanceDaySummary,
+    AttendanceScheduleSettings,
     AttendanceSummaryContext,
     DailyAttendanceRow,
+    WorkingSaturdaySchedule,
 } from './schedule-rules.ts';
 
 export interface AttendanceDeviceListItem {

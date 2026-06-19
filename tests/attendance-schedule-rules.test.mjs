@@ -18,9 +18,10 @@ const context = {
     },
     workingSaturdays: [
         {
-            workDate: '2026-06-20',
+            date: '2026-06-20',
             startTime: '09:00',
             endTime: '12:00',
+            workHours: 3,
         },
     ],
 };
