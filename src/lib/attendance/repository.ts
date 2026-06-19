@@ -5,7 +5,7 @@ import {
     type AttendanceDaySummary,
     type AttendanceSummaryContext,
     type DailyAttendanceRow,
-} from './schedule-rules.ts';
+} from './schedule-rules';
 import type {
     AttendanceDeviceConfig,
     AttendanceProtocol,
@@ -22,7 +22,7 @@ export type {
     AttendanceSummaryContext,
     DailyAttendanceRow,
     WorkingSaturdaySchedule,
-} from './schedule-rules.ts';
+} from './schedule-rules';
 
 export interface AttendanceDeviceListItem {
     id: number;
