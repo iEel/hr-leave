@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 18 มิถุนายน 2026 (HIP CMiF68S Attendance Sync)
+> 📅 อัปเดตล่าสุด: 18 มิถุนายน 2026 (HIP CMiF68S Attendance Sync + Admin Time Display Fix)
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -722,15 +722,19 @@ sequenceDiagram
 - [x] **Database Migration** - เพิ่ม `AttendanceDevices`, `AttendanceLogs`, `AttendanceSyncRuns` ใน `database/migrations/add_attendance_tables.sql`
 - [x] **HIP Custom Protocol** - ดึงข้อมูลจากเครื่อง HIP CMiF68S ผ่าน TCP โดยตรง ไม่ใช้ `node-zklib`
   - เช็คจำนวนใหม่ด้วย `cmd 0xB4 / field4=6`
-  - อ่าน records ใหม่ด้วย `cmd 0xA1`
-  - ยืนยัน/mark ว่าดึงแล้วด้วย `cmd 0xA2` เฉพาะหลัง commit database สำเร็จเท่านั้น
+  - ถ้าจำนวนใหม่ไม่เกิน 50 records ใช้ `cmd 0xA1`
+  - ถ้าจำนวนใหม่เกิน 50 records ใช้ `cmd 0xB4 / field4=8` เปิด attendance table แล้ววน `cmd 0xA4` ทุก page, concat `blob[2:-4]` ทุก page ก่อน decode ทีละ 20 bytes เพื่อรองรับ record ที่คร่อม page
+  - ไม่ส่ง `cmd 0xA2` ใน incremental/backfill ปัจจุบัน; ระบบใช้ unique key ใน DB เพื่อ dedupe records ที่อ่านซ้ำ
   - Decode เป็น `recordTime`, `rawRecordTime`, `userKey`, `verifyType`, `verifyCode`, `yearCode`, `recordHex`
-- [x] **Incremental Sync Service** - sync เฉพาะ record ใหม่, มี lock กัน sync ซ้อน, timeout/retry, transaction + dedupe ก่อน confirm เครื่อง
+- [x] **Incremental Sync Service** - sync เฉพาะ record ใหม่, มี lock กัน sync ซ้อน, timeout/retry, transaction + dedupe ใน DB และไม่ confirm เครื่อง (`confirmedCount=0` โดยตั้งใจ)
+- [x] **Backfill Attendance History** - เพิ่ม `BACKFILL` mode สำหรับดึงประวัติทั้งหมดจากเครื่องด้วย `A4` ทุก page, insert แบบ dedupe batch, และไม่ส่ง `A2`
 - [x] **System Admin UI** (`/admin/attendance-devices`) - เพิ่ม/แก้ไขเครื่อง, ตั้งสาขา, IP, port, pass, ความถี่ sync, test connection, sync now, ดูประวัติ sync
 - [x] **Cron Endpoint** - `POST /api/cron/attendance-sync` ใช้ `x-cron-secret` header และเลือกเฉพาะเครื่องที่ถึงรอบ sync
 - [x] **Employee UI** (`/attendance`) - พนักงานดูเวลาเข้า/ออกของตัวเองเป็นเดือนหรือช่วงวันที่ และ filter เวลาเข้าเกินค่าที่ระบุ เช่น `08:45`
-- [x] **Dashboard Card** - เพิ่ม card เวลาเข้า-ออกวันนี้ โดยแสดงเฉพาะ `เวลาเข้า` และ `เวลาออก`
-- [x] **Tests** - `tests/hip-protocol.test.mjs`, `tests/attendance-summary.test.mjs`
+- [x] **Dashboard Card** - เพิ่ม compact status strip เวลาเข้า-ออกวันนี้ โดยแสดงเฉพาะ `เวลาเข้า` และ `เวลาออก` เพื่อไม่กินพื้นที่ first screen
+- [x] **Admin Datetime Display Fix** - หน้า `/admin/attendance-devices` แสดง `Started`, `lastSyncAt`, `nextSyncAt` เป็น local datetime string จาก SQL (`CONVERT(varchar(19), ..., 126)`) เพื่อป้องกัน browser แปลง `DATETIME2` เป็น UTC แล้วบวกเวลา +7 ชั่วโมงซ้ำ
+- [x] **Deployment Docs** - อัปเดต `DEPLOYMENT.md` ให้ตรงกับ port `3002`, env Azure AD ชุด `AZURE_AD_*`, migration attendance, cron attendance sync, และ no-confirm/read-only behavior
+- [x] **Tests** - `tests/hip-protocol.test.mjs`, `tests/hip-client-session.test.mjs`, `tests/hip-client-full-table.test.mjs`, `tests/attendance-summary.test.mjs`, `tests/sync-service.test.mjs`, `tests/attendance-admin-datetime.test.mjs`
 
 ### 🔲 สิ่งที่ยังรอ (Remaining)
 - [ ] LINE Notify Integration (optional)
@@ -763,20 +767,26 @@ sequenceDiagram
 | File | Purpose |
 |------|---------|
 | `src/lib/attendance/hip-protocol.ts` | Build/decode HIP CMiF68S frames and attendance records |
-| `src/lib/attendance/hip-client.ts` | Server-side TCP client สำหรับ B4/A1/A2 commands |
+| `src/lib/attendance/hip-client.ts` | Server-side TCP client สำหรับ B4/A1/A4 commands และ A2 helper ที่ยังไม่เปิดใช้ใน sync ปัจจุบัน |
 | `src/lib/attendance/repository.ts` | Database helper สำหรับ devices, logs, sync runs, employee summary |
-| `src/lib/attendance/sync-service.ts` | Incremental sync orchestration: lock, pull, transaction, confirm |
+| `src/lib/attendance/sync-service.ts` | Incremental sync/backfill orchestration: lock, pull, transaction, DB dedupe, no-confirm ต่อเครื่อง |
 | `src/app/api/admin/attendance/devices/route.ts` | Admin CRUD สำหรับเครื่องบันทึกเวลา |
 | `src/app/api/admin/attendance/devices/[deviceId]/test/route.ts` | Test connection/read new count |
 | `src/app/api/admin/attendance/devices/[deviceId]/sync/route.ts` | Manual sync now |
-| `src/app/api/admin/attendance/sync-runs/route.ts` | ประวัติ sync runs |
+| `src/app/api/admin/attendance/devices/[deviceId]/backfill/route.ts` | Manual backfill ประวัติทั้งหมดจากเครื่อง |
+| `src/app/api/admin/attendance/sync-runs/route.ts` | ประวัติ sync runs; ส่ง `startedAt/finishedAt` เป็น SQL local datetime string ห้ามส่ง Date object ตรง ๆ |
 | `src/app/api/cron/attendance-sync/route.ts` | Scheduled incremental sync endpoint |
 | `src/app/api/attendance/me/route.ts` | Employee attendance history ของ user ปัจจุบัน |
 | `src/app/(dashboard)/admin/attendance-devices/page.tsx` | System Admin UI สำหรับเครื่องบันทึกเวลา |
+| `src/app/(dashboard)/dashboard/page.tsx` | Dashboard card เวลาเข้า-ออกวันนี้แบบ compact |
 | `src/app/(dashboard)/attendance/page.tsx` | Employee UI เวลาเข้า-ออก |
 | `database/migrations/add_attendance_tables.sql` | Migration script |
 | `tests/hip-protocol.test.mjs` | Protocol/frame/decode tests |
+| `tests/hip-client-session.test.mjs` | TCP session test: B4/A1/A2 sequence uses one connection |
+| `tests/hip-client-full-table.test.mjs` | Full-table A4 page loop/concat/latest-record tests |
 | `tests/attendance-summary.test.mjs` | Attendance summary/filter tests |
+| `tests/sync-service.test.mjs` | Incremental/backfill orchestration tests รวม no-confirm behavior |
+| `tests/attendance-admin-datetime.test.mjs` | Regression test กัน admin attendance datetime กลับไปติด UTC `Z` |
 
 ### 🔐 AD Lifecycle Management
 
@@ -978,16 +988,31 @@ sequenceDiagram
 ### Attendance / HIP CMiF68S:
 - เมนูตั้งค่าอยู่ที่ System Admin → `เครื่องบันทึกเวลา` (`/admin/attendance-devices`)
 - ระบบเชื่อมต่อเครื่องจาก server-side เท่านั้น ผ่าน TCP/IP; ห้ามใช้ `node-zklib` กับรุ่น HIP CMiF68S นี้
-- Incremental sync ใช้ flow: `B4 field4=6` เช็คจำนวนใหม่ → `A1` อ่าน records → บันทึก DB ใน transaction → `A2` confirm เฉพาะเมื่อ commit สำเร็จ
-- ถ้า sync ล่มหลังอ่าน `A1` แต่ก่อนบันทึก DB ห้ามส่ง `A2` เพื่อให้ดึงซ้ำได้รอบถัดไป
+- Incremental sync ใช้ flow หลักแบบ no-confirm/read-only ต่อเครื่อง: `B4 field4=6` เช็คจำนวนใหม่ → อ่าน records → บันทึก DB ใน transaction พร้อม dedupe → จบ sync โดยไม่ส่ง `A2`
+- ถ้า `newCount <= 50` อ่านด้วย `A1`; ถ้า `newCount > 50` อ่านด้วย full-table fallback (`B4 field4=8` + วน `A4` ทุก page) เพราะ `A1` จำนวนมาก timeout และ `A4` 1 page มีได้ประมาณ 50 records เท่านั้น
+- สำหรับ `A4`: ต้อง concat payload ของทุก page (`blob[2:-4]`) ก่อน decode ทีละ 20 bytes ห้าม decode แยก page เพราะ record อาจคร่อม page
+- `confirmedCount=0` เป็นพฤติกรรมปกติของ sync ปัจจุบัน เพราะระบบไม่ mark/clear queue บนเครื่อง
+- เมื่อไม่ส่ง `A2` ค่า `B4 field4=6` บนเครื่องอาจคงเดิมหรือเพิ่มขึ้นตาม log ใหม่; รอบถัดไปจะอ่านซ้ำได้ แต่ `AttendanceLogs` มี unique dedupe key ป้องกัน DB ซ้ำ
+- Backfill ใช้ `BACKFILL` mode เพื่ออ่าน log ทั้งหมด (`B4 field4=8` + `A4` ทุก page) และไม่ส่ง `A2`; ใช้สำหรับรอบแรกหรือเมื่อต้องการเติมประวัติย้อนหลังทั้งหมด
 - `AttendanceLogs` มี unique dedupe key ป้องกันข้อมูลซ้ำเมื่อ retry
 - หน้า Employee (`/attendance`) แสดงเฉพาะ `วันที่`, `เวลาเข้า`, `เวลาออก` ของตัวเอง พร้อม filter เดือน/ช่วงวันที่/เวลาเข้าเกินค่าที่ระบุ
+- หน้า Dashboard (`/dashboard`) แสดงเวลาเข้า-ออกวันนี้เป็น compact status strip เพื่อลดพื้นที่บน first screen
+- หน้า System Admin → `เครื่องบันทึกเวลา` ต้องแสดงเวลา sync (`Started`, `lastSyncAt`, `nextSyncAt`) จาก local datetime string (`YYYY-MM-DDTHH:mm:ss`) ไม่ใช่ ISO string ที่ลงท้าย `Z`
 - เวอร์ชันนี้ใช้ `HIP user_key = Users.employeeId` เป็นเงื่อนไข mapping พนักงาน; ก่อนเปิดใช้จริงต้องตรวจว่าเลขบนเครื่อง HIP ตรงกับรหัสพนักงานในระบบ หากไม่ตรงให้เพิ่ม mapping table/UI เป็นงานถัดไปก่อน sync production
 - เวอร์ชันนี้ยังไม่คำนวณกะ, ชั่วโมงทำงาน, สาย, ออกก่อน หรือสถานะทำงาน เพื่อไม่กระทบ module อื่น
+
+### Attendance UI Schedule Rules
+
+- Employee `/attendance` reads workday timing from HR/Admin -> `ตั้งค่าเวลาทำงาน`.
+- Normal workdays use `WORK_START_TIME + WORKDAY_LATE_GRACE_MINUTES` for late highlighting.
+- Working Saturdays come from `WorkingSaturdays`; Saturday has no late grace and uses that row's `startTime` directly.
+- Non-working Saturdays and Sundays can display HIP scans but are not counted as late or incomplete workday problems.
+- Attendance calculation periods use `ATTENDANCE_PERIOD_START_DAY`, default `21`, so the normal monthly period is previous-month day 21 through selected-month day 20.
 
 ### Timezone:
 - ระบบใช้ `Asia/Bangkok (UTC+7)`
 - แสดงเวลาแบบ 24 ชั่วโมง
+- ค่าจาก SQL Server ที่เป็น `DATETIME2` และบันทึกด้วย `GETDATE()` เป็น local server time; API สำหรับหน้า admin attendance ต้อง `CONVERT(varchar(19), ..., 126)` ก่อนส่ง JSON เพื่อไม่ให้ JavaScript `Date` ตีความเป็น UTC และแสดงเวลาเพี้ยน
 
 ---
 
@@ -1003,8 +1028,11 @@ sequenceDiagram
 4. เข้า System Admin → `เครื่องบันทึกเวลา` เพื่อเปิดใช้งานเครื่อง, ตั้งสาขา, IP, port, pass และความถี่ sync
 5. กด `ทดสอบ` ก่อน `Sync now` ทุกครั้งหลังแก้ IP/port/pass
 6. ตรวจว่า `user_key` บนเครื่อง HIP ตรงกับ `Users.employeeId` ในระบบก่อนเปิด sync; ถ้าเลขไม่ตรง ข้อมูลจะไม่แสดงในหน้า Employee จนกว่าจะมี mapping layer
-7. Sync ครั้งแรกของ incremental endpoint จะดึงเฉพาะ records ที่เครื่องนับเป็น "new" ตาม protocol; หากต้อง backfill ประวัติย้อนหลังทั้งหมดให้ทำเป็นงานแยก ไม่ควรส่ง `A2` ก่อนบันทึก DB สำเร็จ
-8. ไม่ควรรัน cron ซ้อนกันหลายเครื่อง scheduler; ระบบมี lock ใน DB แต่ควรตั้ง scheduler ให้มีตัวเดียวต่อ environment
+7. Sync ครั้งแรกของ incremental endpoint จะดึงเฉพาะ records ที่เครื่องนับเป็น "new" ตาม protocol; หาก `newCount > 50` ระบบจะอ่าน full attendance table ผ่าน `A4` แล้วเลือก records ล่าสุดตามเวลาให้เท่ากับ `newCount`
+8. ใช้ปุ่ม `Backfill ประวัติทั้งหมด` ที่ `/admin/attendance-devices` เมื่อเริ่มใช้งานครั้งแรกเพื่อดึง log ทั้งหมดจากเครื่องเข้า DB; backfill ไม่ส่ง `A2` และจะ dedupe records ที่เคยมีแล้ว
+9. เนื่องจาก incremental sync ไม่ส่ง `A2`, ค่า new queue บนเครื่องอาจไม่ลดลงหลัง sync; นี่เป็น expected behavior ของเวอร์ชันนี้ และ DB dedupe จะกันข้อมูลซ้ำ แต่ควรตั้งความถี่ cron ให้เหมาะสมเพื่อลดการอ่านซ้ำจำนวนมาก
+10. ไม่ควรรัน cron ซ้อนกันหลายเครื่อง scheduler; ระบบมี lock ใน DB แต่ควรตั้ง scheduler ให้มีตัวเดียวต่อ environment
+11. Deployment guide หลักอยู่ที่ `DEPLOYMENT.md`; ตัวอย่าง cron ใช้ `<CRON_SECRET>` placeholder และ app production start/proxy ใช้ port `3002`
 
 ### 🛠️ Modal & Popup Positioning (Frontend)
 หากพบปัญหา **Modal เด้งอยู่ข้างล่าง** หรือไม่อยู่กึ่งกลางหน้าจอ สาเหตุเกิดจาก `transform` property ใน class `animate-fade-in` ของ Parent Container ทำให้ `fixed` positioning ทำงานผิดพลาด
