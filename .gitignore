@@ -35,6 +35,11 @@ dev-server.err.log
 # local worktrees
 .worktrees/
 
+# local Codex/Superpowers tooling
+.agents/
+.codex/
+.superpowers/
+
 # env files (can opt-in for committing if needed)
 .env*
 
