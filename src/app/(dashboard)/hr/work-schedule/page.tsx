@@ -58,6 +58,8 @@ export default function WorkSchedulePage() {
         weekdayGraceMinutes: 15,
         attendancePeriodStartDay: 21,
     });
+    const [weekdayGraceMinutesInput, setWeekdayGraceMinutesInput] = useState('15');
+    const [attendancePeriodStartDayInput, setAttendancePeriodStartDayInput] = useState('21');
 
     // Calendar state
     const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -78,6 +80,8 @@ export default function WorkSchedulePage() {
                 const data = await res.json();
                 if (data.success) {
                     setSchedule(data.settings);
+                    setWeekdayGraceMinutesInput(String(data.settings.weekdayGraceMinutes ?? 15));
+                    setAttendancePeriodStartDayInput(String(data.settings.attendancePeriodStartDay ?? 21));
                 }
             }
         } catch (err) {
@@ -120,7 +124,11 @@ export default function WorkSchedulePage() {
             const res = await fetch('/api/hr/work-schedule', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(schedule),
+                body: JSON.stringify({
+                    ...schedule,
+                    weekdayGraceMinutes: weekdayGraceMinutesInput,
+                    attendancePeriodStartDay: attendancePeriodStartDayInput,
+                }),
             });
             const data = await res.json();
             if (res.ok && data.success) {
@@ -223,17 +231,6 @@ export default function WorkSchedulePage() {
         setShowModal(true);
     };
 
-    const updateNumericScheduleField = (
-        field: 'weekdayGraceMinutes' | 'attendancePeriodStartDay',
-        value: string
-    ) => {
-        setSchedule(prev => {
-            if (value === '') return prev;
-            const nextValue = Number(value);
-            if (!Number.isFinite(nextValue)) return prev;
-            return { ...prev, [field]: nextValue };
-        });
-    };
 
     if (loading) {
         return (
@@ -341,8 +338,8 @@ export default function WorkSchedulePage() {
                                     type="number"
                                     min={0}
                                     max={240}
-                                    value={schedule.weekdayGraceMinutes}
-                                    onChange={(e) => updateNumericScheduleField('weekdayGraceMinutes', e.target.value)}
+                                    value={weekdayGraceMinutesInput}
+                                    onChange={(e) => setWeekdayGraceMinutesInput(e.target.value)}
                                     className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
                                 />
                             </div>
@@ -352,8 +349,8 @@ export default function WorkSchedulePage() {
                                     type="number"
                                     min={1}
                                     max={28}
-                                    value={schedule.attendancePeriodStartDay}
-                                    onChange={(e) => updateNumericScheduleField('attendancePeriodStartDay', e.target.value)}
+                                    value={attendancePeriodStartDayInput}
+                                    onChange={(e) => setAttendancePeriodStartDayInput(e.target.value)}
                                     className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
                                 />
                             </div>
