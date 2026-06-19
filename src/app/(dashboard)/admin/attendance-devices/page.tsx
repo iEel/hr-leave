@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import {
     AlertTriangle,
     Check,
+    ChevronLeft,
+    ChevronRight,
     Clock,
     Database,
     Edit2,
@@ -57,6 +59,23 @@ interface AttendanceSyncRun {
     errorMessage: string | null;
 }
 
+interface SyncRunPagination {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+    hasPrevious: boolean;
+    hasNext: boolean;
+}
+
+interface SyncRunFilters {
+    deviceId: string;
+    mode: string;
+    status: string;
+    periodDays: string;
+    limit: string;
+}
+
 interface DeviceFormState {
     id: number | null;
     name: string;
@@ -83,6 +102,23 @@ const defaultFormState: DeviceFormState = {
     timeoutMs: '10000',
     retryCount: '2',
     isActive: true,
+};
+
+const defaultSyncRunFilters: SyncRunFilters = {
+    deviceId: 'ALL',
+    mode: 'ALL',
+    status: 'ALL',
+    periodDays: 'ALL',
+    limit: '20',
+};
+
+const defaultSyncRunPagination: SyncRunPagination = {
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 1,
+    hasPrevious: false,
+    hasNext: false,
 };
 
 const syncStatusClasses: Record<string, string> = {
@@ -161,7 +197,34 @@ function parseIntegerField(value: string, min: number, max: number, label: strin
 function delay(ms: number) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
+function buildSyncRunsSearchParams(filters: SyncRunFilters, page: number) {
+    const params = new URLSearchParams({
+        page: String(page),
+        limit: filters.limit,
+    });
 
+    if (filters.deviceId !== 'ALL') params.set('deviceId', filters.deviceId);
+    if (filters.mode !== 'ALL') params.set('mode', filters.mode);
+    if (filters.status !== 'ALL') params.set('status', filters.status);
+    if (filters.periodDays !== 'ALL') params.set('periodDays', filters.periodDays);
+
+    return params;
+}
+
+function getVisibleSyncRunRange(pagination: SyncRunPagination) {
+    if (pagination.total === 0) {
+        return { start: 0, end: 0 };
+    }
+
+    return {
+        start: (pagination.page - 1) * pagination.limit + 1,
+        end: Math.min(pagination.page * pagination.limit, pagination.total),
+    };
+}
+
+function hasActiveSyncRunFilters(filters: SyncRunFilters) {
+    return filters.deviceId !== 'ALL' || filters.mode !== 'ALL' || filters.status !== 'ALL' || filters.periodDays !== 'ALL';
+}
 function validateDeviceForm(form: DeviceFormState): { payload: Record<string, string | number | boolean | null> } | { error: string } {
     if (!form.name.trim()) {
         return { error: 'กรุณาระบุชื่อเครื่อง' };
@@ -218,6 +281,9 @@ export default function AttendanceDevicesPage() {
     const { data: session, status } = useSession();
     const [devices, setDevices] = useState<AttendanceDevice[]>([]);
     const [syncRuns, setSyncRuns] = useState<AttendanceSyncRun[]>([]);
+    const [syncRunFilters, setSyncRunFilters] = useState<SyncRunFilters>(defaultSyncRunFilters);
+    const [syncRunPage, setSyncRunPage] = useState(1);
+    const [syncRunPagination, setSyncRunPagination] = useState<SyncRunPagination>(defaultSyncRunPagination);
     const [loadingDevices, setLoadingDevices] = useState(true);
     const [loadingRuns, setLoadingRuns] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -228,7 +294,7 @@ export default function AttendanceDevicesPage() {
 
     const isAdmin = session?.user?.role === 'ADMIN';
 
-    const fetchDevices = async () => {
+    const fetchDevices = useCallback(async () => {
         setLoadingDevices(true);
         try {
             const res = await fetch('/api/admin/attendance/devices');
@@ -250,17 +316,30 @@ export default function AttendanceDevicesPage() {
         } finally {
             setLoadingDevices(false);
         }
-    };
+    }, []);
 
-    const fetchSyncRuns = async (options: { showLoading?: boolean; showError?: boolean } = {}) => {
-        const { showLoading = true, showError = true } = options;
+    const fetchSyncRuns = useCallback(async (options: {
+        showLoading?: boolean;
+        showError?: boolean;
+        filters?: SyncRunFilters;
+        page?: number;
+        updateState?: boolean;
+    } = {}) => {
+        const {
+            showLoading = true,
+            showError = true,
+            filters = syncRunFilters,
+            page = syncRunPage,
+            updateState = true,
+        } = options;
 
         if (showLoading) {
             setLoadingRuns(true);
         }
 
         try {
-            const res = await fetch('/api/admin/attendance/sync-runs');
+            const params = buildSyncRunsSearchParams(filters, page);
+            const res = await fetch(`/api/admin/attendance/sync-runs?${params.toString()}`);
             const data: unknown = await res.json();
             if (
                 data &&
@@ -271,7 +350,16 @@ export default function AttendanceDevicesPage() {
                 Array.isArray(data.runs)
             ) {
                 const runs = data.runs as AttendanceSyncRun[];
-                setSyncRuns(runs);
+
+                if (updateState) {
+                    setSyncRuns(runs);
+                    if ('pagination' in data && data.pagination && typeof data.pagination === 'object') {
+                        setSyncRunPagination(data.pagination as SyncRunPagination);
+                    } else {
+                        setSyncRunPagination(defaultSyncRunPagination);
+                    }
+                }
+
                 return runs;
             }
 
@@ -289,13 +377,17 @@ export default function AttendanceDevicesPage() {
         }
 
         return [];
-    };
+    }, [syncRunFilters, syncRunPage]);
 
     useEffect(() => {
         if (!isAdmin) return;
         fetchDevices();
+    }, [isAdmin, fetchDevices]);
+
+    useEffect(() => {
+        if (!isAdmin) return;
         fetchSyncRuns();
-    }, [isAdmin]);
+    }, [isAdmin, fetchSyncRuns]);
 
     const openNewForm = () => {
         setForm({ ...defaultFormState });
@@ -307,6 +399,16 @@ export default function AttendanceDevicesPage() {
         setForm(createFormState(device));
         setShowForm(true);
         setMessage(null);
+    };
+
+    const updateSyncRunFilter = <K extends keyof SyncRunFilters>(field: K, value: SyncRunFilters[K]) => {
+        setSyncRunFilters(prev => ({ ...prev, [field]: value }));
+        setSyncRunPage(1);
+    };
+
+    const resetSyncRunFilters = () => {
+        setSyncRunFilters(defaultSyncRunFilters);
+        setSyncRunPage(1);
     };
 
     const updateForm = <K extends keyof DeviceFormState>(field: K, value: DeviceFormState[K]) => {
@@ -355,7 +457,18 @@ export default function AttendanceDevicesPage() {
                 await delay(BACKFILL_RECOVERY_POLL_DELAY_MS);
             }
 
-            const runs = await fetchSyncRuns({ showLoading: false, showError: false });
+            const runs = await fetchSyncRuns({
+                showLoading: false,
+                showError: false,
+                updateState: false,
+                page: 1,
+                filters: {
+                    ...defaultSyncRunFilters,
+                    deviceId: String(deviceId),
+                    mode: 'BACKFILL',
+                    limit: '20',
+                },
+            });
             const completedRun = findCompletedBackfillRun(runs, deviceId, requestStartedAt);
             if (completedRun) {
                 return completedRun;
@@ -443,6 +556,9 @@ export default function AttendanceDevicesPage() {
             setActionLoading(prev => ({ ...prev, [actionKey]: false }));
         }
     };
+
+    const visibleSyncRunRange = getVisibleSyncRunRange(syncRunPagination);
+    const syncRunsAreFiltered = hasActiveSyncRunFilters(syncRunFilters);
 
     if (status === 'loading') {
         return (
@@ -750,7 +866,7 @@ export default function AttendanceDevicesPage() {
             </div>
 
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
+                <div className="flex flex-col gap-4 px-6 py-4 border-b border-gray-100 dark:border-gray-700 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex items-center gap-3">
                         <Clock className="w-5 h-5 text-gray-400" />
                         <div>
@@ -761,11 +877,89 @@ export default function AttendanceDevicesPage() {
                     <button
                         onClick={() => fetchSyncRuns()}
                         disabled={loadingRuns}
-                        className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
+                        className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-700"
                     >
                         <RefreshCw className={`w-4 h-4 ${loadingRuns ? 'animate-spin' : ''}`} />
                         รีเฟรช
                     </button>
+                </div>
+
+                <div className="grid gap-3 border-b border-gray-100 bg-gray-50/70 px-6 py-4 dark:border-gray-700 dark:bg-gray-900/40 sm:grid-cols-2 lg:grid-cols-6">
+                    <label className="space-y-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        เครื่อง
+                        <select
+                            value={syncRunFilters.deviceId}
+                            onChange={event => updateSyncRunFilter('deviceId', event.target.value)}
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                        >
+                            <option value="ALL">ทุกเครื่อง</option>
+                            {devices.map(device => (
+                                <option key={device.id} value={String(device.id)}>{device.name}</option>
+                            ))}
+                        </select>
+                    </label>
+                    <label className="space-y-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        Mode
+                        <select
+                            value={syncRunFilters.mode}
+                            onChange={event => updateSyncRunFilter('mode', event.target.value)}
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                        >
+                            <option value="ALL">ทั้งหมด</option>
+                            <option value="INCREMENTAL">Incremental</option>
+                            <option value="BACKFILL">Backfill</option>
+                            <option value="TEST">Test</option>
+                        </select>
+                    </label>
+                    <label className="space-y-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        Status
+                        <select
+                            value={syncRunFilters.status}
+                            onChange={event => updateSyncRunFilter('status', event.target.value)}
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                        >
+                            <option value="ALL">ทั้งหมด</option>
+                            <option value="SUCCESS">Success</option>
+                            <option value="FAILED">Failed</option>
+                            <option value="RUNNING">Running</option>
+                            <option value="PARTIAL">Partial</option>
+                            <option value="SKIPPED">Skipped</option>
+                        </select>
+                    </label>
+                    <label className="space-y-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        ช่วงเวลา
+                        <select
+                            value={syncRunFilters.periodDays}
+                            onChange={event => updateSyncRunFilter('periodDays', event.target.value)}
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                        >
+                            <option value="ALL">ทั้งหมด</option>
+                            <option value="7">7 วัน</option>
+                            <option value="30">30 วัน</option>
+                            <option value="90">90 วัน</option>
+                        </select>
+                    </label>
+                    <label className="space-y-1 text-xs font-medium text-gray-500 dark:text-gray-400">
+                        แสดง
+                        <select
+                            value={syncRunFilters.limit}
+                            onChange={event => updateSyncRunFilter('limit', event.target.value)}
+                            className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200"
+                        >
+                            <option value="10">10 รายการ</option>
+                            <option value="20">20 รายการ</option>
+                            <option value="50">50 รายการ</option>
+                        </select>
+                    </label>
+                    <div className="flex items-end">
+                        <button
+                            onClick={resetSyncRunFilters}
+                            disabled={!syncRunsAreFiltered && syncRunFilters.limit === '20'}
+                            className="w-full rounded-lg px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-200 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-700"
+                        >
+                            ล้างตัวกรอง
+                        </button>
+                    </div>
                 </div>
 
                 {loadingRuns ? (
@@ -775,7 +969,7 @@ export default function AttendanceDevicesPage() {
                 ) : syncRuns.length === 0 ? (
                     <div className="text-center py-16 text-gray-500">
                         <AlertTriangle className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                        <p>ยังไม่มีประวัติ Sync</p>
+                        <p>{syncRunsAreFiltered ? 'ไม่พบประวัติตามตัวกรอง' : 'ยังไม่มีประวัติ Sync'}</p>
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
@@ -815,6 +1009,33 @@ export default function AttendanceDevicesPage() {
                         </table>
                     </div>
                 )}
+
+                <div className="flex flex-col gap-3 border-t border-gray-100 px-6 py-4 text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300 sm:flex-row sm:items-center sm:justify-between">
+                    <p>
+                        แสดง {visibleSyncRunRange.start}-{visibleSyncRunRange.end} จาก {syncRunPagination.total} รายการ
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setSyncRunPage(page => Math.max(1, page - 1))}
+                            disabled={!syncRunPagination.hasPrevious || loadingRuns}
+                            className="inline-flex items-center gap-1 rounded-lg px-3 py-2 font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-700"
+                        >
+                            <ChevronLeft className="w-4 h-4" />
+                            ก่อนหน้า
+                        </button>
+                        <span className="min-w-20 text-center text-gray-500 dark:text-gray-400">
+                            หน้า {syncRunPagination.page}/{syncRunPagination.totalPages}
+                        </span>
+                        <button
+                            onClick={() => setSyncRunPage(page => page + 1)}
+                            disabled={!syncRunPagination.hasNext || loadingRuns}
+                            className="inline-flex items-center gap-1 rounded-lg px-3 py-2 font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-gray-300 dark:hover:bg-gray-700"
+                        >
+                            ถัดไป
+                            <ChevronRight className="w-4 h-4" />
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     );
