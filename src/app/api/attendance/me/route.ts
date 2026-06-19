@@ -85,6 +85,7 @@ export async function GET(request: NextRequest) {
             toDate: to,
             checkInFrom,
             periodMonth,
+            settings,
         });
 
         return NextResponse.json({ success: true, ...report });

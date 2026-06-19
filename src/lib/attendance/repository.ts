@@ -115,6 +115,7 @@ export interface EmployeeAttendanceSummaryInput {
 
 export interface EmployeeAttendanceReportInput extends EmployeeAttendanceSummaryInput {
     periodMonth?: string;
+    settings?: AttendanceScheduleSettings;
 }
 
 export interface EmployeeAttendanceReport {
@@ -811,7 +812,7 @@ export async function getEmployeeAttendanceSummary(
 export async function getEmployeeAttendanceReport(
     input: EmployeeAttendanceReportInput
 ): Promise<EmployeeAttendanceReport> {
-    const settings = await getAttendanceScheduleSettings();
+    const settings = input.settings ?? await getAttendanceScheduleSettings();
     const workingSaturdays = await listWorkingSaturdaysForRange(input.fromDate, input.toDate);
     const days = await getEmployeeAttendanceSummaryWithContext({
         ...input,
