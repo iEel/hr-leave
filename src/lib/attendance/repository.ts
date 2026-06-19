@@ -1,4 +1,11 @@
 import type { Transaction } from 'mssql';
+import {
+    DEFAULT_ATTENDANCE_SCHEDULE_SETTINGS,
+    summarizeDailyAttendanceRowsWithSchedule,
+    type AttendanceDaySummary,
+    type AttendanceSummaryContext,
+    type DailyAttendanceRow,
+} from './schedule-rules.ts';
 import type {
     AttendanceDeviceConfig,
     AttendanceProtocol,
@@ -8,16 +15,12 @@ import type {
     DecodedHipAttendanceRecord,
 } from './types';
 
-export interface AttendanceDaySummary {
-    date: string;
-    checkIn: string | null;
-    checkOut: string | null;
-}
 
-interface DailyAttendanceRow {
-    attendanceDate: string;
-    recordTime: string;
-}
+export type {
+    AttendanceDaySummary,
+    AttendanceSummaryContext,
+    DailyAttendanceRow,
+} from './schedule-rules.ts';
 
 export interface AttendanceDeviceListItem {
     id: number;
@@ -178,28 +181,11 @@ function mapDeviceConfigRow(row: Record<string, unknown>): AttendanceDeviceConfi
     };
 }
 
-export function summarizeDailyAttendanceRows(rows: DailyAttendanceRow[]): AttendanceDaySummary[] {
-    const rowsByDate = new Map<string, string[]>();
-
-    for (const row of rows) {
-        const times = rowsByDate.get(row.attendanceDate) ?? [];
-        times.push(row.recordTime);
-        rowsByDate.set(row.attendanceDate, times);
-    }
-
-    return Array.from(rowsByDate.entries())
-        .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate))
-        .map(([date, recordTimes]) => {
-            const sortedTimes = [...recordTimes].sort((left, right) => left.localeCompare(right));
-            const firstTime = sortedTimes[0];
-            const lastTime = sortedTimes[sortedTimes.length - 1];
-
-            return {
-                date,
-                checkIn: firstTime ? firstTime.slice(0, 5) : null,
-                checkOut: sortedTimes.length > 1 && lastTime ? lastTime.slice(0, 5) : null,
-            };
-        });
+export function summarizeDailyAttendanceRows(
+    rows: DailyAttendanceRow[],
+    context: AttendanceSummaryContext = { settings: DEFAULT_ATTENDANCE_SCHEDULE_SETTINGS }
+): AttendanceDaySummary[] {
+    return summarizeDailyAttendanceRowsWithSchedule(rows, context);
 }
 
 const DEVICE_SELECT_COLUMNS = `
@@ -214,9 +200,9 @@ const DEVICE_SELECT_COLUMNS = `
     syncFrequencyMinutes,
     timeoutMs,
     retryCount,
-    lastSyncAt,
-    lastSuccessfulSyncAt,
-    nextSyncAt,
+    CONVERT(varchar(19), lastSyncAt, 126) AS lastSyncAt,
+    CONVERT(varchar(19), lastSuccessfulSyncAt, 126) AS lastSuccessfulSyncAt,
+    CONVERT(varchar(19), nextSyncAt, 126) AS nextSyncAt,
     lastSyncStatus,
     lastError,
     lastNewCount,
@@ -451,22 +437,56 @@ export async function insertAttendanceRecordsInTransaction(
     }
 
     const { sql } = await loadDb();
-    let insertedCount = 0;
     const normalizedDeviceId = normalizeDeviceId(deviceId);
+    const recordsJson = JSON.stringify(records.map((record) => ({
+        userKey: record.userKey,
+        employeeId: record.employeeId,
+        recordTime: record.recordTime,
+        rawRecordTime: record.rawRecordTime,
+        yearCode: record.yearCode,
+        verifyCode: record.verifyCode,
+        verifyType: record.verifyType,
+        recordHex: record.recordHex,
+        sourceCommand: record.sourceCommand ?? 'A1',
+    })));
 
-    for (const record of records) {
-        const result = await new sql.Request(transaction)
-            .input('deviceId', normalizedDeviceId)
-            .input('userKey', record.userKey)
-            .input('employeeId', record.employeeId)
-            .input('recordTime', record.recordTime)
-            .input('rawRecordTime', record.rawRecordTime)
-            .input('yearCode', record.yearCode)
-            .input('verifyCode', record.verifyCode)
-            .input('verifyType', record.verifyType)
-            .input('recordHex', record.recordHex)
-            .input('sourceCommand', record.sourceCommand ?? 'A1')
-            .query(`
+    const result = await new sql.Request(transaction)
+        .input('deviceId', normalizedDeviceId)
+        .input('recordsJson', sql.NVarChar(sql.MAX), recordsJson)
+        .query(`
+            WITH Parsed AS (
+                SELECT
+                    userKey,
+                    employeeId,
+                    recordTime,
+                    rawRecordTime,
+                    yearCode,
+                    verifyCode,
+                    verifyType,
+                    recordHex,
+                    sourceCommand
+                FROM OPENJSON(@recordsJson)
+                WITH (
+                    userKey INT '$.userKey',
+                    employeeId NVARCHAR(20) '$.employeeId',
+                    recordTime DATETIME2 '$.recordTime',
+                    rawRecordTime DATETIME2 '$.rawRecordTime',
+                    yearCode INT '$.yearCode',
+                    verifyCode INT '$.verifyCode',
+                    verifyType NVARCHAR(20) '$.verifyType',
+                    recordHex VARCHAR(40) '$.recordHex',
+                    sourceCommand NVARCHAR(20) '$.sourceCommand'
+                )
+            ),
+            Deduped AS (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY userKey, recordTime, verifyType, recordHex
+                        ORDER BY userKey
+                    ) AS rowNumber
+                FROM Parsed
+            )
                 INSERT INTO AttendanceLogs (
                     deviceId,
                     userKey,
@@ -481,28 +501,29 @@ export async function insertAttendanceRecordsInTransaction(
                 )
                 SELECT
                     @deviceId,
-                    @userKey,
-                    @employeeId,
-                    @recordTime,
-                    @rawRecordTime,
-                    @yearCode,
-                    @verifyCode,
-                    @verifyType,
-                    @recordHex,
-                    @sourceCommand
-                WHERE NOT EXISTS (
-                    SELECT 1
-                    FROM AttendanceLogs
-                    WHERE deviceId = @deviceId
-                      AND userKey = @userKey
-                      AND recordTime = @recordTime
-                      AND verifyType = @verifyType
-                      AND recordHex = @recordHex
-                )
-            `);
+                    userKey,
+                    employeeId,
+                    recordTime,
+                    rawRecordTime,
+                    yearCode,
+                    verifyCode,
+                    verifyType,
+                    recordHex,
+                    COALESCE(sourceCommand, 'A1')
+                FROM Deduped src
+                WHERE src.rowNumber = 1
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM AttendanceLogs target
+                      WHERE target.deviceId = @deviceId
+                        AND target.userKey = src.userKey
+                        AND target.recordTime = src.recordTime
+                        AND target.verifyType = src.verifyType
+                        AND target.recordHex = src.recordHex
+                  )
+        `);
 
-        insertedCount += result.rowsAffected[0] ?? 0;
-    }
+    const insertedCount = result.rowsAffected[0] ?? 0;
 
     return {
         insertedCount,
