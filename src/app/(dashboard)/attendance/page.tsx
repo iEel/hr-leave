@@ -100,7 +100,7 @@ export default function AttendancePage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchAttendance = useCallback(async () => {
+    const fetchAttendance = useCallback(async (signal: AbortSignal) => {
         setIsLoading(true);
         setError(null);
 
@@ -109,28 +109,44 @@ export default function AttendancePage() {
             if (periodMonth) params.set('period', periodMonth);
             if (checkInFrom) params.set('checkInFrom', checkInFrom);
 
-            const response = await fetch(`/api/attendance/me?${params.toString()}`);
+            const response = await fetch(`/api/attendance/me?${params.toString()}`, { signal });
             const data = await response.json() as AttendanceApiResponse;
 
             if (!response.ok || !data.success) {
                 throw new Error(data.error || 'Failed to fetch attendance');
             }
 
+            if (signal.aborted) {
+                return;
+            }
+
             setDays(data.days ?? []);
             setSettings(data.settings ?? null);
             setPeriod(data.period ?? null);
         } catch (fetchError) {
+            if (fetchError instanceof DOMException && fetchError.name === 'AbortError') {
+                return;
+            }
+
             setError(fetchError instanceof Error ? fetchError.message : 'Failed to fetch attendance');
             setDays([]);
             setSettings(null);
             setPeriod(null);
         } finally {
-            setIsLoading(false);
+            if (!signal.aborted) {
+                setIsLoading(false);
+            }
         }
     }, [checkInFrom, periodMonth]);
 
     useEffect(() => {
-        fetchAttendance();
+        const controller = new AbortController();
+
+        fetchAttendance(controller.signal);
+
+        return () => {
+            controller.abort();
+        };
     }, [fetchAttendance]);
 
     const clearFilters = () => {
@@ -161,11 +177,11 @@ export default function AttendancePage() {
         ? addMinutes(settings.workStartTime, settings.weekdayGraceMinutes)
         : null;
 
-    const emptyMessage = quickFilter === 'LATE'
-        ? 'ไม่พบวันที่เข้าเกินเวลาในรอบนี้'
-        : quickFilter === 'INCOMPLETE'
-            ? 'ไม่พบวันที่ข้อมูลไม่ครบในรอบนี้'
-            : 'ยังไม่พบข้อมูลเวลาเข้า-ออกจาก HIP ในรอบนี้';
+    const emptyMessage = days.length === 0 || quickFilter === 'ALL'
+        ? 'ยังไม่พบข้อมูลเวลาเข้า-ออกจาก HIP ในรอบนี้'
+        : quickFilter === 'LATE'
+            ? 'ไม่พบวันที่เข้าเกินเวลาในรอบนี้'
+            : 'ไม่พบวันที่ข้อมูลไม่ครบในรอบนี้';
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -244,6 +260,7 @@ export default function AttendancePage() {
                             <button
                                 key={value}
                                 type="button"
+                                aria-pressed={quickFilter === value}
                                 onClick={() => setQuickFilter(value)}
                                 className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
                                     quickFilter === value
