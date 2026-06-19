@@ -78,10 +78,50 @@ assert.equal(
 
 assert.deepEqual(
     summarizeDailyAttendanceRowsWithSchedule([
+        { attendanceDate: '2026-06-20', recordTime: '11:30:00' },
+    ], context)[0],
+    {
+        date: '2026-06-20',
+        checkIn: null,
+        checkOut: '11:30',
+        scanCount: 1,
+        dayType: 'WORKING_SATURDAY',
+        scheduledStartTime: '09:00',
+        scheduledEndTime: '12:00',
+        lateAfterTime: '09:00',
+        isLate: false,
+        isIncomplete: true,
+        missingCheckIn: true,
+        missingCheckOut: false,
+    }
+);
+
+assert.deepEqual(
+    summarizeDailyAttendanceRowsWithSchedule([
         { attendanceDate: '2026-06-27', recordTime: '09:30:00' },
     ], context)[0],
     {
         date: '2026-06-27',
+        checkIn: '09:30',
+        checkOut: null,
+        scanCount: 1,
+        dayType: 'NON_WORKDAY',
+        scheduledStartTime: null,
+        scheduledEndTime: null,
+        lateAfterTime: null,
+        isLate: false,
+        isIncomplete: false,
+        missingCheckIn: false,
+        missingCheckOut: false,
+    }
+);
+
+assert.deepEqual(
+    summarizeDailyAttendanceRowsWithSchedule([
+        { attendanceDate: '2026-06-21', recordTime: '09:30:00' },
+    ], context)[0],
+    {
+        date: '2026-06-21',
         checkIn: '09:30',
         checkOut: null,
         scanCount: 1,
