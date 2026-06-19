@@ -36,6 +36,11 @@ assert.deepEqual(
     { from: '2025-12-21', to: '2026-01-20' }
 );
 
+assert.deepEqual(
+    getAttendancePeriodRange('2026-06', 1),
+    { from: '2026-06-01', to: '2026-06-30' }
+);
+
 assert.equal(
     summarizeDailyAttendanceRowsWithSchedule([
         { attendanceDate: '2026-06-04', recordTime: '08:45:00' },

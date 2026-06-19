@@ -58,6 +58,14 @@ export function getAttendancePeriodRange(periodMonth: string, periodStartDay: nu
     const [yearText, monthText] = periodMonth.split('-');
     const year = Number(yearText);
     const monthIndex = Number(monthText) - 1;
+
+    if (periodStartDay === 1) {
+        return {
+            from: formatDate(new Date(Date.UTC(year, monthIndex, 1))),
+            to: formatDate(new Date(Date.UTC(year, monthIndex + 1, 0))),
+        };
+    }
+
     const from = new Date(Date.UTC(year, monthIndex - 1, periodStartDay));
     const to = new Date(Date.UTC(year, monthIndex, periodStartDay - 1));
 

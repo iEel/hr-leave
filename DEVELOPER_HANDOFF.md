@@ -734,7 +734,7 @@ sequenceDiagram
 - [x] **Dashboard Card** - เพิ่ม compact status strip เวลาเข้า-ออกวันนี้ โดยแสดงเฉพาะ `เวลาเข้า` และ `เวลาออก` เพื่อไม่กินพื้นที่ first screen
 - [x] **Admin Datetime Display Fix** - หน้า `/admin/attendance-devices` แสดง `Started`, `lastSyncAt`, `nextSyncAt` เป็น local datetime string จาก SQL (`CONVERT(varchar(19), ..., 126)`) เพื่อป้องกัน browser แปลง `DATETIME2` เป็น UTC แล้วบวกเวลา +7 ชั่วโมงซ้ำ
 - [x] **Deployment Docs** - อัปเดต `DEPLOYMENT.md` ให้ตรงกับ port `3002`, env Azure AD ชุด `AZURE_AD_*`, migration attendance, cron attendance sync, และ no-confirm/read-only behavior
-- [x] **Tests** - `tests/hip-protocol.test.mjs`, `tests/hip-client-session.test.mjs`, `tests/hip-client-full-table.test.mjs`, `tests/attendance-summary.test.mjs`, `tests/sync-service.test.mjs`, `tests/attendance-admin-datetime.test.mjs`
+- [x] **Tests** - `tests/hip-protocol.test.mjs`, `tests/attendance-summary.test.mjs`, `tests/attendance-schedule-rules.test.mjs`, `tests/sync-service.test.mjs`
 
 ### 🔲 สิ่งที่ยังรอ (Remaining)
 - [ ] LINE Notify Integration (optional)
@@ -782,11 +782,9 @@ sequenceDiagram
 | `src/app/(dashboard)/attendance/page.tsx` | Employee UI เวลาเข้า-ออก |
 | `database/migrations/add_attendance_tables.sql` | Migration script |
 | `tests/hip-protocol.test.mjs` | Protocol/frame/decode tests |
-| `tests/hip-client-session.test.mjs` | TCP session test: B4/A1/A2 sequence uses one connection |
-| `tests/hip-client-full-table.test.mjs` | Full-table A4 page loop/concat/latest-record tests |
 | `tests/attendance-summary.test.mjs` | Attendance summary/filter tests |
+| `tests/attendance-schedule-rules.test.mjs` | Schedule-aware period, weekday grace, working Saturday, and non-workday rules |
 | `tests/sync-service.test.mjs` | Incremental/backfill orchestration tests รวม no-confirm behavior |
-| `tests/attendance-admin-datetime.test.mjs` | Regression test กัน admin attendance datetime กลับไปติด UTC `Z` |
 
 ### 🔐 AD Lifecycle Management
 
