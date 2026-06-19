@@ -30,7 +30,8 @@ export type AuditAction =
     | 'CREATE_ATTENDANCE_DEVICE'
     | 'UPDATE_ATTENDANCE_DEVICE'
     | 'TEST_ATTENDANCE_DEVICE'
-    | 'SYNC_ATTENDANCE_DEVICE';
+    | 'SYNC_ATTENDANCE_DEVICE'
+    | 'BACKFILL_ATTENDANCE_DEVICE';
 
 export type TargetTable =
     | 'Users'
@@ -126,7 +127,8 @@ export function getActionDisplayName(action: AuditAction): string {
         'CREATE_ATTENDANCE_DEVICE': 'เพิ่มเครื่องบันทึกเวลา',
         'UPDATE_ATTENDANCE_DEVICE': 'แก้ไขเครื่องบันทึกเวลา',
         'TEST_ATTENDANCE_DEVICE': 'ทดสอบเครื่องบันทึกเวลา',
-        'SYNC_ATTENDANCE_DEVICE': 'ซิงก์เครื่องบันทึกเวลา'
+        'SYNC_ATTENDANCE_DEVICE': 'ซิงก์เครื่องบันทึกเวลา',
+        'BACKFILL_ATTENDANCE_DEVICE': 'Backfill ประวัติเครื่องบันทึกเวลา'
     };
     return names[action] || action;
 }

@@ -13,6 +13,9 @@ import {
 } from './repository';
 import type { AttendanceSyncStatus, AttendanceTriggerType } from './types';
 
+const HIP_A1_MAX_BATCH_RECORDS = 50;
+const HIP_DB_INSERT_BATCH_RECORDS = 500;
+
 export interface RunAttendanceIncrementalSyncInput {
     deviceId: number | string;
     triggerType: AttendanceTriggerType;
@@ -30,6 +33,9 @@ export interface RunAttendanceIncrementalSyncResult {
     confirmedCount: number;
     errorMessage: string | null;
 }
+
+export type RunAttendanceBackfillInput = RunAttendanceIncrementalSyncInput;
+export type RunAttendanceBackfillResult = RunAttendanceIncrementalSyncResult;
 
 interface AttendanceSyncTransaction {
     begin(): Promise<unknown>;
@@ -83,7 +89,9 @@ export async function runAttendanceIncrementalSync(
     let receivedCount = 0;
     let insertedCount = 0;
     let duplicateCount = 0;
-    let confirmedCount = 0;
+    const confirmedCount = 0;
+    let lastRecordTime: string | null = null;
+    let client: HipIncrementalClient | null = null;
 
     try {
         runId = await dependencies.createRun({
@@ -93,7 +101,7 @@ export async function runAttendanceIncrementalSync(
             triggeredByUserId: input.triggeredByUserId ?? null,
         });
 
-        const client = input.client ?? dependencies.createClient(device);
+        client = input.client ?? dependencies.createClient(device);
 
         newCount = await client.getNewCount();
 
@@ -116,7 +124,7 @@ export async function runAttendanceIncrementalSync(
                 syncFrequencyMinutes: device.syncFrequencyMinutes,
             });
 
-            return successResult(runId, {
+            return completedResult(runId, 'SUCCESS', null, {
                 newCount,
                 receivedCount,
                 insertedCount,
@@ -125,28 +133,18 @@ export async function runAttendanceIncrementalSync(
             });
         }
 
-        const records = await client.readNewRecords(newCount);
-        receivedCount = records.length;
+        const records = await readPendingRecords(client, newCount);
 
         if (records.length !== newCount) {
-            throw new Error(`HIP A1 returned ${records.length} records for new count ${newCount}`);
+            throw new Error(`HIP returned ${records.length} pending records for new count ${newCount}`);
         }
 
-        const transaction = await dependencies.createTransaction();
+        receivedCount = records.length;
+        lastRecordTime = records.at(-1)?.recordTime ?? null;
 
-        try {
-            await transaction.begin();
-            const insertResult = await dependencies.insertRecords(transaction, device.id, records);
-            insertedCount = insertResult.insertedCount;
-            duplicateCount = insertResult.duplicateCount;
-            await transaction.commit();
-        } catch (error) {
-            await rollbackTransaction(transaction);
-            throw error;
-        }
-
-        await client.confirmRead(newCount);
-        confirmedCount = newCount;
+        const insertResult = await insertRecordsInCommittedBatches(dependencies, device.id, records);
+        insertedCount = insertResult.insertedCount;
+        duplicateCount = insertResult.duplicateCount;
 
         await dependencies.finishRun({
             syncRunId: runId,
@@ -163,11 +161,11 @@ export async function runAttendanceIncrementalSync(
             lastError: null,
             lastNewCount: newCount,
             lastInsertedCount: insertedCount,
-            lastRecordTime: records.at(-1)?.recordTime ?? null,
+            lastRecordTime,
             syncFrequencyMinutes: device.syncFrequencyMinutes,
         });
 
-        return successResult(runId, {
+        return completedResult(runId, 'SUCCESS', null, {
             newCount,
             receivedCount,
             insertedCount,
@@ -185,7 +183,7 @@ export async function runAttendanceIncrementalSync(
                 receivedCount,
                 insertedCount,
                 duplicateCount,
-                confirmedCount: 0,
+                confirmedCount,
                 errorMessage,
             });
         }
@@ -205,10 +203,128 @@ export async function runAttendanceIncrementalSync(
             receivedCount,
             insertedCount,
             duplicateCount,
+            confirmedCount,
+            errorMessage,
+        };
+    } finally {
+        await client?.close?.();
+        await dependencies.releaseLock(device.id, owner);
+    }
+}
+
+export async function runAttendanceBackfill(
+    input: RunAttendanceBackfillInput,
+    dependencies = createDefaultDependencies()
+): Promise<RunAttendanceBackfillResult> {
+    const device = await dependencies.getDeviceConfig(input.deviceId);
+    if (!device) {
+        throw new Error(`Attendance device ${input.deviceId} was not found`);
+    }
+
+    const owner = createLockOwner(device.id);
+    const lockAcquired = await dependencies.tryAcquireLock(device.id, owner);
+
+    if (!lockAcquired) {
+        return {
+            runId: 0,
+            status: 'SKIPPED',
+            newCount: 0,
+            receivedCount: 0,
+            insertedCount: 0,
+            duplicateCount: 0,
+            confirmedCount: 0,
+            errorMessage: 'Device sync is already running',
+        };
+    }
+
+    let runId = 0;
+    let totalCount = 0;
+    let receivedCount = 0;
+    let insertedCount = 0;
+    let duplicateCount = 0;
+    let client: HipIncrementalClient | null = null;
+
+    try {
+        runId = await dependencies.createRun({
+            deviceId: device.id,
+            mode: 'BACKFILL',
+            triggerType: input.triggerType,
+            triggeredByUserId: input.triggeredByUserId ?? null,
+        });
+
+        client = input.client ?? dependencies.createClient(device);
+        const records = await client.readAllRecords();
+        totalCount = records.length;
+        receivedCount = records.length;
+
+        const insertResult = await insertRecordsInCommittedBatches(dependencies, device.id, records);
+        insertedCount = insertResult.insertedCount;
+        duplicateCount = insertResult.duplicateCount;
+
+        const lastRecordTime = getLastRecordTime(records);
+
+        await dependencies.finishRun({
+            syncRunId: runId,
+            status: 'SUCCESS',
+            newCount: totalCount,
+            receivedCount,
+            insertedCount,
+            duplicateCount,
+            confirmedCount: 0,
+            errorMessage: null,
+        });
+        await dependencies.updateDeviceStatus(device.id, {
+            status: 'SUCCESS',
+            lastError: null,
+            lastNewCount: totalCount,
+            lastInsertedCount: insertedCount,
+            lastRecordTime,
+            syncFrequencyMinutes: device.syncFrequencyMinutes,
+        });
+
+        return completedResult(runId, 'SUCCESS', null, {
+            newCount: totalCount,
+            receivedCount,
+            insertedCount,
+            duplicateCount,
+            confirmedCount: 0,
+        });
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+
+        if (runId !== 0) {
+            await dependencies.finishRun({
+                syncRunId: runId,
+                status: 'FAILED',
+                newCount: totalCount,
+                receivedCount,
+                insertedCount,
+                duplicateCount,
+                confirmedCount: 0,
+                errorMessage,
+            });
+        }
+
+        await dependencies.updateDeviceStatus(device.id, {
+            status: 'FAILED',
+            lastError: errorMessage,
+            lastNewCount: totalCount,
+            lastInsertedCount: insertedCount,
+            syncFrequencyMinutes: device.syncFrequencyMinutes,
+        });
+
+        return {
+            runId,
+            status: 'FAILED',
+            newCount: totalCount,
+            receivedCount,
+            insertedCount,
+            duplicateCount,
             confirmedCount: 0,
             errorMessage,
         };
     } finally {
+        await client?.close?.();
         await dependencies.releaseLock(device.id, owner);
     }
 }
@@ -254,8 +370,58 @@ async function rollbackTransaction(transaction: AttendanceSyncTransaction): Prom
     }
 }
 
-function successResult(
+async function readPendingRecords(
+    client: HipIncrementalClient,
+    newCount: number
+): Promise<AttendanceRecordInsertInput[]> {
+    if (newCount <= HIP_A1_MAX_BATCH_RECORDS) {
+        return client.readNewRecords(newCount);
+    }
+
+    return client.readLatestRecords(newCount);
+}
+
+async function insertRecordsInCommittedBatches(
+    dependencies: AttendanceSyncDependencies,
+    deviceId: number,
+    records: AttendanceRecordInsertInput[]
+): Promise<InsertAttendanceRecordsResult> {
+    let insertedCount = 0;
+    let duplicateCount = 0;
+
+    for (let offset = 0; offset < records.length; offset += HIP_DB_INSERT_BATCH_RECORDS) {
+        const batch = records.slice(offset, offset + HIP_DB_INSERT_BATCH_RECORDS);
+        const transaction = await dependencies.createTransaction();
+
+        try {
+            await transaction.begin();
+            const insertResult = await dependencies.insertRecords(transaction, deviceId, batch);
+            insertedCount += insertResult.insertedCount;
+            duplicateCount += insertResult.duplicateCount;
+            await transaction.commit();
+        } catch (error) {
+            await rollbackTransaction(transaction);
+            throw error;
+        }
+    }
+
+    return { insertedCount, duplicateCount };
+}
+
+function getLastRecordTime(records: AttendanceRecordInsertInput[]): string | null {
+    return records.reduce<string | null>((latest, record) => {
+        if (latest == null || record.recordTime.localeCompare(latest) > 0) {
+            return record.recordTime;
+        }
+
+        return latest;
+    }, null);
+}
+
+function completedResult(
     runId: number,
+    status: AttendanceSyncStatus,
+    errorMessage: string | null,
     counts: Pick<
         RunAttendanceIncrementalSyncResult,
         'newCount' | 'receivedCount' | 'insertedCount' | 'duplicateCount' | 'confirmedCount'
@@ -263,8 +429,8 @@ function successResult(
 ): RunAttendanceIncrementalSyncResult {
     return {
         runId,
-        status: 'SUCCESS',
+        status,
         ...counts,
-        errorMessage: null,
+        errorMessage,
     };
 }

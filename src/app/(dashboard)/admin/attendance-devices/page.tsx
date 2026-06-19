@@ -6,6 +6,7 @@ import {
     AlertTriangle,
     Check,
     Clock,
+    Database,
     Edit2,
     Fingerprint,
     Loader2,
@@ -42,6 +43,7 @@ interface AttendanceSyncRun {
     id: number;
     deviceId: number;
     deviceName: string | null;
+    mode: string;
     status: string;
     startedAt: string;
     newCount: number | null;
@@ -104,8 +106,21 @@ function getErrorMessage(data: unknown, fallback: string) {
     if (data && typeof data === 'object' && 'message' in data && typeof data.message === 'string') {
         return data.message;
     }
+    if (
+        data &&
+        typeof data === 'object' &&
+        'result' in data &&
+        data.result &&
+        typeof data.result === 'object' &&
+        'errorMessage' in data.result &&
+        typeof data.result.errorMessage === 'string'
+    ) {
+        return data.result.errorMessage;
+    }
     return fallback;
 }
+
+type DeviceAction = 'test' | 'sync' | 'backfill';
 
 function createFormState(device?: AttendanceDevice): DeviceFormState {
     if (!device) return defaultFormState;
@@ -305,7 +320,25 @@ export default function AttendanceDevicesPage() {
         }
     };
 
-    const runDeviceAction = async (deviceId: number, action: 'test' | 'sync') => {
+    const runDeviceAction = async (deviceId: number, action: DeviceAction) => {
+        const successText: Record<DeviceAction, string> = {
+            test: 'ทดสอบการเชื่อมต่อสำเร็จ',
+            sync: 'Sync เครื่องบันทึกเวลาเรียบร้อย',
+            backfill: 'Backfill ประวัติทั้งหมดเรียบร้อย',
+        };
+        const errorText: Record<DeviceAction, string> = {
+            test: 'ทดสอบการเชื่อมต่อไม่สำเร็จ',
+            sync: 'Sync ไม่สำเร็จ',
+            backfill: 'Backfill ไม่สำเร็จ',
+        };
+
+        if (
+            action === 'backfill' &&
+            !window.confirm('Backfill จะอ่านประวัติทั้งหมดจากเครื่องและอาจใช้เวลาหลายนาที ต้องการเริ่มหรือไม่?')
+        ) {
+            return;
+        }
+
         const actionKey = `${action}-${deviceId}`;
         setActionLoading(prev => ({ ...prev, [actionKey]: true }));
         setMessage(null);
@@ -317,20 +350,20 @@ export default function AttendanceDevicesPage() {
             if (res.ok && data && typeof data === 'object' && 'success' in data && data.success === true) {
                 setMessage({
                     type: 'success',
-                    text: action === 'test' ? 'ทดสอบการเชื่อมต่อสำเร็จ' : 'เริ่ม Sync เครื่องบันทึกเวลาเรียบร้อย',
+                    text: successText[action],
                 });
                 await fetchDevices();
                 await fetchSyncRuns();
             } else {
                 setMessage({
                     type: 'error',
-                    text: getErrorMessage(data, action === 'test' ? 'ทดสอบการเชื่อมต่อไม่สำเร็จ' : 'Sync ไม่สำเร็จ'),
+                    text: getErrorMessage(data, errorText[action]),
                 });
             }
         } catch {
             setMessage({
                 type: 'error',
-                text: action === 'test' ? 'ทดสอบการเชื่อมต่อไม่สำเร็จ' : 'Sync ไม่สำเร็จ',
+                text: errorText[action],
             });
         } finally {
             setActionLoading(prev => ({ ...prev, [actionKey]: false }));
@@ -567,6 +600,7 @@ export default function AttendanceDevicesPage() {
                                 {devices.map(device => {
                                     const testKey = `test-${device.id}`;
                                     const syncKey = `sync-${device.id}`;
+                                    const backfillKey = `backfill-${device.id}`;
                                     return (
                                         <tr key={device.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                             <td className="py-3 px-4">
@@ -622,6 +656,14 @@ export default function AttendanceDevicesPage() {
                                                     >
                                                         {actionLoading[syncKey] ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                                                     </button>
+                                                    <button
+                                                        onClick={() => runDeviceAction(device.id, 'backfill')}
+                                                        disabled={actionLoading[backfillKey]}
+                                                        className="p-2 text-gray-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-lg transition-colors disabled:opacity-50"
+                                                        title="Backfill ประวัติทั้งหมด"
+                                                    >
+                                                        {actionLoading[backfillKey] ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
@@ -667,6 +709,7 @@ export default function AttendanceDevicesPage() {
                             <thead className="bg-gray-50 dark:bg-gray-900">
                                 <tr>
                                     <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">เครื่อง</th>
+                                    <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Mode</th>
                                     <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Status</th>
                                     <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase">Started</th>
                                     <th className="text-right py-3 px-4 text-xs font-medium text-gray-500 uppercase">New</th>
@@ -680,6 +723,7 @@ export default function AttendanceDevicesPage() {
                                 {syncRuns.map(run => (
                                     <tr key={run.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                         <td className="py-3 px-4 text-sm font-medium text-gray-900 dark:text-white">{run.deviceName || `Device #${run.deviceId}`}</td>
+                                        <td className="py-3 px-4 text-sm text-gray-600 dark:text-gray-300">{run.mode}</td>
                                         <td className="py-3 px-4">
                                             <span className={`inline-flex px-2 py-1 rounded-lg text-xs font-medium ${syncStatusClasses[run.status] ?? 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}`}>
                                                 {run.status}

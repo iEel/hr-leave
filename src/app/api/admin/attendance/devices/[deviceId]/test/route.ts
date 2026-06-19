@@ -34,7 +34,11 @@ export async function POST(
             retryCount: device.retryCount,
         });
 
-        await client.testConnection();
+        try {
+            await client.testConnection();
+        } finally {
+            await client.close();
+        }
 
         await logAudit({
             userId: Number(session.user.id),

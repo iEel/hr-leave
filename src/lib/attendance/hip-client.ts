@@ -20,15 +20,23 @@ export interface HipIncrementalClient {
     testConnection(): Promise<void>;
     getNewCount(): Promise<number>;
     readNewRecords(newCount: number): Promise<AttendanceRecordInsertInput[]>;
+    readLatestRecords(recordCount: number): Promise<AttendanceRecordInsertInput[]>;
+    readAllRecords(): Promise<AttendanceRecordInsertInput[]>;
     confirmRead(newCount: number): Promise<void>;
+    close?(): Promise<void>;
 }
 
 type HipCommandInput = Omit<Parameters<typeof buildHipFrame>[0], 'seq'>;
+
+const HIP_RECORD_LENGTH = 20;
+const HIP_A4_PAGE_PAYLOAD_BYTES = 1024;
+const HIP_A4_RESPONSE_BYTES = 10 + 2 + HIP_A4_PAGE_PAYLOAD_BYTES + 4;
 
 export class HipCmif68sClient implements HipIncrementalClient {
     private sequence = 0;
     private readonly passCode: number;
     private readonly retryCount: number;
+    private socket: net.Socket | null = null;
 
     constructor(private readonly config: HipClientConfig) {
         this.passCode = normalizePassCode(config.passCode);
@@ -69,7 +77,7 @@ export class HipCmif68sClient implements HipIncrementalClient {
                     field8: newCount,
                     length: newCount * 20,
                 },
-                12 + newCount * 20
+                16 + newCount * 20
             ),
             'read new attendance records'
         );
@@ -79,6 +87,45 @@ export class HipCmif68sClient implements HipIncrementalClient {
             recordHex: record.toString('hex'),
             sourceCommand: 'A1',
         }));
+    }
+
+    async readLatestRecords(recordCount: number): Promise<AttendanceRecordInsertInput[]> {
+        if (recordCount < 1) {
+            return [];
+        }
+
+        const records = await this.readAllRecords();
+        return records.sort(compareAttendanceRecords).slice(-recordCount);
+    }
+
+    async readAllRecords(): Promise<AttendanceRecordInsertInput[]> {
+        const totalRecords = await this.getAttendanceTableCount();
+
+        const totalBytes = totalRecords * HIP_RECORD_LENGTH;
+        if (totalBytes < 1) {
+            return [];
+        }
+
+        const endPage = Math.ceil(totalBytes / HIP_A4_PAGE_PAYLOAD_BYTES) - 1;
+        const pagePayloads: Buffer[] = [];
+
+        for (let pageIndex = 0; pageIndex <= endPage; pageIndex += 1) {
+            pagePayloads.push(await this.readAttendanceTablePage(pageIndex, totalRecords));
+        }
+
+        const tableBytes = Buffer.concat(pagePayloads).subarray(0, totalBytes);
+        const records: AttendanceRecordInsertInput[] = [];
+
+        for (let offset = 0; offset + HIP_RECORD_LENGTH <= tableBytes.length; offset += HIP_RECORD_LENGTH) {
+            const record = tableBytes.subarray(offset, offset + HIP_RECORD_LENGTH);
+            records.push({
+                ...decodeHipRecord(record),
+                recordHex: record.toString('hex'),
+                sourceCommand: 'A4',
+            });
+        }
+
+        return records;
     }
 
     async confirmRead(newCount: number): Promise<void> {
@@ -109,9 +156,45 @@ export class HipCmif68sClient implements HipIncrementalClient {
             ...frameInput,
             seq: commandSeq,
         });
-        const response = await this.sendFrame(handshakeFrame, commandFrame, minimumBytes);
+        await this.ensureConnected(handshakeFrame);
+        const response = await this.writeAndRead(commandFrame, minimumBytes, `HIP command 0x${frameInput.cmd.toString(16)}`);
 
         return { response, seq: commandSeq };
+    }
+
+    private async getAttendanceTableCount(): Promise<number> {
+        const { response, seq } = await this.withRetries(
+            () => this.sendCommand(
+                {
+                    cmd: 0xb4,
+                    field4: 8,
+                    field8: 0xffff0000,
+                    length: 0,
+                },
+                10
+            ),
+            'open attendance table'
+        );
+
+        return parseNewCountResponse(response, seq);
+    }
+
+    private async readAttendanceTablePage(pageIndex: number, totalRecords: number): Promise<Buffer> {
+        const field8 = pageIndex === 0 ? totalRecords & 0xffff : pageIndex * 0x10000;
+        const { response } = await this.withRetries(
+            () => this.sendCommand(
+                {
+                    cmd: 0xa4,
+                    field4: 0,
+                    field8,
+                    length: HIP_A4_PAGE_PAYLOAD_BYTES,
+                },
+                HIP_A4_RESPONSE_BYTES
+            ),
+            `read attendance table page ${pageIndex}`
+        );
+
+        return extractAttendanceTablePagePayload(response);
     }
 
     private async withRetries<T>(operation: () => Promise<T>, action: string): Promise<T> {
@@ -123,6 +206,7 @@ export class HipCmif68sClient implements HipIncrementalClient {
                 return await operation();
             } catch (error) {
                 lastError = error;
+                await this.close();
                 if (attempt === attempts) {
                     break;
                 }
@@ -138,67 +222,86 @@ export class HipCmif68sClient implements HipIncrementalClient {
         return this.sequence;
     }
 
-    private sendFrame(handshakeFrame: Buffer, commandFrame: Buffer, minimumBytes: number): Promise<Buffer> {
-        return new Promise((resolve, reject) => {
-            const chunks: Buffer[] = [];
-            let phase: 'handshake' | 'command' = 'handshake';
-            let settled = false;
+    private async ensureConnected(handshakeFrame: Buffer): Promise<void> {
+        if (this.socket && !this.socket.destroyed) {
+            return;
+        }
+
+        this.socket = await new Promise<net.Socket>((resolve, reject) => {
             const socket = net.createConnection({
                 host: this.config.ipAddress,
                 port: this.config.port,
             });
+            const timeout = setTimeout(() => {
+                socket.destroy();
+                reject(new Error(`HIP TCP connect timed out after ${this.config.timeoutMs}ms`));
+            }, this.config.timeoutMs);
+
+            socket.once('connect', () => {
+                clearTimeout(timeout);
+                resolve(socket);
+            });
+            socket.once('error', (error) => {
+                clearTimeout(timeout);
+                reject(error);
+            });
+        });
+
+        await this.writeAndRead(handshakeFrame, 10, 'HIP handshake');
+    }
+
+    private writeAndRead(frame: Buffer, minimumBytes: number, label: string): Promise<Buffer> {
+        return new Promise((resolve, reject) => {
+            const socket = this.socket;
+            if (!socket || socket.destroyed) {
+                reject(new Error('HIP TCP socket is not connected'));
+                return;
+            }
+
+            const chunks: Buffer[] = [];
+            let settled = false;
 
             const settle = (callback: () => void) => {
                 if (settled) {
                     return;
                 }
                 settled = true;
-                socket.removeAllListeners();
+                socket.off('data', onData);
+                socket.off('error', onError);
+                socket.off('close', onClose);
                 callback();
             };
 
             const timeout = setTimeout(() => {
                 settle(() => {
-                    socket.destroy();
-                    reject(new Error(`HIP TCP request timed out after ${this.config.timeoutMs}ms`));
+                    this.destroySocket();
+                    reject(new Error(`${label} timed out after ${this.config.timeoutMs}ms`));
                 });
             }, this.config.timeoutMs);
 
-            socket.once('connect', () => {
-                socket.write(handshakeFrame);
-            });
-
-            socket.on('data', (chunk) => {
+            const onData = (chunk: Buffer) => {
                 chunks.push(chunk);
                 const response = Buffer.concat(chunks);
 
-                if (phase === 'handshake' && response.length >= 10) {
-                    chunks.length = 0;
-                    phase = 'command';
-                    socket.write(commandFrame);
-                    return;
-                }
-
-                if (phase === 'command' && response.length >= minimumBytes) {
+                if (response.length >= minimumBytes) {
                     settle(() => {
                         clearTimeout(timeout);
-                        socket.end();
                         resolve(response);
                     });
                 }
-            });
+            };
 
-            socket.once('error', (error) => {
+            const onError = (error: Error) => {
                 settle(() => {
                     clearTimeout(timeout);
-                    socket.destroy();
+                    this.destroySocket();
                     reject(error);
                 });
-            });
+            };
 
-            socket.once('close', () => {
+            const onClose = () => {
                 const response = Buffer.concat(chunks);
-                if (phase === 'command' && response.length >= minimumBytes) {
+                if (response.length >= minimumBytes) {
                     settle(() => {
                         clearTimeout(timeout);
                         resolve(response);
@@ -208,15 +311,80 @@ export class HipCmif68sClient implements HipIncrementalClient {
 
                 settle(() => {
                     clearTimeout(timeout);
+                    this.socket = null;
                     reject(
                         new Error(
-                            `HIP TCP socket closed during ${phase} after ${response.length} byte(s); expected ${phase === 'handshake' ? 10 : minimumBytes}`
+                            `${label} socket closed after ${response.length} byte(s); expected ${minimumBytes}`
                         )
                     );
                 });
-            });
+            };
+
+            socket.on('data', onData);
+            socket.once('error', onError);
+            socket.once('close', onClose);
+            socket.write(frame);
         });
     }
+
+    async close(): Promise<void> {
+        if (!this.socket) {
+            return;
+        }
+
+        const socket = this.socket;
+        this.socket = null;
+
+        if (socket.destroyed) {
+            return;
+        }
+
+        await new Promise<void>((resolve) => {
+            socket.once('close', () => resolve());
+            socket.end();
+            setTimeout(() => {
+                if (!socket.destroyed) {
+                    socket.destroy();
+                }
+                resolve();
+            }, 250);
+        });
+    }
+
+    private destroySocket(): void {
+        if (this.socket && !this.socket.destroyed) {
+            this.socket.destroy();
+        }
+        this.socket = null;
+    }
+}
+
+function extractAttendanceTablePagePayload(response: Buffer): Buffer {
+    const payloadMagicOffset = response.indexOf(Buffer.from([0x55, 0xaa]), 10);
+    if (payloadMagicOffset === -1) {
+        throw new Error('HIP A4 response payload magic not found');
+    }
+
+    const payloadStart = payloadMagicOffset + 2;
+    const payloadEnd = Math.min(payloadStart + HIP_A4_PAGE_PAYLOAD_BYTES, response.length - 4);
+    if (payloadEnd - payloadStart < HIP_A4_PAGE_PAYLOAD_BYTES) {
+        throw new Error(
+            `HIP A4 response is too short: expected ${HIP_A4_PAGE_PAYLOAD_BYTES} payload bytes, received ${payloadEnd - payloadStart}`
+        );
+    }
+
+    return response.subarray(payloadStart, payloadEnd);
+}
+
+function compareAttendanceRecords(
+    left: AttendanceRecordInsertInput,
+    right: AttendanceRecordInsertInput
+): number {
+    return left.recordTime.localeCompare(right.recordTime)
+        || left.rawRecordTime.localeCompare(right.rawRecordTime)
+        || left.userKey - right.userKey
+        || left.verifyType.localeCompare(right.verifyType)
+        || left.recordHex.localeCompare(right.recordHex);
 }
 
 function normalizePassCode(passCode: string | number | null | undefined): number {

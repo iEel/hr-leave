@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-import { runAttendanceIncrementalSync } from '../src/lib/attendance/sync-service.ts';
+import { runAttendanceBackfill, runAttendanceIncrementalSync } from '../src/lib/attendance/sync-service.ts';
 
 function makeRecord(index) {
     return {
@@ -16,11 +16,16 @@ function makeRecord(index) {
     };
 }
 
-function createHarness({ commitFails = false } = {}) {
+function createHarness({ commitFails = false, newCounts = [2] } = {}) {
     const calls = [];
+    const createRunCalls = [];
     const finishCalls = [];
     const updateCalls = [];
     const confirmCalls = [];
+    const readCounts = [];
+    const latestReadCounts = [];
+    const allReadCalls = [];
+    const getNewCountResults = [...newCounts];
     const transaction = {
         async begin() {
             calls.push('begin');
@@ -42,11 +47,25 @@ function createHarness({ commitFails = false } = {}) {
         },
         async getNewCount() {
             calls.push('getNewCount');
-            return 2;
+            return getNewCountResults.length > 0 ? getNewCountResults.shift() : 0;
         },
         async readNewRecords(newCount) {
             calls.push(`readNewRecords:${newCount}`);
-            return [makeRecord(1), makeRecord(2)];
+            readCounts.push(newCount);
+            return Array.from({ length: newCount }, (_value, index) => makeRecord(index + 1));
+        },
+        async readLatestRecords(recordCount) {
+            calls.push(`readLatestRecords:${recordCount}`);
+            latestReadCounts.push(recordCount);
+            return Array.from({ length: recordCount }, (_value, index) => makeRecord(index + 1));
+        },
+        async readAllRecords() {
+            calls.push('readAllRecords');
+            allReadCalls.push(true);
+            return Array.from({ length: 3 }, (_value, index) => ({
+                ...makeRecord(index + 1),
+                sourceCommand: 'A4',
+            }));
         },
         async confirmRead(newCount) {
             calls.push(`confirmRead:${newCount}`);
@@ -93,8 +112,9 @@ function createHarness({ commitFails = false } = {}) {
             calls.push('releaseLock');
             return true;
         },
-        async createRun() {
+        async createRun(input) {
             calls.push('createRun');
+            createRunCalls.push(input);
             return 77;
         },
         async finishRun(input) {
@@ -120,7 +140,7 @@ function createHarness({ commitFails = false } = {}) {
         },
     };
 
-    return { calls, client, confirmCalls, dependencies, finishCalls, updateCalls };
+    return { allReadCalls, calls, client, confirmCalls, createRunCalls, dependencies, finishCalls, latestReadCounts, readCounts, updateCalls };
 }
 
 {
@@ -131,11 +151,8 @@ function createHarness({ commitFails = false } = {}) {
     );
 
     assert.equal(result.status, 'SUCCESS');
-    assert.deepEqual(harness.confirmCalls, [2], 'A2 confirm should run after successful DB commit');
-    assert.ok(
-        harness.calls.indexOf('commit') < harness.calls.indexOf('confirmRead:2'),
-        'DB commit should happen before A2 confirm'
-    );
+    assert.deepEqual(harness.confirmCalls, [], 'incremental sync should not send A2 confirm');
+    assert.equal(result.confirmedCount, 0, 'confirmedCount should stay 0 when A2 is disabled');
 }
 
 {
@@ -150,6 +167,57 @@ function createHarness({ commitFails = false } = {}) {
     assert.ok(harness.calls.includes('rollback'), 'failed DB transaction should be rolled back');
     assert.equal(harness.finishCalls.at(-1)?.status, 'FAILED');
     assert.equal(harness.updateCalls.at(-1)?.status, 'FAILED');
+}
+
+{
+    const harness = createHarness({ newCounts: [138] });
+    const result = await runAttendanceIncrementalSync(
+        { deviceId: 10, triggerType: 'MANUAL', client: harness.client },
+        harness.dependencies
+    );
+
+    assert.equal(result.status, 'SUCCESS');
+    assert.deepEqual(harness.readCounts, [], 'A1 should not be used when the device has more than 50 pending records');
+    assert.deepEqual(harness.latestReadCounts, [138], 'large pending queues should be read from the attendance table tail');
+    assert.deepEqual(harness.confirmCalls, [], 'large pending queues should still avoid A2 confirm');
+    assert.equal(result.newCount, 138);
+    assert.equal(result.receivedCount, 138);
+    assert.equal(result.confirmedCount, 0);
+}
+
+{
+    const harness = createHarness({ newCounts: [138, 138] });
+    const result = await runAttendanceIncrementalSync(
+        { deviceId: 10, triggerType: 'MANUAL', client: harness.client },
+        harness.dependencies
+    );
+
+    assert.equal(result.status, 'SUCCESS');
+    assert.equal(result.receivedCount, 138);
+    assert.equal(result.insertedCount, 138);
+    assert.equal(result.confirmedCount, 0);
+    assert.equal(result.errorMessage, null);
+    assert.equal(harness.finishCalls.at(-1)?.status, 'SUCCESS');
+    assert.equal(harness.updateCalls.at(-1)?.status, 'SUCCESS');
+    assert.equal(harness.updateCalls.at(-1)?.lastError, null);
+    assert.deepEqual(harness.confirmCalls, [], 'no-confirm sync should not become PARTIAL because the device queue remains');
+}
+
+{
+    const harness = createHarness();
+    const result = await runAttendanceBackfill(
+        { deviceId: 10, triggerType: 'MANUAL', client: harness.client },
+        harness.dependencies
+    );
+
+    assert.equal(result.status, 'SUCCESS');
+    assert.equal(harness.createRunCalls.at(-1)?.mode, 'BACKFILL');
+    assert.deepEqual(harness.allReadCalls, [true], 'backfill should read the full attendance table');
+    assert.deepEqual(harness.confirmCalls, [], 'backfill must not send A2 confirm');
+    assert.equal(result.newCount, 3);
+    assert.equal(result.receivedCount, 3);
+    assert.equal(result.insertedCount, 3);
+    assert.equal(result.confirmedCount, 0);
 }
 
 console.log('sync service tests passed');
