@@ -21,7 +21,8 @@ export async function GET() {
                 'WORK_START_TIME', 'WORK_END_TIME',
                 'BREAK_START_TIME', 'BREAK_END_TIME',
                 'WORK_HOURS_PER_DAY',
-                'SAT_WORK_START_TIME', 'SAT_WORK_END_TIME', 'SAT_WORK_HOURS'
+                'SAT_WORK_START_TIME', 'SAT_WORK_END_TIME', 'SAT_WORK_HOURS',
+                'WORKDAY_LATE_GRACE_MINUTES', 'ATTENDANCE_PERIOD_START_DAY'
             )
         `);
 
@@ -41,6 +42,8 @@ export async function GET() {
                 satWorkStartTime: settings['SAT_WORK_START_TIME'] || '09:00',
                 satWorkEndTime: settings['SAT_WORK_END_TIME'] || '12:00',
                 satWorkHours: parseFloat(settings['SAT_WORK_HOURS'] || '3'),
+                weekdayGraceMinutes: parseInt(settings['WORKDAY_LATE_GRACE_MINUTES'] || '15', 10),
+                attendancePeriodStartDay: parseInt(settings['ATTENDANCE_PERIOD_START_DAY'] || '21', 10),
             }
         });
     } catch (error) {
@@ -56,8 +59,9 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
     try {
         const session = await auth();
-        const isHRStaff = (session?.user as any)?.isHRStaff === true;
-        if (!session?.user?.id || (session.user.role !== 'HR' && session.user.role !== 'ADMIN' && !isHRStaff)) {
+        const user = session?.user as { id?: string; role?: string; isHRStaff?: boolean } | undefined;
+        const isHRStaff = user?.isHRStaff === true;
+        if (!user?.id || (user.role !== 'HR' && user.role !== 'ADMIN' && !isHRStaff)) {
             return NextResponse.json({ error: 'Permission denied' }, { status: 403 });
         }
 
@@ -69,6 +73,8 @@ export async function PUT(request: NextRequest) {
             breakEndTime,
             satWorkStartTime,
             satWorkEndTime,
+            weekdayGraceMinutes,
+            attendancePeriodStartDay,
         } = body;
 
         const pool = await getPool();
@@ -84,6 +90,16 @@ export async function PUT(request: NextRequest) {
         const breakMins = calculateHours(breakStartTime, breakEndTime) * 60;
         const workHoursPerDay = calculateHours(workStartTime, workEndTime, breakMins);
         const satWorkHours = calculateHours(satWorkStartTime, satWorkEndTime);
+        const normalizedWeekdayGraceMinutes = parseInt(weekdayGraceMinutes || '15', 10);
+        const normalizedAttendancePeriodStartDay = parseInt(attendancePeriodStartDay || '21', 10);
+
+        if (!Number.isInteger(normalizedWeekdayGraceMinutes) || normalizedWeekdayGraceMinutes < 0 || normalizedWeekdayGraceMinutes > 240) {
+            return NextResponse.json({ error: 'นาทีอนุโลมสายต้องอยู่ระหว่าง 0-240 นาที' }, { status: 400 });
+        }
+
+        if (!Number.isInteger(normalizedAttendancePeriodStartDay) || normalizedAttendancePeriodStartDay < 1 || normalizedAttendancePeriodStartDay > 28) {
+            return NextResponse.json({ error: 'วันที่เริ่มรอบคำนวณต้องอยู่ระหว่าง 1-28' }, { status: 400 });
+        }
 
         // Upsert settings
         const settings = [
@@ -95,6 +111,8 @@ export async function PUT(request: NextRequest) {
             { key: 'SAT_WORK_START_TIME', value: satWorkStartTime },
             { key: 'SAT_WORK_END_TIME', value: satWorkEndTime },
             { key: 'SAT_WORK_HOURS', value: satWorkHours.toString() },
+            { key: 'WORKDAY_LATE_GRACE_MINUTES', value: normalizedWeekdayGraceMinutes.toString() },
+            { key: 'ATTENDANCE_PERIOD_START_DAY', value: normalizedAttendancePeriodStartDay.toString() },
         ];
 
         for (const s of settings) {

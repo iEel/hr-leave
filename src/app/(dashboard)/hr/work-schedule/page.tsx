@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useSession } from 'next-auth/react';
 import {
     Calendar,
     Clock,
@@ -26,6 +25,8 @@ interface WorkSchedule {
     satWorkStartTime: string;
     satWorkEndTime: string;
     satWorkHours: number;
+    weekdayGraceMinutes: number;
+    attendancePeriodStartDay: number;
 }
 
 interface WorkingSaturday {
@@ -39,7 +40,6 @@ interface WorkingSaturday {
 }
 
 export default function WorkSchedulePage() {
-    const { data: session } = useSession();
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [success, setSuccess] = useState('');
@@ -55,6 +55,8 @@ export default function WorkSchedulePage() {
         satWorkStartTime: '09:00',
         satWorkEndTime: '12:00',
         satWorkHours: 3,
+        weekdayGraceMinutes: 15,
+        attendancePeriodStartDay: 21,
     });
 
     // Calendar state
@@ -131,7 +133,7 @@ export default function WorkSchedulePage() {
             } else {
                 setError(data.error || 'เกิดข้อผิดพลาด');
             }
-        } catch (err) {
+        } catch {
             setError('ไม่สามารถบันทึกการตั้งค่าได้');
         } finally {
             setSaving(false);
@@ -160,7 +162,7 @@ export default function WorkSchedulePage() {
             } else {
                 setError(data.error || 'เกิดข้อผิดพลาด');
             }
-        } catch (err) {
+        } catch {
             setError('ไม่สามารถเพิ่มวันเสาร์ทำงานได้');
         }
     };
@@ -175,7 +177,7 @@ export default function WorkSchedulePage() {
                 fetchWorkingSaturdays();
                 setSuccess(data.message);
             }
-        } catch (err) {
+        } catch {
             setError('ไม่สามารถลบได้');
         }
     };
@@ -319,6 +321,35 @@ export default function WorkSchedulePage() {
                                 ⏱️ ชั่วโมงทำงานต่อวัน: <strong>{schedule.workHoursPerDay} ชั่วโมง</strong>
                             </p>
                         </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-600 mb-1">นาทีอนุโลมสายวันทำงานปกติ</label>
+                                <input
+                                    type="number"
+                                    min={0}
+                                    max={240}
+                                    value={schedule.weekdayGraceMinutes}
+                                    onChange={(e) => setSchedule(prev => ({ ...prev, weekdayGraceMinutes: Number(e.target.value) }))}
+                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-600 mb-1">วันที่เริ่มรอบคำนวณเวลาเข้า-ออก</label>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={28}
+                                    value={schedule.attendancePeriodStartDay}
+                                    onChange={(e) => setSchedule(prev => ({ ...prev, attendancePeriodStartDay: Number(e.target.value) }))}
+                                    className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
+                                />
+                            </div>
+                        </div>
+
+                        <p className="text-sm text-gray-500">
+                            วันเสาร์ทำงานไม่มีนาทีอนุโลมสาย ระบบใช้เวลาเริ่มงานของวันเสาร์นั้นโดยตรง
+                        </p>
                     </div>
 
                     <hr className="my-6 border-gray-200 dark:border-gray-700" />
