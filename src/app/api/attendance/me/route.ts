@@ -1,15 +1,19 @@
 import { auth } from '@/auth';
-import { getEmployeeAttendanceSummary } from '@/lib/attendance/repository';
+import { getAttendancePeriodRange } from '@/lib/attendance/schedule-rules';
+import {
+    getAttendanceScheduleSettings,
+    getEmployeeAttendanceReport,
+} from '@/lib/attendance/repository';
 import { NextRequest, NextResponse } from 'next/server';
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const PERIOD_PATTERN = /^\d{4}-\d{2}$/;
 const TIME_PATTERN = /^\d{2}:\d{2}$/;
 
-function formatDate(value: Date): string {
+function formatPeriodMonth(value: Date): string {
     const year = value.getFullYear();
     const month = String(value.getMonth() + 1).padStart(2, '0');
-    const day = String(value.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return `${year}-${month}`;
 }
 
 function isValidDate(value: string): boolean {
@@ -25,6 +29,15 @@ function isValidDate(value: string): boolean {
         parsed.getMonth() === month - 1 &&
         parsed.getDate() === day
     );
+}
+
+function isValidPeriod(value: string): boolean {
+    if (!PERIOD_PATTERN.test(value)) {
+        return false;
+    }
+
+    const [year, month] = value.split('-').map(Number);
+    return year >= 2000 && year <= 2100 && month >= 1 && month <= 12;
 }
 
 function isValidTime(value: string): boolean {
@@ -45,13 +58,18 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const today = new Date();
-        const defaultFrom = formatDate(new Date(today.getFullYear(), today.getMonth(), 1));
-        const defaultTo = formatDate(today);
         const searchParams = request.nextUrl.searchParams;
-        const from = searchParams.get('from') || defaultFrom;
-        const to = searchParams.get('to') || defaultTo;
+        const periodMonth = searchParams.get('period') || formatPeriodMonth(new Date());
         const checkInFrom = searchParams.get('checkInFrom') || undefined;
+
+        if (!isValidPeriod(periodMonth)) {
+            return NextResponse.json({ error: 'Invalid period format' }, { status: 400 });
+        }
+
+        const settings = await getAttendanceScheduleSettings();
+        const computedRange = getAttendancePeriodRange(periodMonth, settings.periodStartDay);
+        const from = searchParams.get('from') || computedRange.from;
+        const to = searchParams.get('to') || computedRange.to;
 
         if (!isValidDate(from) || !isValidDate(to)) {
             return NextResponse.json({ error: 'Invalid date format' }, { status: 400 });
@@ -61,14 +79,15 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Invalid time format' }, { status: 400 });
         }
 
-        const days = await getEmployeeAttendanceSummary({
+        const report = await getEmployeeAttendanceReport({
             employeeId,
             fromDate: from,
             toDate: to,
             checkInFrom,
+            periodMonth,
         });
 
-        return NextResponse.json({ success: true, days });
+        return NextResponse.json({ success: true, ...report });
     } catch (error) {
         console.error('Error fetching employee attendance:', error);
         return NextResponse.json({ error: 'Failed to fetch attendance' }, { status: 500 });

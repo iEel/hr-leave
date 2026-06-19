@@ -3,8 +3,10 @@ import {
     DEFAULT_ATTENDANCE_SCHEDULE_SETTINGS,
     summarizeDailyAttendanceRowsWithSchedule,
     type AttendanceDaySummary,
+    type AttendanceScheduleSettings,
     type AttendanceSummaryContext,
     type DailyAttendanceRow,
+    type WorkingSaturdaySchedule,
 } from './schedule-rules';
 import type {
     AttendanceDeviceConfig,
@@ -111,6 +113,25 @@ export interface EmployeeAttendanceSummaryInput {
     checkInFrom?: string;
 }
 
+export interface EmployeeAttendanceReportInput extends EmployeeAttendanceSummaryInput {
+    periodMonth?: string;
+}
+
+export interface EmployeeAttendanceReport {
+    days: AttendanceDaySummary[];
+    settings: AttendanceScheduleSettings;
+    period: {
+        month: string | null;
+        from: string;
+        to: string;
+    };
+}
+
+interface EmployeeAttendanceSummaryContextInput extends EmployeeAttendanceSummaryInput {
+    settings: AttendanceScheduleSettings;
+    workingSaturdays: WorkingSaturdaySchedule[];
+}
+
 type DbModule = typeof import('@/lib/db');
 
 async function loadDb(): Promise<DbModule> {
@@ -139,6 +160,52 @@ function toNullableIso(value: Date | string | null | undefined): string | null {
         return null;
     }
     return value instanceof Date ? value.toISOString() : value;
+}
+
+function normalizeTimeValue(value: unknown, fallback: string): string {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return String(value.getHours()).padStart(2, '0') + ':' + String(value.getMinutes()).padStart(2, '0');
+    }
+
+    if (typeof value === 'string') {
+        const match = value.trim().match(/^(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/);
+        if (match) {
+            const hours = Number(match[1]);
+            const minutes = Number(match[2]);
+
+            if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+                return String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
+            }
+        }
+    }
+
+    return fallback;
+}
+
+function normalizeIntegerSetting(value: unknown, fallback: number, min: number, max: number): number {
+    const parsed = typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10);
+
+    return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
+}
+
+function normalizeDateValue(value: unknown): string {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value.toISOString().slice(0, 10);
+    }
+
+    return String(value).slice(0, 10);
+}
+
+function normalizeWorkHours(value: unknown, startTime: string, endTime: string): number {
+    const parsed = typeof value === 'number' ? value : Number.parseFloat(String(value ?? ''));
+
+    if (Number.isFinite(parsed) && parsed >= 0) {
+        return parsed;
+    }
+
+    const [startHour, startMinute] = startTime.split(':').map(Number);
+    const [endHour, endMinute] = endTime.split(':').map(Number);
+    return ((endHour * 60 + endMinute) - (startHour * 60 + startMinute)) / 60;
 }
 
 function mapDeviceRow(row: Record<string, unknown>): AttendanceDeviceListItem {
@@ -612,49 +679,153 @@ export async function listDueAttendanceDevices(): Promise<AttendanceDeviceConfig
     return result.recordset.map(mapDeviceConfigRow);
 }
 
-export async function getEmployeeAttendanceSummary({
+export async function getAttendanceScheduleSettings(): Promise<AttendanceScheduleSettings> {
+    const defaults = DEFAULT_ATTENDANCE_SCHEDULE_SETTINGS;
+    const { getPool } = await loadDb();
+    const pool = await getPool();
+    const result = await pool.request().query(`
+        SELECT settingKey, settingValue
+        FROM SystemSettings
+        WHERE settingKey IN (
+            'WORK_START_TIME',
+            'WORK_END_TIME',
+            'BREAK_START_TIME',
+            'BREAK_END_TIME',
+            'SAT_WORK_START_TIME',
+            'SAT_WORK_END_TIME',
+            'WORKDAY_LATE_GRACE_MINUTES',
+            'ATTENDANCE_PERIOD_START_DAY'
+        )
+    `);
+
+    const settings = new Map<string, unknown>();
+    for (const row of result.recordset) {
+        settings.set(String(row.settingKey), row.settingValue);
+    }
+
+    return {
+        workStartTime: normalizeTimeValue(settings.get('WORK_START_TIME'), defaults.workStartTime),
+        workEndTime: normalizeTimeValue(settings.get('WORK_END_TIME'), defaults.workEndTime),
+        breakStartTime: normalizeTimeValue(settings.get('BREAK_START_TIME'), defaults.breakStartTime),
+        breakEndTime: normalizeTimeValue(settings.get('BREAK_END_TIME'), defaults.breakEndTime),
+        satWorkStartTime: normalizeTimeValue(settings.get('SAT_WORK_START_TIME'), defaults.satWorkStartTime),
+        satWorkEndTime: normalizeTimeValue(settings.get('SAT_WORK_END_TIME'), defaults.satWorkEndTime),
+        weekdayGraceMinutes: normalizeIntegerSetting(
+            settings.get('WORKDAY_LATE_GRACE_MINUTES'),
+            defaults.weekdayGraceMinutes,
+            0,
+            240
+        ),
+        periodStartDay: normalizeIntegerSetting(
+            settings.get('ATTENDANCE_PERIOD_START_DAY'),
+            defaults.periodStartDay,
+            1,
+            28
+        ),
+    };
+}
+
+export async function listWorkingSaturdaysForRange(
+    fromDate: string,
+    toDate: string
+): Promise<WorkingSaturdaySchedule[]> {
+    const defaults = DEFAULT_ATTENDANCE_SCHEDULE_SETTINGS;
+    const { getPool } = await loadDb();
+    const pool = await getPool();
+    const result = await pool.request()
+        .input('fromDate', fromDate)
+        .input('toDate', toDate)
+        .query(`
+            SELECT
+                CONVERT(char(10), CAST(date AS date), 23) AS date,
+                startTime,
+                endTime,
+                workHours
+            FROM WorkingSaturdays
+            WHERE date >= CAST(@fromDate AS date)
+              AND date <= CAST(@toDate AS date)
+            ORDER BY date ASC
+        `);
+
+    return result.recordset.map((row) => {
+        const startTime = normalizeTimeValue(row.startTime, defaults.satWorkStartTime);
+        const endTime = normalizeTimeValue(row.endTime, defaults.satWorkEndTime);
+
+        return {
+            date: normalizeDateValue(row.date),
+            startTime,
+            endTime,
+            workHours: normalizeWorkHours(row.workHours, startTime, endTime),
+        };
+    });
+}
+
+async function getEmployeeAttendanceSummaryWithContext({
     employeeId,
     fromDate,
     toDate,
     checkInFrom,
-}: EmployeeAttendanceSummaryInput): Promise<AttendanceDaySummary[]> {
+    settings,
+    workingSaturdays,
+}: EmployeeAttendanceSummaryContextInput): Promise<AttendanceDaySummary[]> {
     const { getPool } = await loadDb();
     const pool = await getPool();
     const request = pool.request()
         .input('employeeId', employeeId)
         .input('fromDate', fromDate)
-        .input('toDate', toDate)
-        .input('checkInFrom', checkInFrom ?? null);
+        .input('toDate', toDate);
 
     const result = await request.query<DailyAttendanceRow>(`
-        WITH Daily AS (
-            SELECT
-                CONVERT(char(10), CAST(recordTime AS date), 23) AS attendanceDate,
-                CONVERT(char(8), CAST(recordTime AS time), 108) AS recordTime
-            FROM AttendanceLogs
-            WHERE employeeId = @employeeId
-              AND recordTime >= CAST(@fromDate AS date)
-              AND recordTime < DATEADD(day, 1, CAST(@toDate AS date))
-        ),
-        FirstPunch AS (
-            SELECT
-                attendanceDate,
-                MIN(recordTime) AS firstRecordTime
-            FROM Daily
-            GROUP BY attendanceDate
-        )
         SELECT
-            d.attendanceDate,
-            d.recordTime
-        FROM Daily d
-        INNER JOIN FirstPunch fp
-            ON fp.attendanceDate = d.attendanceDate
-        WHERE (
-              @checkInFrom IS NULL
-              OR CONVERT(varchar(5), CAST(fp.firstRecordTime AS datetime2), 108) >= @checkInFrom
-          )
-        ORDER BY d.attendanceDate ASC, d.recordTime ASC
+            CONVERT(char(10), CAST(recordTime AS date), 23) AS attendanceDate,
+            CONVERT(char(8), CAST(recordTime AS time), 108) AS recordTime
+        FROM AttendanceLogs
+        WHERE employeeId = @employeeId
+          AND recordTime >= CAST(@fromDate AS date)
+          AND recordTime < DATEADD(day, 1, CAST(@toDate AS date))
+        ORDER BY attendanceDate ASC, recordTime ASC
     `);
 
-    return summarizeDailyAttendanceRows(result.recordset);
+    const days = summarizeDailyAttendanceRows(result.recordset, { settings, workingSaturdays });
+
+    if (!checkInFrom) {
+        return days;
+    }
+
+    return days.filter((day) => day.checkIn != null && day.checkIn >= checkInFrom);
+}
+
+export async function getEmployeeAttendanceSummary(
+    input: EmployeeAttendanceSummaryInput
+): Promise<AttendanceDaySummary[]> {
+    const settings = await getAttendanceScheduleSettings();
+    const workingSaturdays = await listWorkingSaturdaysForRange(input.fromDate, input.toDate);
+
+    return getEmployeeAttendanceSummaryWithContext({
+        ...input,
+        settings,
+        workingSaturdays,
+    });
+}
+
+export async function getEmployeeAttendanceReport(
+    input: EmployeeAttendanceReportInput
+): Promise<EmployeeAttendanceReport> {
+    const settings = await getAttendanceScheduleSettings();
+    const workingSaturdays = await listWorkingSaturdaysForRange(input.fromDate, input.toDate);
+    const days = await getEmployeeAttendanceSummaryWithContext({
+        ...input,
+        settings,
+        workingSaturdays,
+    });
+
+    return {
+        days,
+        settings,
+        period: {
+            month: input.periodMonth ?? null,
+            from: input.fromDate,
+            to: input.toDate,
+        },
+    };
 }
