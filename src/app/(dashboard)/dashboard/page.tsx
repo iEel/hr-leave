@@ -430,33 +430,32 @@ export default async function DashboardPage() {
                 </Link>
             </div>
 
-            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
-                <div className="flex items-start justify-between gap-4">
-                    <div>
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-cyan-600 flex items-center justify-center text-white">
-                                <Clock3 className="w-5 h-5" />
-                            </div>
-                            <h2 className="font-semibold text-gray-900 dark:text-white">เวลาเข้า-ออกวันนี้</h2>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl px-4 py-3 sm:px-5 shadow-sm border border-gray-100 dark:border-gray-700">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-3 lg:flex lg:flex-row lg:items-center lg:justify-between">
+                    <div className="col-start-1 row-start-1 flex min-w-0 items-center gap-3">
+                        <div className="w-9 h-9 shrink-0 rounded-xl bg-gradient-to-br from-sky-500 to-cyan-600 flex items-center justify-center text-white">
+                            <Clock3 className="w-4 h-4" />
                         </div>
-                        <div className="grid grid-cols-2 gap-6">
-                            <div>
-                                <p className="text-sm text-gray-500 mb-1">เวลาเข้า</p>
-                                <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                                    {todayAttendanceDay?.checkIn ?? '--:--'}
-                                </p>
-                            </div>
-                            <div>
-                                <p className="text-sm text-gray-500 mb-1">เวลาออก</p>
-                                <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                                    {todayAttendanceDay?.checkOut ?? '--:--'}
-                                </p>
-                            </div>
+                        <h2 className="text-sm font-semibold text-gray-900 dark:text-white">เวลาเข้า-ออกวันนี้</h2>
+                    </div>
+                    <div className="col-span-2 row-start-2 flex flex-wrap items-center gap-x-5 gap-y-2 lg:col-auto lg:row-auto lg:ml-auto">
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">เวลาเข้า</span>
+                            <span className="text-xl font-bold leading-none tabular-nums text-gray-900 dark:text-white">
+                                {todayAttendanceDay?.checkIn ?? '--:--'}
+                            </span>
+                        </div>
+                        <div className="hidden h-6 w-px bg-gray-200 dark:bg-gray-700 sm:block" aria-hidden="true" />
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">เวลาออก</span>
+                            <span className="text-xl font-bold leading-none tabular-nums text-gray-900 dark:text-white">
+                                {todayAttendanceDay?.checkOut ?? '--:--'}
+                            </span>
                         </div>
                     </div>
                     <Link
                         href="/attendance"
-                        className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 whitespace-nowrap"
+                        className="col-start-2 row-start-1 inline-flex h-9 items-center justify-center gap-1.5 justify-self-end rounded-lg px-3 text-sm font-medium text-blue-600 hover:bg-blue-50 hover:text-blue-700 dark:text-blue-400 dark:hover:bg-blue-950/40 dark:hover:text-blue-300 lg:self-auto lg:justify-self-auto"
                     >
                         ดูย้อนหลัง
                         <ArrowRight className="w-4 h-4" />

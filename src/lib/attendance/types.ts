@@ -4,7 +4,7 @@ export type AttendanceVerifyType = 'FP' | 'FACE' | 'UNKNOWN_0x30' | `UNKNOWN_0x$
 
 export type AttendanceSyncMode = 'INCREMENTAL' | 'BACKFILL' | 'TEST';
 
-export type AttendanceSyncStatus = 'RUNNING' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
+export type AttendanceSyncStatus = 'RUNNING' | 'SUCCESS' | 'FAILED' | 'SKIPPED' | 'PARTIAL';
 
 export type AttendanceTriggerType = 'MANUAL' | 'CRON';
 
