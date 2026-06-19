@@ -223,6 +223,18 @@ export default function WorkSchedulePage() {
         setShowModal(true);
     };
 
+    const updateNumericScheduleField = (
+        field: 'weekdayGraceMinutes' | 'attendancePeriodStartDay',
+        value: string
+    ) => {
+        setSchedule(prev => {
+            if (value === '') return prev;
+            const nextValue = Number(value);
+            if (!Number.isFinite(nextValue)) return prev;
+            return { ...prev, [field]: nextValue };
+        });
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[50vh]">
@@ -330,7 +342,7 @@ export default function WorkSchedulePage() {
                                     min={0}
                                     max={240}
                                     value={schedule.weekdayGraceMinutes}
-                                    onChange={(e) => setSchedule(prev => ({ ...prev, weekdayGraceMinutes: Number(e.target.value) }))}
+                                    onChange={(e) => updateNumericScheduleField('weekdayGraceMinutes', e.target.value)}
                                     className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
                                 />
                             </div>
@@ -341,7 +353,7 @@ export default function WorkSchedulePage() {
                                     min={1}
                                     max={28}
                                     value={schedule.attendancePeriodStartDay}
-                                    onChange={(e) => setSchedule(prev => ({ ...prev, attendancePeriodStartDay: Number(e.target.value) }))}
+                                    onChange={(e) => updateNumericScheduleField('attendancePeriodStartDay', e.target.value)}
                                     className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
                                 />
                             </div>

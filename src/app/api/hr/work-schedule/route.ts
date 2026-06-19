@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { getPool } from '@/lib/db';
 
+const TIME_PATTERN = /^\d{2}:\d{2}$/;
+
+function isValidTime(value: unknown): value is string {
+    if (typeof value !== 'string' || !TIME_PATTERN.test(value)) return false;
+    const [hours, minutes] = value.split(':').map(Number);
+    return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+}
+
 /**
  * GET /api/hr/work-schedule
  * Get work schedule settings
@@ -77,7 +85,17 @@ export async function PUT(request: NextRequest) {
             attendancePeriodStartDay,
         } = body;
 
-        const pool = await getPool();
+        const invalidTimeResponse =
+            !isValidTime(workStartTime) ? NextResponse.json({ error: 'เวลาเริ่มงานปกติไม่ถูกต้อง' }, { status: 400 }) :
+                !isValidTime(workEndTime) ? NextResponse.json({ error: 'เวลาเลิกงานปกติไม่ถูกต้อง' }, { status: 400 }) :
+                    !isValidTime(breakStartTime) ? NextResponse.json({ error: 'เวลาเริ่มพักไม่ถูกต้อง' }, { status: 400 }) :
+                        !isValidTime(breakEndTime) ? NextResponse.json({ error: 'เวลาสิ้นสุดพักไม่ถูกต้อง' }, { status: 400 }) :
+                            !isValidTime(satWorkStartTime) ? NextResponse.json({ error: 'เวลาเริ่มงานวันเสาร์ไม่ถูกต้อง' }, { status: 400 }) :
+                                !isValidTime(satWorkEndTime) ? NextResponse.json({ error: 'เวลาเลิกงานวันเสาร์ไม่ถูกต้อง' }, { status: 400 }) : null;
+
+        if (invalidTimeResponse) {
+            return invalidTimeResponse;
+        }
 
         // Calculate work hours
         const calculateHours = (start: string, end: string, breakMins: number = 0): number => {
@@ -88,8 +106,19 @@ export async function PUT(request: NextRequest) {
         };
 
         const breakMins = calculateHours(breakStartTime, breakEndTime) * 60;
+        if (!Number.isFinite(breakMins) || breakMins < 0) {
+            return NextResponse.json({ error: 'ช่วงเวลาพักไม่ถูกต้อง' }, { status: 400 });
+        }
+
         const workHoursPerDay = calculateHours(workStartTime, workEndTime, breakMins);
+        if (!Number.isFinite(workHoursPerDay) || workHoursPerDay < 0) {
+            return NextResponse.json({ error: 'ช่วงเวลาทำงานปกติไม่ถูกต้อง' }, { status: 400 });
+        }
+
         const satWorkHours = calculateHours(satWorkStartTime, satWorkEndTime);
+        if (!Number.isFinite(satWorkHours) || satWorkHours < 0) {
+            return NextResponse.json({ error: 'ช่วงเวลาทำงานวันเสาร์ไม่ถูกต้อง' }, { status: 400 });
+        }
         const normalizeIntegerInput = (value: unknown, fallback: number): number => {
             if (value === undefined || value === null || value === '') return fallback;
             return Number(value);
@@ -105,6 +134,8 @@ export async function PUT(request: NextRequest) {
         if (!Number.isInteger(normalizedAttendancePeriodStartDay) || normalizedAttendancePeriodStartDay < 1 || normalizedAttendancePeriodStartDay > 28) {
             return NextResponse.json({ error: 'วันที่เริ่มรอบคำนวณต้องอยู่ระหว่าง 1-28' }, { status: 400 });
         }
+
+        const pool = await getPool();
 
         // Upsert settings
         const settings = [
