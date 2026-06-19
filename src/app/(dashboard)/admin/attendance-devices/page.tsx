@@ -17,6 +17,10 @@ import {
     Wifi,
     X,
 } from 'lucide-react';
+import {
+    findCompletedBackfillRun,
+    type AttendanceSyncRunSummary,
+} from '@/lib/attendance/admin-ui';
 
 interface AttendanceDevice {
     id: number;
@@ -122,6 +126,9 @@ function getErrorMessage(data: unknown, fallback: string) {
 
 type DeviceAction = 'test' | 'sync' | 'backfill';
 
+const BACKFILL_RECOVERY_POLL_ATTEMPTS = 40;
+const BACKFILL_RECOVERY_POLL_DELAY_MS = 3000;
+
 function createFormState(device?: AttendanceDevice): DeviceFormState {
     if (!device) return defaultFormState;
 
@@ -149,6 +156,10 @@ function parseIntegerField(value: string, min: number, max: number, label: strin
     }
 
     return { value: parsed };
+}
+
+function delay(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 function validateDeviceForm(form: DeviceFormState): { payload: Record<string, string | number | boolean | null> } | { error: string } {
@@ -241,8 +252,13 @@ export default function AttendanceDevicesPage() {
         }
     };
 
-    const fetchSyncRuns = async () => {
-        setLoadingRuns(true);
+    const fetchSyncRuns = async (options: { showLoading?: boolean; showError?: boolean } = {}) => {
+        const { showLoading = true, showError = true } = options;
+
+        if (showLoading) {
+            setLoadingRuns(true);
+        }
+
         try {
             const res = await fetch('/api/admin/attendance/sync-runs');
             const data: unknown = await res.json();
@@ -254,15 +270,25 @@ export default function AttendanceDevicesPage() {
                 'runs' in data &&
                 Array.isArray(data.runs)
             ) {
-                setSyncRuns(data.runs as AttendanceSyncRun[]);
-            } else {
+                const runs = data.runs as AttendanceSyncRun[];
+                setSyncRuns(runs);
+                return runs;
+            }
+
+            if (showError) {
                 setMessage({ type: 'error', text: getErrorMessage(data, 'ไม่สามารถโหลดประวัติ Sync ได้') });
             }
         } catch {
-            setMessage({ type: 'error', text: 'ไม่สามารถโหลดประวัติ Sync ได้' });
+            if (showError) {
+                setMessage({ type: 'error', text: 'ไม่สามารถโหลดประวัติ Sync ได้' });
+            }
         } finally {
-            setLoadingRuns(false);
+            if (showLoading) {
+                setLoadingRuns(false);
+            }
         }
+
+        return [];
     };
 
     useEffect(() => {
@@ -320,6 +346,45 @@ export default function AttendanceDevicesPage() {
         }
     };
 
+    const waitForBackfillCompletion = async (
+        deviceId: number,
+        requestStartedAt: Date
+    ): Promise<AttendanceSyncRunSummary | null> => {
+        for (let attempt = 0; attempt < BACKFILL_RECOVERY_POLL_ATTEMPTS; attempt += 1) {
+            if (attempt > 0) {
+                await delay(BACKFILL_RECOVERY_POLL_DELAY_MS);
+            }
+
+            const runs = await fetchSyncRuns({ showLoading: false, showError: false });
+            const completedRun = findCompletedBackfillRun(runs, deviceId, requestStartedAt);
+            if (completedRun) {
+                return completedRun;
+            }
+        }
+
+        return null;
+    };
+
+    const recoverBackfillResult = async (
+        deviceId: number,
+        requestStartedAt: Date,
+        fallbackErrorText: string
+    ) => {
+        const recoveredRun = await waitForBackfillCompletion(deviceId, requestStartedAt);
+        if (!recoveredRun) {
+            return false;
+        }
+
+        await fetchDevices();
+        if (recoveredRun.status === 'SUCCESS') {
+            setMessage({ type: 'success', text: 'Backfill ประวัติทั้งหมดเรียบร้อย' });
+        } else {
+            setMessage({ type: 'error', text: recoveredRun.errorMessage || fallbackErrorText });
+        }
+
+        return true;
+    };
+
     const runDeviceAction = async (deviceId: number, action: DeviceAction) => {
         const successText: Record<DeviceAction, string> = {
             test: 'ทดสอบการเชื่อมต่อสำเร็จ',
@@ -329,7 +394,7 @@ export default function AttendanceDevicesPage() {
         const errorText: Record<DeviceAction, string> = {
             test: 'ทดสอบการเชื่อมต่อไม่สำเร็จ',
             sync: 'Sync ไม่สำเร็จ',
-            backfill: 'Backfill ไม่สำเร็จ',
+            backfill: 'ไม่สามารถยืนยันผล Backfill ได้ กรุณาตรวจสอบประวัติ Sync ล่าสุด',
         };
 
         if (
@@ -339,6 +404,7 @@ export default function AttendanceDevicesPage() {
             return;
         }
 
+        const requestStartedAt = new Date();
         const actionKey = `${action}-${deviceId}`;
         setActionLoading(prev => ({ ...prev, [actionKey]: true }));
         setMessage(null);
@@ -355,12 +421,20 @@ export default function AttendanceDevicesPage() {
                 await fetchDevices();
                 await fetchSyncRuns();
             } else {
+                if (action === 'backfill' && await recoverBackfillResult(deviceId, requestStartedAt, errorText[action])) {
+                    return;
+                }
+
                 setMessage({
                     type: 'error',
                     text: getErrorMessage(data, errorText[action]),
                 });
             }
         } catch {
+            if (action === 'backfill' && await recoverBackfillResult(deviceId, requestStartedAt, errorText[action])) {
+                return;
+            }
+
             setMessage({
                 type: 'error',
                 text: errorText[action],
@@ -685,7 +759,7 @@ export default function AttendanceDevicesPage() {
                         </div>
                     </div>
                     <button
-                        onClick={fetchSyncRuns}
+                        onClick={() => fetchSyncRuns()}
                         disabled={loadingRuns}
                         className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
                     >
