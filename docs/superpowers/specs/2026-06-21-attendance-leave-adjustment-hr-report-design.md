@@ -25,6 +25,7 @@ This change covers:
 - Treating all approved leave types as eligible to affect attendance status when their date/time range covers the relevant attendance window.
 - Keeping the no-extra-grace policy after an hourly leave ends.
 - Showing adjusted attendance status and leave reason on employee attendance rows where relevant.
+- Showing a clickable leave request reference when a leave request affects or explains an attendance row.
 - Adding an HR report view under `/hr/reports` for attendance status review.
 - Adding CSV export for the HR attendance report.
 
@@ -137,8 +138,42 @@ Row-level behavior:
 - Show raw check-in and check-out times as before.
 - If a late status is adjusted by leave, show a badge such as `มีใบลาอนุมัติ`.
 - Show a short reason, for example `ลาป่วย 08:30-09:00`.
+- Show a compact clickable leave request chip, for example `ใบลา LR-2026-000123` or `ใบลา #123`.
 - If the day remains late after leave adjustment, show `สาย`.
 - If the day has both missing data and approved leave, show the specific remaining issue rather than a generic status.
+
+### Leave Request Link And Detail
+
+When an attendance row has related approved leave, show the leave reference as a small chip/link rather than making the whole row clickable. This keeps the table easy to scan and reduces accidental navigation.
+
+Recommended display:
+- `ใบลา LR-2026-000123` for a single related leave request.
+- `2 ใบลา` when multiple leave requests affect the same date.
+- Add `ใช้ปรับสถานะ` to the leave request that actually changed the final attendance status.
+
+Click behavior:
+- Open a drawer or modal with leave details in context.
+- Do not navigate away from `/attendance` or `/hr/reports` by default.
+
+Detail content:
+- Leave request number.
+- Leave type.
+- Date and time range.
+- Reason.
+- Approval status.
+- Approver.
+- Approved date/time.
+- Attachment link, when the viewer has permission.
+
+Permissions:
+- Employees can view their own related leave request details.
+- HR/Admin can view related leave request details for employees they can access.
+- Managers and delegated approvers can view related leave request details only for team/approval-scope employees.
+- Medical certificate files and other protected attachments must continue to use protected API access, not public static URLs.
+
+Display number:
+- Prefer a readable display number such as `LR-2026-000123`.
+- The first implementation may derive it from `LeaveRequests.createdAt` year and `LeaveRequests.id`; no large migration is required unless the company later needs immutable sequential document numbers.
 
 Summary behavior:
 - `สาย` should count final late rows, not raw late rows.
@@ -175,6 +210,7 @@ Table columns:
 - Effective late threshold.
 - Raw status.
 - Final status.
+- Leave request number.
 - Leave type.
 - Leave time range.
 - Leave request ID.
@@ -200,6 +236,7 @@ CSV should include both raw and adjusted fields:
 - `rawStatus`
 - `finalStatus`
 - `adjustedByApprovedLeave`
+- `leaveRequestNo`
 - `leaveRequestId`
 - `leaveType`
 - `leaveStartTime`
@@ -218,11 +255,13 @@ Suggested derived fields:
 ```ts
 interface AttendanceLeaveAdjustment {
   leaveRequestId: number;
+  leaveRequestNo: string;
   leaveType: string;
   timeSlot: "FULL_DAY" | "HALF_MORNING" | "HALF_AFTERNOON" | "HOURLY";
   startTime: string | null;
   endTime: string | null;
   label: string;
+  isStatusAdjusting: boolean;
 }
 
 interface AttendanceDaySummary {
@@ -243,6 +282,7 @@ interface AttendanceDaySummary {
   missingCheckOut: boolean;
   adjustedByApprovedLeave: boolean;
   leaveAdjustment: AttendanceLeaveAdjustment | null;
+  relatedLeaveRequests: AttendanceLeaveAdjustment[];
 }
 ```
 
@@ -258,6 +298,11 @@ HR report API:
 - Support `format=json` and `format=csv`.
 - Reuse the same server-side attendance summary helper used by employee attendance to avoid drift.
 
+Leave detail API:
+- Add or reuse a protected leave detail endpoint that returns only fields needed for the drawer/modal.
+- Enforce the same viewer permissions as HR leave history and medical-file access.
+- Normalize attachment URLs through the protected file route.
+
 ## Testing
 
 Add regression tests for:
@@ -272,6 +317,8 @@ Add regression tests for:
 - Approved full-day leave suppresses late and incomplete status.
 - Approved half-morning leave can suppress missing check-in.
 - Approved half-afternoon leave does not suppress morning late status.
+- Attendance row exposes a clickable leave request reference when approved leave is related.
+- Leave detail access is denied for unrelated users.
 - HR attendance CSV contains raw status, final status, and leave adjustment fields.
 
 ## Open Notes
@@ -279,5 +326,4 @@ Add regression tests for:
 - This design intentionally treats all approved leave types equally for attendance adjustment because the user's confirmed policy is that any approved leave can change attendance status if it covers the relevant time.
 - If the company later needs to exclude certain leave types from attendance adjustment, add a per-leave-type setting rather than hardcoding exceptions.
 - This feature should not mutate HIP logs. Attendance adjustment is derived from leave approvals and should remain auditable.
-
 
