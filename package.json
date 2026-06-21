@@ -6,7 +6,7 @@
     "dev": "next dev -p 3002",
     "build": "next build",
     "start": "next start -p 3002",
-    "test": "node --experimental-strip-types tests/hip-protocol.test.mjs && jiti tests/hip-client-session.test.mjs && jiti tests/hip-client-full-table.test.mjs && node tests/attendance-admin-datetime.test.mjs && jiti tests/attendance-backfill-ui-recovery.test.mjs && jiti tests/attendance-sync-runs-query.test.mjs && jiti tests/attendance-summary.test.mjs && jiti tests/attendance-schedule-rules.test.mjs && jiti tests/attendance-display.test.mjs && jiti tests/attendance-leave-adjustments.test.mjs && jiti tests/leave-request-number.test.mjs && jiti tests/leave-access.test.mjs && jiti tests/sync-service.test.mjs",
+    "test": "node --experimental-strip-types tests/hip-protocol.test.mjs && jiti tests/hip-client-session.test.mjs && jiti tests/hip-client-full-table.test.mjs && node tests/attendance-admin-datetime.test.mjs && jiti tests/attendance-backfill-ui-recovery.test.mjs && jiti tests/attendance-sync-runs-query.test.mjs && jiti tests/attendance-summary.test.mjs && jiti tests/attendance-schedule-rules.test.mjs && jiti tests/attendance-display.test.mjs && jiti tests/attendance-leave-adjustments.test.mjs && jiti tests/leave-request-number.test.mjs && jiti tests/leave-access.test.mjs && node tests/leave-detail-route.test.mjs && jiti tests/sync-service.test.mjs",
     "lint": "eslint"
   },
   "dependencies": {
