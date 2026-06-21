@@ -1,9 +1,10 @@
 'use client';
 
 import type { AttendanceDaySummary } from '@/lib/attendance/repository';
+import type { AttendanceLeaveAdjustment } from '@/lib/attendance/schedule-rules';
 import { getAttendanceRowDisplay, type AttendancePunchTone } from '@/lib/attendance/display';
-import { CalendarDays, Clock3, FilterX, SlidersHorizontal } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { CalendarDays, Clock3, ExternalLink, FilterX, Loader2, Paperclip, SlidersHorizontal, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type QuickFilter = 'ALL' | 'LATE' | 'INCOMPLETE';
 
@@ -30,13 +31,55 @@ interface AttendanceApiResponse {
 
 interface StatusBadge {
     label: string;
-    tone: 'subtle' | 'warning' | 'danger';
+    tone: 'subtle' | 'warning' | 'danger' | 'success';
+}
+
+interface LeaveDetail {
+    id: number;
+    leaveRequestNo: string;
+    leaveType: string;
+    startDate: string;
+    endDate: string;
+    isHourly: boolean;
+    startTime: string | null;
+    endTime: string | null;
+    timeSlot: string;
+    reason: string | null;
+    status: string;
+    approverName: string | null;
+    approvedAt: string | null;
+    medicalCertificateFile: string | null;
+}
+
+interface LeaveDetailApiResponse {
+    success?: boolean;
+    data?: LeaveDetail;
+    error?: string;
 }
 
 function getCurrentMonth(): string {
     const today = new Date();
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 }
+
+const LEAVE_TYPE_LABELS: Record<string, string> = {
+    VACATION: 'พักร้อน',
+    SICK: 'ลาป่วย',
+    PERSONAL: 'ลากิจ',
+    MATERNITY: 'ลาคลอด',
+    MILITARY: 'เกณฑ์ทหาร',
+    ORDINATION: 'ลาบวช',
+    STERILIZATION: 'ลาทำหมัน',
+    TRAINING: 'ลาฝึกอบรม',
+    OTHER: 'อื่นๆ',
+};
+
+const LEAVE_STATUS_LABELS: Record<string, string> = {
+    PENDING: 'รออนุมัติ',
+    APPROVED: 'อนุมัติ',
+    REJECTED: 'ไม่อนุมัติ',
+    CANCELLED: 'ยกเลิก',
+};
 
 function formatThaiDate(value: string): string {
     return new Date(`${value}T00:00:00`).toLocaleDateString('th-TH', {
@@ -62,6 +105,8 @@ function getStatusBadges(day: AttendanceDaySummary): StatusBadge[] {
 
     if (day.isLate) {
         badges.push({ label: display.statusLabel ?? 'สาย', tone: 'warning' });
+    } else if (display.statusLabel) {
+        badges.push({ label: display.statusLabel, tone: 'success' });
     }
 
     if (day.missingCheckIn) {
@@ -92,6 +137,10 @@ function getBadgeClassName(tone: StatusBadge['tone']): string {
         return 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300';
     }
 
+    if (tone === 'success') {
+        return 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300';
+    }
+
     return 'border-gray-200 bg-gray-50 text-gray-600 dark:border-gray-700 dark:bg-gray-900/60 dark:text-gray-300';
 }
 
@@ -113,6 +162,37 @@ function getSummaryCardClassName(filter: QuickFilter, isActive: boolean): string
     return `${base} ${isActive
         ? 'border-blue-300 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30'
         : 'border-gray-100 bg-white hover:border-blue-200 hover:bg-blue-50/60 dark:border-gray-700 dark:bg-gray-800 dark:hover:border-blue-900/70 dark:hover:bg-blue-950/20'}`;
+}
+
+function formatLeaveDateRange(leave: Pick<LeaveDetail, 'startDate' | 'endDate'>): string {
+    return leave.startDate === leave.endDate
+        ? formatThaiDate(leave.startDate)
+        : `${formatThaiDate(leave.startDate)} - ${formatThaiDate(leave.endDate)}`;
+}
+
+function formatLeaveTimeRange(leave: Pick<LeaveDetail, 'isHourly' | 'startTime' | 'endTime' | 'timeSlot'>): string {
+    if (leave.isHourly && leave.startTime && leave.endTime) {
+        return `${leave.startTime} - ${leave.endTime}`;
+    }
+
+    if (leave.timeSlot === 'HALF_MORNING') return 'ครึ่งวันเช้า';
+    if (leave.timeSlot === 'HALF_AFTERNOON') return 'ครึ่งวันบ่าย';
+
+    return 'เต็มวัน';
+}
+
+function getLeaveChipLabel(leave: AttendanceLeaveAdjustment): string {
+    return leave.isStatusAdjusting
+        ? `${leave.leaveRequestNo} ใช้ปรับสถานะ`
+        : leave.leaveRequestNo;
+}
+
+function getLeaveTypeLabel(leaveType: string): string {
+    return LEAVE_TYPE_LABELS[leaveType] ?? leaveType;
+}
+
+function getLeaveStatusLabel(status: string): string {
+    return LEAVE_STATUS_LABELS[status] ?? status;
 }
 
 function getPunchClassName(tone: AttendancePunchTone): string {
@@ -150,6 +230,15 @@ export default function AttendancePage() {
     const [period, setPeriod] = useState<AttendanceApiPeriod | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [selectedLeaveDetail, setSelectedLeaveDetail] = useState<LeaveDetail | null>(null);
+    const [isLeaveDetailLoading, setIsLeaveDetailLoading] = useState(false);
+    const [leaveDetailError, setLeaveDetailError] = useState<string | null>(null);
+    const detailRequestIdRef = useRef(0);
+    const detailAbortControllerRef = useRef<AbortController | null>(null);
+    const leaveDetailDialogRef = useRef<HTMLDivElement | null>(null);
+    const leaveDetailCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+    const lastLeaveTriggerRef = useRef<HTMLButtonElement | null>(null);
+    const isLeaveDetailOpen = selectedLeaveDetail != null || isLeaveDetailLoading || leaveDetailError != null;
 
     const fetchAttendance = useCallback(async (signal: AbortSignal) => {
         setIsLoading(true);
@@ -194,6 +283,63 @@ export default function AttendancePage() {
         }
     }, [checkInFrom, periodMonth]);
 
+    const openLeaveDetail = useCallback(async (leaveId: number, triggerButton: HTMLButtonElement) => {
+        lastLeaveTriggerRef.current = triggerButton;
+        detailAbortControllerRef.current?.abort();
+
+        const controller = new AbortController();
+        const requestId = detailRequestIdRef.current + 1;
+        detailRequestIdRef.current = requestId;
+        detailAbortControllerRef.current = controller;
+
+        setSelectedLeaveDetail(null);
+        setLeaveDetailError(null);
+        setIsLeaveDetailLoading(true);
+
+        try {
+            const response = await fetch(`/api/leave/detail/${leaveId}`, { signal: controller.signal });
+            const data = await response.json() as LeaveDetailApiResponse;
+
+            if (controller.signal.aborted || detailRequestIdRef.current !== requestId) {
+                return;
+            }
+
+            if (!response.ok || !data.success || !data.data) {
+                throw new Error(data.error || 'Failed to fetch leave detail');
+            }
+
+            setSelectedLeaveDetail(data.data);
+        } catch (detailError) {
+            if (controller.signal.aborted || detailRequestIdRef.current !== requestId) {
+                return;
+            }
+
+            setLeaveDetailError(detailError instanceof Error ? detailError.message : 'Failed to fetch leave detail');
+        } finally {
+            if (!controller.signal.aborted && detailRequestIdRef.current === requestId) {
+                setIsLeaveDetailLoading(false);
+                detailAbortControllerRef.current = null;
+            }
+        }
+    }, []);
+
+    const closeLeaveDetail = useCallback(() => {
+        detailAbortControllerRef.current?.abort();
+        detailAbortControllerRef.current = null;
+        detailRequestIdRef.current += 1;
+        setSelectedLeaveDetail(null);
+        setLeaveDetailError(null);
+        setIsLeaveDetailLoading(false);
+
+        const triggerButton = lastLeaveTriggerRef.current;
+        lastLeaveTriggerRef.current = null;
+        window.requestAnimationFrame(() => {
+            if (triggerButton?.isConnected) {
+                triggerButton.focus();
+            }
+        });
+    }, []);
+
     useEffect(() => {
         const controller = new AbortController();
 
@@ -203,6 +349,76 @@ export default function AttendancePage() {
             controller.abort();
         };
     }, [fetchAttendance]);
+
+    useEffect(() => {
+        if (!isLeaveDetailOpen) {
+            return;
+        }
+
+        if (leaveDetailCloseButtonRef.current) {
+            leaveDetailCloseButtonRef.current.focus();
+        } else {
+            leaveDetailDialogRef.current?.focus();
+        }
+    }, [isLeaveDetailOpen]);
+
+    useEffect(() => {
+        if (!isLeaveDetailOpen) {
+            return;
+        }
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                closeLeaveDetail();
+                return;
+            }
+
+            if (event.key === 'Tab') {
+                const dialog = leaveDetailDialogRef.current;
+                if (!dialog) {
+                    return;
+                }
+
+                const focusableSelectors = [
+                    'a[href]',
+                    'button:not([disabled])',
+                    'input:not([disabled])',
+                    'select:not([disabled])',
+                    'textarea:not([disabled])',
+                    '[tabindex]:not([tabindex="-1"])',
+                ].join(',');
+                const focusableElements = Array.from(
+                    dialog.querySelectorAll<HTMLElement>(focusableSelectors)
+                ).filter((element) => element.offsetParent !== null || element === document.activeElement);
+
+                if (focusableElements.length === 0) {
+                    event.preventDefault();
+                    dialog.focus();
+                    return;
+                }
+
+                const firstFocusable = focusableElements[0];
+                const lastFocusable = focusableElements[focusableElements.length - 1];
+
+                if (event.shiftKey && document.activeElement === firstFocusable) {
+                    event.preventDefault();
+                    lastFocusable.focus();
+                    return;
+                }
+
+                if (!event.shiftKey && document.activeElement === lastFocusable) {
+                    event.preventDefault();
+                    firstFocusable.focus();
+                }
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [closeLeaveDetail, isLeaveDetailOpen]);
 
     const clearFilters = () => {
         setPeriodMonth(getCurrentMonth());
@@ -287,6 +503,26 @@ export default function AttendancePage() {
         );
     };
 
+    const renderLeaveChips = (day: AttendanceDaySummary) => {
+        if (day.relatedLeaveRequests.length === 0) {
+            return null;
+        }
+
+        return day.relatedLeaveRequests.map((leave) => (
+            <button
+                key={`${day.date}-${leave.leaveRequestId}`}
+                type="button"
+                onClick={(event) => openLeaveDetail(leave.leaveRequestId, event.currentTarget)}
+                className={`attendance-leave-chip inline-flex max-w-full min-w-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 dark:focus:ring-offset-gray-800 ${leave.isStatusAdjusting
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/60'
+                    : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/60'}`}
+                title={`${leave.label} ${getLeaveTypeLabel(leave.leaveType)}`}
+            >
+                <Paperclip className="h-3 w-3 shrink-0" />
+                <span className="truncate">{getLeaveChipLabel(leave)}</span>
+            </button>
+        ));
+    };
     return (
         <div className="space-y-5 animate-fade-in">
             <div className="flex flex-col gap-1">
@@ -450,6 +686,7 @@ export default function AttendancePage() {
                                                             {badge.label}
                                                         </span>
                                                     ))}
+                                                    {renderLeaveChips(day)}
                                                 </div>
                                             </td>
                                         </tr>
@@ -481,6 +718,11 @@ export default function AttendancePage() {
                                             ))}
                                         </div>
                                     </div>
+                                    {day.relatedLeaveRequests.length > 0 ? (
+                                        <div className="mobile-leave-chip-list mt-3 flex max-w-full min-w-0 flex-wrap gap-1.5">
+                                            {renderLeaveChips(day)}
+                                        </div>
+                                    ) : null}
                                     <div className="mt-4 grid grid-cols-2 gap-4">
                                         <div className="space-y-1">
                                             <p className="text-xs font-medium text-gray-500 dark:text-gray-400">เวลาเข้า</p>
@@ -497,6 +739,103 @@ export default function AttendancePage() {
                     </>
                 )}
             </div>
+            {isLeaveDetailOpen ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={closeLeaveDetail}>
+                    <div
+                        ref={leaveDetailDialogRef}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="leave-detail-title"
+                        tabIndex={-1}
+                        className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl outline-none dark:bg-gray-800"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between gap-4 border-b border-gray-100 p-5 dark:border-gray-700">
+                            <div>
+                                <p className="text-xs font-medium text-gray-500 dark:text-gray-400">รายละเอียดใบลา</p>
+                                <h3 id="leave-detail-title" className="mt-1 text-lg font-semibold text-gray-900 dark:text-white">
+                                    {selectedLeaveDetail?.leaveRequestNo ?? 'กำลังโหลด...'}
+                                </h3>
+                            </div>
+                            <button
+                                ref={leaveDetailCloseButtonRef}
+                                type="button"
+                                onClick={closeLeaveDetail}
+                                className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                                aria-label="ปิดรายละเอียดใบลา"
+                            >
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <div className="max-h-[70vh] overflow-y-auto p-5">
+                            {isLeaveDetailLoading ? (
+                                <div className="flex items-center justify-center gap-2 py-10 text-sm text-gray-500 dark:text-gray-400">
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    กำลังโหลดรายละเอียดใบลา...
+                                </div>
+                            ) : leaveDetailError ? (
+                                <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300">
+                                    {leaveDetailError}
+                                </div>
+                            ) : selectedLeaveDetail ? (
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                                        <div>
+                                            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">ประเภท</p>
+                                            <p className="mt-1 text-sm font-medium text-gray-900 dark:text-white">{getLeaveTypeLabel(selectedLeaveDetail.leaveType)}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">สถานะ</p>
+                                            <span className="mt-1 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300">
+                                                {getLeaveStatusLabel(selectedLeaveDetail.status)}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">วันที่ลา</p>
+                                            <p className="mt-1 text-sm text-gray-900 dark:text-white">{formatLeaveDateRange(selectedLeaveDetail)}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">เวลา</p>
+                                            <p className="mt-1 text-sm text-gray-900 dark:text-white">{formatLeaveTimeRange(selectedLeaveDetail)}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">ผู้อนุมัติ</p>
+                                            <p className="mt-1 text-sm text-gray-900 dark:text-white">{selectedLeaveDetail.approverName ?? '-'}</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-xs font-medium text-gray-500 dark:text-gray-400">เวลาอนุมัติ</p>
+                                            <p className="mt-1 text-sm text-gray-900 dark:text-white">
+                                                {selectedLeaveDetail.approvedAt ? formatThaiDate(selectedLeaveDetail.approvedAt) : '-'}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <p className="text-xs font-medium text-gray-500 dark:text-gray-400">เหตุผล</p>
+                                        <p className="mt-1 rounded-xl bg-gray-50 p-3 text-sm text-gray-700 dark:bg-gray-900/60 dark:text-gray-300">
+                                            {selectedLeaveDetail.reason || '-'}
+                                        </p>
+                                    </div>
+
+                                    {selectedLeaveDetail.medicalCertificateFile ? (
+                                        <a
+                                            href={selectedLeaveDetail.medicalCertificateFile}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline dark:text-blue-300 dark:hover:text-blue-200"
+                                        >
+                                            <Paperclip className="h-4 w-4" />
+                                            ดูเอกสารแนบ
+                                            <ExternalLink className="h-3.5 w-3.5" />
+                                        </a>
+                                    ) : null}
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+            ) : null}
         </div>
     );
 }

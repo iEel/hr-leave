@@ -21,13 +21,19 @@ export function getAttendanceRowDisplay(day: DisplayAttendanceDay): AttendanceRo
         ? getTimeDifferenceMinutes(day.checkIn, day.effectiveLateAfterTime ?? day.lateAfterTime)
         : null;
 
+    const statusLabel = day.isLate
+        ? 'สาย'
+        : day.adjustedByApprovedLeave
+            ? 'ไม่คิดสายจากใบลา'
+            : null;
+
     return {
         checkInText: day.missingCheckIn ? 'ไม่ได้บันทึกเข้า' : day.checkIn ?? '--:--',
         checkOutText: day.missingCheckOut ? 'ไม่ได้บันทึกออก' : day.checkOut ?? '--:--',
         checkInTone: day.missingCheckIn ? 'missing' : day.isLate ? 'late' : 'normal',
         checkOutTone: day.missingCheckOut ? 'missing' : 'normal',
         lateMinutes,
-        statusLabel: day.isLate ? 'สาย' : null,
+        statusLabel,
     };
 }
 
