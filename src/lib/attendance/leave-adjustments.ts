@@ -73,6 +73,28 @@ export function listLeaveDates(leaves: AttendanceLeaveRecord[]): string[] {
     return Array.from(dates).sort((left, right) => left.localeCompare(right));
 }
 
+export function listLeaveDatesForRange(
+    leaves: AttendanceLeaveRecord[],
+    fromDate: string,
+    toDate: string
+): string[] {
+    const dates = new Set<string>();
+
+    for (const leave of leaves) {
+        if (leave.status !== 'APPROVED') continue;
+
+        const clippedStartDate = maxDate(leave.startDate, fromDate);
+        const clippedEndDate = minDate(leave.endDate, toDate);
+        if (clippedStartDate > clippedEndDate) continue;
+
+        for (const date of eachDateInRange(clippedStartDate, clippedEndDate)) {
+            dates.add(date);
+        }
+    }
+
+    return Array.from(dates).sort((left, right) => left.localeCompare(right));
+}
+
 function getDayLeaveEffects(day: AttendanceDaySummary, relatedLeaves: AttendanceLeaveRecord[]): DayLeaveEffects {
     const coveringHourlyLeaves = relatedLeaves.filter((leave) => leave.timeSlot === 'HOURLY' && coversScheduledStart(day, leave));
 
@@ -253,6 +275,14 @@ function formatDate(date: Date): string {
 
 function normalizeTime(time: string): string {
     return time.slice(0, 5);
+}
+
+function minDate(left: string, right: string): string {
+    return left <= right ? left : right;
+}
+
+function maxDate(left: string, right: string): string {
+    return left >= right ? left : right;
 }
 
 function maxTime(left: string, right: string): string {

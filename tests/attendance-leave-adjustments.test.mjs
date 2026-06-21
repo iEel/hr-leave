@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
     applyAttendanceLeaveAdjustments,
     listLeaveDates,
+    listLeaveDatesForRange,
 } from '../src/lib/attendance/leave-adjustments.ts';
 
 function day(checkIn, overrides = {}) {
@@ -236,4 +237,16 @@ assert.deepEqual(
     ['2026-06-19', '2026-06-20', '2026-06-21', '2026-06-22']
 );
 
+assert.deepEqual(
+    listLeaveDatesForRange([
+        leave({
+            id: 205,
+            startDate: '2026-06-18',
+            endDate: '2026-06-22',
+            timeSlot: 'FULL_DAY',
+            isHourly: false,
+        }),
+    ], '2026-06-21', '2026-07-20'),
+    ['2026-06-21', '2026-06-22']
+);
 console.log('attendance leave adjustment tests passed');

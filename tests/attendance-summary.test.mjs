@@ -68,6 +68,32 @@ assert.deepEqual(
     }]
 );
 
+assert.deepEqual(
+    summarizeDailyAttendanceRows([], {
+        ...context,
+        includedDates: ['2026-06-22'],
+    }),
+    [{
+        date: '2026-06-22',
+        checkIn: null,
+        checkOut: null,
+        scanCount: 0,
+        dayType: 'NORMAL_WORKDAY',
+        scheduledStartTime: '08:30',
+        scheduledEndTime: '17:00',
+        lateAfterTime: '08:45',
+        effectiveLateAfterTime: '08:45',
+        rawIsLate: false,
+        isLate: false,
+        rawIsIncomplete: true,
+        isIncomplete: true,
+        missingCheckIn: true,
+        missingCheckOut: true,
+        adjustedByApprovedLeave: false,
+        leaveAdjustment: null,
+        relatedLeaveRequests: [],
+    }]
+);
 assert.deepEqual(summarizeDailyAttendanceRows([], context), []);
 
 console.log('attendance summary tests passed');

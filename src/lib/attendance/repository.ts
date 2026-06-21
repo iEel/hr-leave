@@ -1,4 +1,5 @@
 import type { Transaction } from 'mssql';
+import { applyAttendanceLeaveAdjustments, listLeaveDatesForRange, type AttendanceLeaveRecord } from './leave-adjustments';
 import {
     DEFAULT_ATTENDANCE_SCHEDULE_SETTINGS,
     summarizeDailyAttendanceRowsWithSchedule,
@@ -195,6 +196,14 @@ function normalizeDateValue(value: unknown): string {
     }
 
     return String(value).slice(0, 10);
+}
+
+function normalizeNullableTimeValue(value: unknown): string | null {
+    if (value == null) {
+        return null;
+    }
+
+    return normalizeTimeValue(value, '').slice(0, 5) || null;
 }
 
 function normalizeWorkHours(value: unknown, startTime: string, endTime: string): number {
@@ -726,6 +735,56 @@ export async function getAttendanceScheduleSettings(): Promise<AttendanceSchedul
     };
 }
 
+function mapAttendanceLeaveRecord(row: Record<string, unknown>): AttendanceLeaveRecord {
+    return {
+        id: Number(row.id),
+        leaveType: String(row.leaveType),
+        status: String(row.status),
+        startDate: normalizeDateValue(row.startDate),
+        endDate: normalizeDateValue(row.endDate),
+        isHourly: Boolean(row.isHourly),
+        timeSlot: row.timeSlot as AttendanceLeaveRecord['timeSlot'],
+        startTime: normalizeNullableTimeValue(row.startTime),
+        endTime: normalizeNullableTimeValue(row.endTime),
+        createdAt: (row.createdAt as string | Date | null | undefined) ?? null,
+    };
+}
+
+export async function listApprovedAttendanceLeavesForEmployee(
+    employeeId: string,
+    fromDate: string,
+    toDate: string
+): Promise<AttendanceLeaveRecord[]> {
+    const { getPool } = await loadDb();
+    const pool = await getPool();
+    const result = await pool.request()
+        .input('employeeId', employeeId)
+        .input('fromDate', fromDate)
+        .input('toDate', toDate)
+        .query(`
+            SELECT
+                lr.id,
+                lr.leaveType,
+                lr.status,
+                CONVERT(char(10), CAST(lr.startDatetime AS date), 23) AS startDate,
+                CONVERT(char(10), CAST(lr.endDatetime AS date), 23) AS endDate,
+                lr.isHourly,
+                lr.timeSlot,
+                lr.startTime,
+                lr.endTime,
+                CONVERT(char(10), lr.createdAt, 23) AS createdAt
+            FROM LeaveRequests lr
+            JOIN Users u ON lr.userId = u.id
+            WHERE u.employeeId = @employeeId
+              AND lr.status = 'APPROVED'
+              AND CAST(lr.startDatetime AS date) <= CAST(@toDate AS date)
+              AND CAST(lr.endDatetime AS date) >= CAST(@fromDate AS date)
+            ORDER BY lr.startDatetime ASC, lr.id ASC
+        `);
+
+    return result.recordset.map(mapAttendanceLeaveRecord);
+}
+
 export async function listWorkingSaturdaysForRange(
     fromDate: string,
     toDate: string
@@ -787,7 +846,12 @@ async function getEmployeeAttendanceSummaryWithContext({
         ORDER BY attendanceDate ASC, recordTime ASC
     `);
 
-    const days = summarizeDailyAttendanceRows(result.recordset, { settings, workingSaturdays });
+    const leaves = await listApprovedAttendanceLeavesForEmployee(employeeId, fromDate, toDate);
+    const includedDates = listLeaveDatesForRange(leaves, fromDate, toDate);
+    const days = applyAttendanceLeaveAdjustments(
+        summarizeDailyAttendanceRows(result.recordset, { settings, workingSaturdays, includedDates }),
+        leaves
+    );
 
     if (!checkInFrom) {
         return days;
