@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff Documentation
 
 > 📅 เอกสารนี้สร้างเมื่อ: 21 มกราคม 2026  
-> 📅 อัปเดตล่าสุด: 18 มิถุนายน 2026 (HIP CMiF68S Attendance Sync + Admin Time Display Fix)
+> 📅 อัปเดตล่าสุด: 21 มิถุนายน 2026 (Attendance Leave Adjustment + HR Attendance Report)
 > 📁 Project Path: `d:\Antigravity\hr-leave`
 
 ---
@@ -40,7 +40,7 @@
 - ✅ HR จัดการพนักงาน
 - ✅ จัดการวันหยุด + วันเสาร์ทำงาน
 - ✅ System Security (Rate Limiting, Audit Logs)
-- ✅ เครื่องบันทึกเวลา HIP CMiF68S: ตั้งค่าอุปกรณ์, ดึงเวลาเข้า-ออกแบบ incremental, พนักงานดูประวัติของตัวเอง
+- ✅ เครื่องบันทึกเวลา HIP CMiF68S: ตั้งค่าอุปกรณ์, ดึงเวลาเข้า-ออกแบบ incremental, พนักงานดูประวัติของตัวเอง และปรับสถานะด้วยใบลาที่อนุมัติ
 - ✅ Reports & Analytics
 - ✅ PWA Support (ติดตั้งเป็น App บน Mobile)
 
@@ -736,6 +736,14 @@ sequenceDiagram
 - [x] **Deployment Docs** - อัปเดต `DEPLOYMENT.md` ให้ตรงกับ port `3002`, env Azure AD ชุด `AZURE_AD_*`, migration attendance, cron attendance sync, และ no-confirm/read-only behavior
 - [x] **Tests** - `tests/hip-protocol.test.mjs`, `tests/attendance-summary.test.mjs`, `tests/attendance-schedule-rules.test.mjs`, `tests/sync-service.test.mjs`
 
+### ✅ Phase 13: Attendance Leave Adjustment + HR Attendance Report (21 มิ.ย. 2026)
+- [x] **Approved Leave Adjustment** - Attendance status now has raw HIP/schedule status and final status after approved leave adjustment; raw HIP logs remain immutable.
+- [x] **Leave Request References** - Employee `/attendance` shows clickable leave request chips (`LR-YYYY-000123`) for approved leave related to an attendance row.
+- [x] **Protected Leave Detail API** - Added `/api/leave/detail/[leaveId]`; uses existing owner, HR/Admin/isHRStaff, direct manager, and active delegate permission model. Unauthorized and missing IDs return the same not-found shape to avoid leave ID enumeration.
+- [x] **HR Attendance Report** - `/hr/reports` now has an attendance tab with status filters, summary metrics, clickable leave request references, and CSV export via `/api/hr/reports/attendance`.
+- [x] **No DB Migration Required** - `leaveRequestNo` is derived from `LeaveRequests.createdAt` year + `LeaveRequests.id`; no persisted column was added.
+- [x] **Tests** - Added coverage for leave request numbers, leave detail access, approved leave attendance adjustment, HR attendance report filtering/CSV, and protected leave detail route guard.
+
 ### 🔲 สิ่งที่ยังรอ (Remaining)
 - [ ] LINE Notify Integration (optional)
 - [ ] Calendar iCal Export (optional)
@@ -769,7 +777,12 @@ sequenceDiagram
 | `src/lib/attendance/hip-protocol.ts` | Build/decode HIP CMiF68S frames and attendance records |
 | `src/lib/attendance/hip-client.ts` | Server-side TCP client สำหรับ B4/A1/A4 commands และ A2 helper ที่ยังไม่เปิดใช้ใน sync ปัจจุบัน |
 | `src/lib/attendance/repository.ts` | Database helper สำหรับ devices, logs, sync runs, employee summary |
+| `src/lib/attendance/leave-adjustments.ts` | Pure helper สำหรับปรับ final attendance status จาก `LeaveRequests.status = APPROVED` |
+| `src/lib/attendance/hr-report.ts` | HR attendance report row shaping, status filtering, and CSV export formatting |
+| `src/lib/attendance/display.ts` | Shared display helper สำหรับ punch text, late minutes, and adjusted-by-leave label |
 | `src/lib/attendance/sync-service.ts` | Incremental sync/backfill orchestration: lock, pull, transaction, DB dedupe, no-confirm ต่อเครื่อง |
+| `src/lib/leave-request-number.ts` | Derive readable leave request number เช่น `LR-2026-000123` |
+| `src/lib/leave-access.ts` | Permission helper สำหรับ leave detail access (owner/HR/Admin/isHRStaff/manager/delegate) |
 | `src/app/api/admin/attendance/devices/route.ts` | Admin CRUD สำหรับเครื่องบันทึกเวลา |
 | `src/app/api/admin/attendance/devices/[deviceId]/test/route.ts` | Test connection/read new count |
 | `src/app/api/admin/attendance/devices/[deviceId]/sync/route.ts` | Manual sync now |
@@ -777,13 +790,22 @@ sequenceDiagram
 | `src/app/api/admin/attendance/sync-runs/route.ts` | ประวัติ sync runs; ส่ง `startedAt/finishedAt` เป็น SQL local datetime string ห้ามส่ง Date object ตรง ๆ |
 | `src/app/api/cron/attendance-sync/route.ts` | Scheduled incremental sync endpoint |
 | `src/app/api/attendance/me/route.ts` | Employee attendance history ของ user ปัจจุบัน |
+| `src/app/api/leave/detail/[leaveId]/route.ts` | Protected leave detail endpoint สำหรับ attendance leave chips และ HR report |
+| `src/app/api/hr/reports/attendance/route.ts` | HR attendance report JSON/CSV endpoint |
 | `src/app/(dashboard)/admin/attendance-devices/page.tsx` | System Admin UI สำหรับเครื่องบันทึกเวลา |
 | `src/app/(dashboard)/dashboard/page.tsx` | Dashboard card เวลาเข้า-ออกวันนี้แบบ compact |
 | `src/app/(dashboard)/attendance/page.tsx` | Employee UI เวลาเข้า-ออก |
+| `src/app/(dashboard)/hr/reports/page.tsx` | HR reports page: leave report tab + attendance report tab |
 | `database/migrations/add_attendance_tables.sql` | Migration script |
 | `tests/hip-protocol.test.mjs` | Protocol/frame/decode tests |
 | `tests/attendance-summary.test.mjs` | Attendance summary/filter tests |
 | `tests/attendance-schedule-rules.test.mjs` | Schedule-aware period, weekday grace, working Saturday, and non-workday rules |
+| `tests/attendance-display.test.mjs` | Attendance display label/late minute tests |
+| `tests/attendance-leave-adjustments.test.mjs` | Approved leave adjustment rules and range clipping tests |
+| `tests/attendance-hr-report.test.mjs` | HR attendance report filter and CSV tests |
+| `tests/leave-request-number.test.mjs` | Derived leave request number tests |
+| `tests/leave-access.test.mjs` | Leave detail permission helper tests |
+| `tests/leave-detail-route.test.mjs` | Source guard for protected leave detail route |
 | `tests/sync-service.test.mjs` | Incremental/backfill orchestration tests รวม no-confirm behavior |
 
 ### 🔐 AD Lifecycle Management
@@ -1006,6 +1028,24 @@ sequenceDiagram
 - Working Saturdays come from `WorkingSaturdays`; Saturday has no late grace and uses that row's `startTime` directly.
 - Non-working Saturdays and Sundays can display HIP scans but are not counted as late or incomplete workday problems.
 - Attendance calculation periods use `ATTENDANCE_PERIOD_START_DAY`, default `21`, so the normal monthly period is previous-month day 21 through selected-month day 20.
+
+
+### Attendance Leave Adjustment
+
+- Attendance status is calculated in two layers: raw HIP/schedule status and final status after approved leave adjustment.
+- Only `LeaveRequests.status = APPROVED` can affect attendance status; pending/rejected/cancelled leave is ignored for attendance adjustment.
+- All leave types can affect attendance status when the approved leave date/time range covers the relevant attendance window, including `OTHER`.
+- Hourly leave that covers the scheduled start can extend the effective late threshold to `max(originalLateAfterTime, leaveEndTime)`.
+- There is no extra grace after hourly leave ends.
+- Full-day approved leave suppresses late and incomplete status for that day.
+- Half-morning leave can suppress late/missing check-in. Half-afternoon leave can suppress missing check-out but does not suppress morning late status.
+- Multiple approved leaves on the same day are handled deterministically: hourly thresholds use the latest covered leave end time, full-day has highest effect, and all contributing leave references are marked as status-adjusting in `relatedLeaveRequests`.
+- `Employee /attendance` and `HR /hr/reports -> เวลาเข้า-ออก` show raw scan times plus clickable leave request references for audit.
+- Leave detail and medical certificate links must use protected APIs and the existing manager/delegate/HR permission model.
+- Legacy direct medical certificate URLs under `/uploads/medical/...` are rewritten by `proxy.ts` to `/api/files/medical/...` so static public-file access cannot bypass the permission check.
+- HR attendance report status filters are distinct: `สาย`, `ไม่คิดสายจากใบลา`, `ข้อมูลไม่ครบ`, and `ไม่พบข้อมูล HIP`. No-HIP rows are not counted as `ข้อมูลไม่ครบ`.
+- CSV export for HR attendance uses UTF-8 BOM and is served by `/api/hr/reports/attendance?format=csv`.
+- This feature does not add a database migration; `leaveRequestNo` is derived from `LeaveRequests.createdAt` and `LeaveRequests.id`.
 
 ### Timezone:
 - ระบบใช้ `Asia/Bangkok (UTC+7)`

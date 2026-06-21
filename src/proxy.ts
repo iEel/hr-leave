@@ -4,6 +4,7 @@ import { getToken } from 'next-auth/jwt';
 
 // Routes that don't require authentication
 const publicRoutes = ['/login', '/api/auth', '/action', '/api/email', '/api/cron'];
+const MEDICAL_UPLOAD_PREFIX = '/uploads/medical/';
 
 // Role-based route access control
 // Note: /approvals is accessible by all authenticated users
@@ -16,6 +17,17 @@ const roleBasedRoutes: Record<string, string[]> = {
 
 export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
+
+    if (pathname.startsWith(MEDICAL_UPLOAD_PREFIX)) {
+        const filename = pathname.slice(MEDICAL_UPLOAD_PREFIX.length);
+        if (!filename || filename.includes('/')) {
+            return NextResponse.json({ error: 'Invalid filename' }, { status: 400 });
+        }
+
+        const protectedUrl = request.nextUrl.clone();
+        protectedUrl.pathname = `/api/files/medical/${filename}`;
+        return NextResponse.rewrite(protectedUrl);
+    }
 
     // Allow public routes
     if (publicRoutes.some((route) => pathname.startsWith(route))) {
@@ -39,7 +51,7 @@ export async function proxy(request: NextRequest) {
     for (const [route, allowedRoles] of Object.entries(roleBasedRoutes)) {
         if (pathname.startsWith(route)) {
             const userRole = token.role as string;
-            const isHRStaff = (token as any).isHRStaff === true;
+            const isHRStaff = token.isHRStaff === true;
 
             // Allow if role is authorized OR (is HR route AND user is HR staff)
             const isAuthorized = allowedRoles.includes(userRole) ||
@@ -65,9 +77,10 @@ export const config = {
          * - icons folder (PWA icons)
          * - manifest.json (PWA manifest)
          * - sw.js (Service Worker)
-         * - uploads folder (uploaded files)
+         * - uploads folder (uploaded files except protected medical certificates)
          * - api/auth routes
          */
+        '/uploads/medical/:path*',
         '/((?!_next/static|_next/image|favicon.ico|icon.svg|icons|manifest.json|sw.js|uploads|api/auth|.*\\.(?:png|jpg|jpeg|gif|svg|ico)$).*)',
     ],
 };
