@@ -37,6 +37,23 @@ This change does not cover:
 - Changing leave balance deduction rules.
 - Adding a separate attendance-correction approval module.
 
+## Database Migration Decision
+
+The first implementation does not require a database migration.
+
+Use existing `LeaveRequests` columns for attendance adjustment:
+- `status`
+- `leaveType`
+- `startDatetime`
+- `endDatetime`
+- `isHourly`
+- `startTime`
+- `endTime`
+- `timeSlot`
+- `medicalCertificateFile`
+
+Use a derived leave request display number such as `LR-2026-000123` from `LeaveRequests.createdAt` year and `LeaveRequests.id`. Do not add a persisted `leaveRequestNo` column unless the company later needs legally controlled sequential document numbers.
+
 ## Business Rules
 
 ### Approved Leave Only
@@ -299,8 +316,10 @@ HR report API:
 - Reuse the same server-side attendance summary helper used by employee attendance to avoid drift.
 
 Leave detail API:
-- Add or reuse a protected leave detail endpoint that returns only fields needed for the drawer/modal.
-- Enforce the same viewer permissions as HR leave history and medical-file access.
+- Add a protected leave detail endpoint that returns only fields needed for the drawer/modal.
+- Reuse the existing permission model instead of introducing a new access rule.
+- Match current access behavior: owner, HR/Admin/isHRStaff, direct manager, and active delegate can view related leave detail.
+- Keep attachment access delegated to the existing protected medical-file route and existing `canViewMedicalCertificateFile` logic.
 - Normalize attachment URLs through the protected file route.
 
 ## Testing

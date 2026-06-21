@@ -19,6 +19,12 @@ The spec covers one connected attendance feature with three surfaces:
 
 These surfaces share the same derived attendance model, so they should be implemented in one plan. No database migration is required for the first implementation because leave request numbers can be derived from `LeaveRequests.createdAt` and `LeaveRequests.id`.
 
+Implementation decisions:
+- Do not add a persisted `leaveRequestNo` column in this phase.
+- Do not add new leave permission semantics in this phase.
+- Reuse the existing owner, HR/Admin/isHRStaff, direct manager, and active delegate access model for leave detail.
+- Reuse the existing protected medical attachment route and file permission checks for attachments.
+
 ## File Structure
 
 Create:
@@ -472,6 +478,8 @@ Expected: tests pass; lint has no new errors.
 ---
 
 ### Task 5: Protected Leave Detail Endpoint
+
+This task intentionally reuses existing permission behavior. Do not create a new database table, persisted leave number column, or separate attachment permission model.
 
 **Files:**
 - Create: `src/app/api/leave/detail/[leaveId]/route.ts`
