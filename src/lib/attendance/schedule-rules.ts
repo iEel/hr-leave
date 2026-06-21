@@ -23,6 +23,19 @@ export interface DailyAttendanceRow {
     recordTime: string;
 }
 
+export interface AttendanceLeaveAdjustment {
+    leaveRequestId: number;
+    leaveRequestNo: string;
+    leaveType: string;
+    timeSlot: 'FULL_DAY' | 'HALF_MORNING' | 'HALF_AFTERNOON' | 'HOURLY';
+    startDate: string;
+    endDate: string;
+    startTime: string | null;
+    endTime: string | null;
+    label: string;
+    isStatusAdjusting: boolean;
+}
+
 export interface AttendanceDaySummary {
     date: string;
     checkIn: string | null;
@@ -32,15 +45,22 @@ export interface AttendanceDaySummary {
     scheduledStartTime: string | null;
     scheduledEndTime: string | null;
     lateAfterTime: string | null;
+    effectiveLateAfterTime: string | null;
+    rawIsLate: boolean;
     isLate: boolean;
+    rawIsIncomplete: boolean;
     isIncomplete: boolean;
     missingCheckIn: boolean;
     missingCheckOut: boolean;
+    adjustedByApprovedLeave: boolean;
+    leaveAdjustment: AttendanceLeaveAdjustment | null;
+    relatedLeaveRequests: AttendanceLeaveAdjustment[];
 }
 
 export interface AttendanceSummaryContext {
     settings?: AttendanceScheduleSettings;
     workingSaturdays?: WorkingSaturdaySchedule[];
+    includedDates?: string[];
 }
 
 export const DEFAULT_ATTENDANCE_SCHEDULE_SETTINGS: AttendanceScheduleSettings = {
@@ -91,15 +111,22 @@ export function summarizeDailyAttendanceRowsWithSchedule(
         rowsByDate.set(row.attendanceDate, times);
     }
 
-    return Array.from(rowsByDate.entries())
-        .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate))
-        .map(([date, recordTimes]) => {
+    const dates = new Set<string>([
+        ...rowsByDate.keys(),
+        ...(context.includedDates ?? []),
+    ]);
+
+    return Array.from(dates)
+        .sort((leftDate, rightDate) => leftDate.localeCompare(rightDate))
+        .map((date) => {
+            const recordTimes = rowsByDate.get(date) ?? [];
             const sortedTimes = [...recordTimes].sort((left, right) => left.localeCompare(right));
             const daySchedule = getDaySchedule(date, settings, workingSaturdays.get(date));
             const { checkIn, checkOut } = getDisplayPunches(sortedTimes, settings, daySchedule);
             const missingCheckIn = daySchedule.dayType !== 'NON_WORKDAY' && checkIn == null;
             const missingCheckOut = daySchedule.dayType !== 'NON_WORKDAY' && checkOut == null;
-            const isIncomplete = daySchedule.dayType !== 'NON_WORKDAY' && (missingCheckIn || missingCheckOut);
+            const rawIsIncomplete = daySchedule.dayType !== 'NON_WORKDAY' && (missingCheckIn || missingCheckOut);
+            const rawIsLate = isLate(checkIn, daySchedule);
 
             return {
                 date,
@@ -110,10 +137,16 @@ export function summarizeDailyAttendanceRowsWithSchedule(
                 scheduledStartTime: daySchedule.scheduledStartTime,
                 scheduledEndTime: daySchedule.scheduledEndTime,
                 lateAfterTime: daySchedule.lateAfterTime,
-                isLate: isLate(checkIn, daySchedule),
-                isIncomplete,
+                effectiveLateAfterTime: daySchedule.lateAfterTime,
+                rawIsLate,
+                isLate: rawIsLate,
+                rawIsIncomplete,
+                isIncomplete: rawIsIncomplete,
                 missingCheckIn,
                 missingCheckOut,
+                adjustedByApprovedLeave: false,
+                leaveAdjustment: null,
+                relatedLeaveRequests: [],
             };
         });
 }

@@ -29,10 +29,16 @@ assert.deepEqual(
         scheduledStartTime: '08:30',
         scheduledEndTime: '17:00',
         lateAfterTime: '08:45',
+        effectiveLateAfterTime: '08:45',
+        rawIsLate: false,
         isLate: false,
+        rawIsIncomplete: false,
         isIncomplete: false,
         missingCheckIn: false,
         missingCheckOut: false,
+        adjustedByApprovedLeave: false,
+        leaveAdjustment: null,
+        relatedLeaveRequests: [],
     }]
 );
 
@@ -49,10 +55,16 @@ assert.deepEqual(
         scheduledStartTime: '08:30',
         scheduledEndTime: '17:00',
         lateAfterTime: '08:45',
+        effectiveLateAfterTime: '08:45',
+        rawIsLate: true,
         isLate: true,
+        rawIsIncomplete: true,
         isIncomplete: true,
         missingCheckIn: false,
         missingCheckOut: true,
+        adjustedByApprovedLeave: false,
+        leaveAdjustment: null,
+        relatedLeaveRequests: [],
     }]
 );
 

@@ -13,12 +13,12 @@ export interface AttendanceRowDisplay {
 
 type DisplayAttendanceDay = Pick<
     AttendanceDaySummary,
-    'checkIn' | 'checkOut' | 'isLate' | 'lateAfterTime' | 'missingCheckIn' | 'missingCheckOut'
+    'checkIn' | 'checkOut' | 'isLate' | 'lateAfterTime' | 'effectiveLateAfterTime' | 'missingCheckIn' | 'missingCheckOut' | 'adjustedByApprovedLeave'
 >;
 
 export function getAttendanceRowDisplay(day: DisplayAttendanceDay): AttendanceRowDisplay {
     const lateMinutes = day.isLate
-        ? getTimeDifferenceMinutes(day.checkIn, day.lateAfterTime)
+        ? getTimeDifferenceMinutes(day.checkIn, day.effectiveLateAfterTime ?? day.lateAfterTime)
         : null;
 
     return {
