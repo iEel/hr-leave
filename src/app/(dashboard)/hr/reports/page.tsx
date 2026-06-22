@@ -185,14 +185,9 @@ export default function ReportsPage() {
 
     useEffect(() => { fetchReport(); }, [fetchReport]);
     useEffect(() => {
-        attendanceAbortControllerRef.current?.abort();
-        attendanceAbortControllerRef.current = null;
-        attendanceRequestIdRef.current += 1;
-        setAttendanceRows([]);
-        setAttendanceSummary(emptyAttendanceSummary);
-        setAttendanceError(null);
-        setAttendanceLoading(false);
-    }, [attendanceStatus, month, year]);
+        if (activeTab !== 'ATTENDANCE') return;
+        fetchAttendanceReport();
+    }, [activeTab, fetchAttendanceReport]);
     useEffect(() => {
         if (!isLeaveDetailOpen) return;
         if (leaveDetailCloseButtonRef.current) leaveDetailCloseButtonRef.current.focus();
