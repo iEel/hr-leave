@@ -2,7 +2,27 @@ import { NextResponse } from 'next/server';
 import { query, execute } from '@/lib/db';
 import { searchLdapUsers } from '@/lib/ldap';
 import { fetchAzureUsers } from '@/lib/azure-graph';
+import {
+    decideAdUserSyncAction,
+    findExistingAdUsersForSync,
+    releaseInactiveAdIdentityConflicts,
+} from '@/lib/auth/ad-user-sync';
+import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
+
+type DirectoryUser = {
+    sAMAccountName?: string;
+    mail?: string;
+    displayName?: string;
+    givenName?: string;
+    sn?: string;
+    employeeID?: string;
+    onPremisesSamAccountName?: string;
+    userPrincipalName?: string;
+    employeeId?: string;
+    surname?: string;
+    accountEnabled?: boolean;
+};
 
 /**
  * Cron AD Sync API
@@ -61,7 +81,7 @@ export async function POST(req: Request) {
 
         console.log(`🔄 Cron AD Sync started - Source: ${source}`);
 
-        let rawUsers: any[] = [];
+        let rawUsers: DirectoryUser[] = [];
 
         // 1. Fetch Users based on Source
         if (source === 'azure') {
@@ -78,6 +98,8 @@ export async function POST(req: Request) {
 
         let addedCount = 0;
         let updatedCount = 0;
+        let releasedRehireConflicts = 0;
+        let skippedConflicts = 0;
 
         for (const user of rawUsers) {
             let employeeId = '';
@@ -106,13 +128,27 @@ export async function POST(req: Request) {
 
             if (!employeeId) continue;
 
-            const existingUser = await query<{ employeeId: string }>(`
-                SELECT employeeId FROM Users WHERE employeeId = @id OR email = @email
-            `, { id: employeeId, email: email });
+            const adUsername = user.sAMAccountName || user.onPremisesSamAccountName || '';
+            const existingUsers = await findExistingAdUsersForSync({ employeeId, email, adUsername });
+            const syncDecision = decideAdUserSyncAction({ employeeId, email, adUsername }, existingUsers);
 
-            if (existingUser.length === 0) {
+            if (syncDecision.action === 'blocked') {
+                skippedConflicts++;
+                console.warn(
+                    `[Cron AD Sync] Skipped ${employeeId}: active identity conflict with ${syncDecision.blockedConflicts
+                        .map((conflict) => conflict.employeeId)
+                        .join(', ')}`
+                );
+                continue;
+            }
+
+            if (syncDecision.action === 'insert') {
+                if (syncDecision.conflictsToRelease.length > 0) {
+                    releasedRehireConflicts += await releaseInactiveAdIdentityConflicts(syncDecision.conflictsToRelease);
+                }
+
                 // Generate random password for AD users - they authenticate via AD only, never local
-                const randomPassword = require('crypto').randomBytes(32).toString('hex');
+                const randomPassword = randomBytes(32).toString('hex');
                 const hashedPassword = await bcrypt.hash(randomPassword, 10);
                 const adStatus = isActive ? 'ACTIVE' : 'DISABLED';
                 await execute(`
@@ -125,14 +161,18 @@ export async function POST(req: Request) {
                     first: firstName,
                     last: lastName,
                     isActive: isActive ? 1 : 0,
-                    adUser: user.sAMAccountName || user.onPremisesSamAccountName || '',
+                    adUser: adUsername,
                     provider: source === 'azure' ? 'AZURE' : 'AD',
                     adStatus: adStatus
                 });
                 addedCount++;
             } else {
+                if (syncDecision.conflictsToRelease.length > 0) {
+                    releasedRehireConflicts += await releaseInactiveAdIdentityConflicts(syncDecision.conflictsToRelease);
+                }
+
                 const adStatus = isActive ? 'ACTIVE' : 'DISABLED';
-                await execute(`
+                const affectedRows = await execute(`
                     UPDATE Users 
                     SET firstName = @first, lastName = @last, email = @email, isActive = @isActive,
                         isADUser = 1, adUsername = @adUser, authProvider = @provider,
@@ -144,11 +184,11 @@ export async function POST(req: Request) {
                     first: firstName,
                     last: lastName,
                     isActive: isActive ? 1 : 0,
-                    adUser: user.sAMAccountName || user.onPremisesSamAccountName || '',
+                    adUser: adUsername,
                     provider: source === 'azure' ? 'AZURE' : 'AD',
                     adStatus: adStatus
                 });
-                updatedCount++;
+                updatedCount += affectedRows;
             }
         }
 
@@ -162,14 +202,14 @@ export async function POST(req: Request) {
                     return (samAccount || u.employeeId || upnPrefix || '').toUpperCase();
                 } else {
                     const adEmployeeID = u.employeeID ? String(u.employeeID).trim() : null;
-                    return (adEmployeeID || u.sAMAccountName).toUpperCase();
+                    return (adEmployeeID || u.sAMAccountName || '').toUpperCase();
                 }
             })
             .filter(id => id && id.length > 0);
 
         if (syncedEmployeeIds.length > 0) {
             const placeholders = syncedEmployeeIds.map((_, i) => `@id${i}`).join(',');
-            const params: Record<string, any> = {};
+            const params: Record<string, string> = {};
             syncedEmployeeIds.forEach((id, i) => {
                 params[`id${i}`] = id;
             });
@@ -184,7 +224,7 @@ export async function POST(req: Request) {
             `, { ...params, provider: source === 'azure' ? 'AZURE' : 'AD' });
         }
 
-        const summary = `Added: ${addedCount}, Updated: ${updatedCount}, Deleted: ${deletedCount}`;
+        const summary = `Added: ${addedCount}, Updated: ${updatedCount}, Deleted: ${deletedCount}, Released rehire conflicts: ${releasedRehireConflicts}, Skipped conflicts: ${skippedConflicts}`;
         await logSyncResult(source, true, summary);
 
         console.log(`✅ Cron AD Sync completed - ${summary}`);
@@ -196,6 +236,8 @@ export async function POST(req: Request) {
                 added: addedCount,
                 updated: updatedCount,
                 markedDeleted: deletedCount,
+                releasedRehireConflicts,
+                skippedConflicts,
                 source: source
             }
         });

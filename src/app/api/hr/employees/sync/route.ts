@@ -1,9 +1,35 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { query, execute } from '@/lib/db';
+import { execute } from '@/lib/db';
 import { searchLdapUsers } from '@/lib/ldap';
 import { fetchAzureUsers } from '@/lib/azure-graph';
+import {
+    decideAdUserSyncAction,
+    findExistingAdUsersForSync,
+    releaseInactiveAdIdentityConflicts,
+} from '@/lib/auth/ad-user-sync';
+import { randomBytes } from 'crypto';
 import bcrypt from 'bcryptjs';
+
+type DirectoryUser = {
+    sAMAccountName?: string;
+    mail?: string;
+    displayName?: string;
+    givenName?: string;
+    sn?: string;
+    employeeID?: string;
+    whenCreated?: string;
+    department?: string;
+    company?: string;
+    onPremisesSamAccountName?: string;
+    userPrincipalName?: string;
+    employeeId?: string;
+    surname?: string;
+    accountEnabled?: boolean;
+    _mappedCompany?: string;
+    _mappedDepartment?: string;
+    _mappedStartDate?: Date | null;
+};
 
 export async function POST(req: Request) {
     try {
@@ -14,9 +40,9 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json();
-        const { syncNewOnly, updateExisting, source } = body; // source: 'ldap' | 'azure'
+        const { updateExisting, source } = body; // source: 'ldap' | 'azure'
 
-        let rawUsers: any[] = [];
+        let rawUsers: DirectoryUser[] = [];
 
         // 1. Fetch Users based on Source
         if (source === 'azure') {
@@ -35,6 +61,8 @@ export async function POST(req: Request) {
 
         let addedCount = 0;
         let updatedCount = 0;
+        let releasedRehireConflicts = 0;
+        let skippedConflicts = 0;
 
         for (const user of rawUsers) {
             let employeeId = '';
@@ -122,31 +150,41 @@ export async function POST(req: Request) {
                 }
 
                 // Store mapped values for later use
-                (user as any)._mappedCompany = mappedCompany;
-                (user as any)._mappedDepartment = adDepartment;
-                (user as any)._mappedStartDate = startDate;
+                user._mappedCompany = mappedCompany;
+                user._mappedDepartment = adDepartment;
+                user._mappedStartDate = startDate;
             }
 
             if (!employeeId) continue;
 
-            const existingUser = await query<{ employeeId: string }>(
-                `SELECT employeeId FROM Users WHERE employeeId = @id OR email = @email`,
-                {
-                    id: employeeId,
-                    email: email
-                }
-            );
+            const adUsername = user.sAMAccountName || user.onPremisesSamAccountName || '';
+            const existingUsers = await findExistingAdUsersForSync({ employeeId, email, adUsername });
+            const syncDecision = decideAdUserSyncAction({ employeeId, email, adUsername }, existingUsers);
 
-            if (existingUser.length === 0) {
+            if (syncDecision.action === 'blocked') {
+                skippedConflicts++;
+                console.warn(
+                    `[AD Sync] Skipped ${employeeId}: active identity conflict with ${syncDecision.blockedConflicts
+                        .map((conflict) => conflict.employeeId)
+                        .join(', ')}`
+                );
+                continue;
+            }
+
+            if (syncDecision.action === 'insert') {
+                if (syncDecision.conflictsToRelease.length > 0) {
+                    releasedRehireConflicts += await releaseInactiveAdIdentityConflicts(syncDecision.conflictsToRelease);
+                }
+
                 // CASE: Insert New User
                 // Generate random password for AD users - they authenticate via AD only, never local
-                const randomPassword = require('crypto').randomBytes(32).toString('hex');
+                const randomPassword = randomBytes(32).toString('hex');
                 const hashedPassword = await bcrypt.hash(randomPassword, 10);
 
                 // Get mapped values for LDAP users
-                const company = (user as any)._mappedCompany || 'SONIC';
-                const department = (user as any)._mappedDepartment || 'General';
-                const startDateValue = (user as any)._mappedStartDate || new Date();
+                const company = user._mappedCompany || 'SONIC';
+                const department = user._mappedDepartment || 'General';
+                const startDateValue = user._mappedStartDate || new Date();
 
                 await execute(
                     `INSERT INTO Users (employeeId, email, password, firstName, lastName, role, company, department, gender, startDate, isActive, isADUser, adUsername, authProvider, createdAt)
@@ -161,21 +199,25 @@ export async function POST(req: Request) {
                         department: department,
                         startDate: startDateValue,
                         isActive: isActive ? 1 : 0,
-                        adUser: user.sAMAccountName || user.onPremisesSamAccountName || '',
+                        adUser: adUsername,
                         provider: source === 'azure' ? 'AZURE' : 'AD'
                     }
                 );
                 addedCount++;
             } else if (updateExisting) {
+                if (syncDecision.conflictsToRelease.length > 0) {
+                    releasedRehireConflicts += await releaseInactiveAdIdentityConflicts(syncDecision.conflictsToRelease);
+                }
+
                 // CASE: Update Existing - also update adStatus based on enabled/disabled
                 const adStatus = isActive ? 'ACTIVE' : 'DISABLED';
 
                 // Get mapped values for LDAP users
-                const company = (user as any)._mappedCompany || undefined; // undefined = don't update
-                const department = (user as any)._mappedDepartment || undefined;
-                const startDateValue = (user as any)._mappedStartDate || undefined;
+                const company = user._mappedCompany || undefined; // undefined = don't update
+                const department = user._mappedDepartment || undefined;
+                const startDateValue = user._mappedStartDate || undefined;
 
-                await execute(
+                const affectedRows = await execute(
                     `UPDATE Users 
                      SET firstName = @first, lastName = @last, email = @email, isActive = @isActive,
                          isADUser = 1, adUsername = @adUser, authProvider = @provider,
@@ -190,7 +232,7 @@ export async function POST(req: Request) {
                         first: firstName,
                         last: lastName,
                         isActive: isActive ? 1 : 0,
-                        adUser: user.sAMAccountName || user.onPremisesSamAccountName || '',
+                        adUser: adUsername,
                         provider: source === 'azure' ? 'AZURE' : 'AD',
                         adStatus: adStatus,
                         department: department || null,
@@ -198,7 +240,7 @@ export async function POST(req: Request) {
                         startDate: startDateValue || null
                     }
                 );
-                updatedCount++;
+                updatedCount += affectedRows;
             }
         }
 
@@ -213,7 +255,7 @@ export async function POST(req: Request) {
                     return (samAccount || u.employeeId || upnPrefix || '').toUpperCase();
                 } else {
                     const adEmployeeID = u.employeeID ? String(u.employeeID).trim() : null;
-                    return (adEmployeeID || u.sAMAccountName).toUpperCase();
+                    return (adEmployeeID || u.sAMAccountName || '').toUpperCase();
                 }
             })
             .filter(id => id && id.length > 0);
@@ -222,7 +264,7 @@ export async function POST(req: Request) {
             // Safety: Ensure we don't deactivate everyone if sync failed partially (empty list check handled above)
             // Use query builder logic or raw string for IN clause
             const placeholders = syncedEmployeeIds.map((_, i) => `@id${i}`).join(',');
-            const params: Record<string, any> = {};
+            const params: Record<string, string> = {};
             syncedEmployeeIds.forEach((id, i) => {
                 params[`id${i}`] = id;
             });
@@ -247,6 +289,8 @@ export async function POST(req: Request) {
                 added: addedCount,
                 updated: updatedCount,
                 markedDeleted: deletedCount,
+                releasedRehireConflicts,
+                skippedConflicts,
                 source: source || 'ldap'
             }
         });

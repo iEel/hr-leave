@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-02
+
+- Fixed AD sync/JIT behavior for employees rehired with a new employee code.
+- Inactive old users now release conflicting AD identity fields before the new user is inserted.
+- Leave balances and leave history remain separated by `Users.id` across employment periods.
+
 ## 2026-06-23
 
 - Split developer handoff into numbered docs under `docs/`.

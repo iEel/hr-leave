@@ -23,6 +23,7 @@ The login label should remain generic enough for both AD usernames and employee 
 | `src/lib/azure-graph.ts` | Azure AD Graph/Entra integration |
 | `src/lib/auth/settings.ts` | Auth mode setting cache |
 | `src/lib/auth/jit-user.ts` | Just-in-time AD user provisioning |
+| `src/lib/auth/ad-user-sync.ts` | Shared AD sync/JIT identity conflict rules |
 | `src/lib/auth/login-errors.ts` | User-facing login error mapping |
 | `src/proxy.ts` | Route protection and coarse RBAC |
 
@@ -50,6 +51,17 @@ Current coarse route mapping:
 | `/admin` | `ADMIN` |
 
 API routes still need their own authorization checks. UI hiding is not authorization.
+
+## AD Rehire Identity Rules
+
+When an employee leaves and later returns with a new employee code, the returned employee must become a new `Users` row.
+
+- The new AD `employeeID` becomes the new `Users.employeeId`.
+- Leave history and leave balances stay attached to the old `Users.id`.
+- If an inactive/`AD_DELETED` old user has the same email or AD username, sync releases those identity fields on the old row before inserting the new row.
+- Active users with the same email or AD username are treated as blocking conflicts and are skipped.
+
+This keeps leave quota calculations separate between the old employment period and the new employment period.
 
 ## Delegate Access
 

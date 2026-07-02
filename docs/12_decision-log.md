@@ -2,6 +2,21 @@
 
 This file records decisions that should survive beyond an individual implementation plan.
 
+## 2026-07-02: Rehire With New Employee Code Creates New User
+
+Decision:
+
+- When AD returns a new `employeeID` for a previously inactive employee, create a new `Users` row.
+- Do not update the old employee row to the new employee code.
+- Release email/AD username only from inactive or `AD_DELETED` conflicting users before inserting the new row.
+- Skip the sync if the conflicting email/AD username belongs to an active user.
+
+Rationale:
+
+- `LeaveRequests` and `LeaveBalances` are linked by `Users.id`.
+- Reusing the old row would mix old leave quota/history with the new employment period.
+- Releasing only inactive identity conflicts preserves historical records while allowing AD to reuse the same username/email.
+
 ## 2026-06-23: Split Developer Handoff Into Numbered Docs
 
 Decision:

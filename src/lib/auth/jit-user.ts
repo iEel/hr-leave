@@ -1,4 +1,9 @@
 import { getPool } from '@/lib/db';
+import {
+    decideAdUserSyncAction,
+    findExistingAdUsersForSync,
+    releaseInactiveAdIdentityConflicts,
+} from '@/lib/auth/ad-user-sync';
 
 /**
  * Unified user profile interface for JIT provisioning
@@ -18,17 +23,36 @@ export interface UserProfile {
  */
 export async function findOrCreateUser(profile: UserProfile) {
     const pool = await getPool();
+    const employeeId = profile.employeeId || profile.username;
 
-    // 1. Try to find existing user by adUsername or email
-    const existingUser = await pool.request()
-        .input('adUsername', profile.username)
-        .input('email', profile.email)
-        .query(`
-            SELECT * FROM Users 
-            WHERE adUsername = @adUsername OR email = @email
-        `);
+    // 1. Decide by employeeId first. Inactive old employees may share the same
+    // AD username/email after rehire, but leave balances must remain on old userId.
+    const existingUsers = await findExistingAdUsersForSync({
+        employeeId,
+        email: profile.email,
+        adUsername: profile.username,
+    });
+    const syncDecision = decideAdUserSyncAction(
+        {
+            employeeId,
+            email: profile.email,
+            adUsername: profile.username,
+        },
+        existingUsers
+    );
 
-    if (existingUser.recordset.length > 0) {
+    if (syncDecision.action === 'blocked') {
+        throw new Error(
+            `[JIT] Active AD identity conflict for ${employeeId}: ${syncDecision.blockedConflicts
+                .map((conflict) => conflict.employeeId)
+                .join(', ')}`
+        );
+    }
+
+    if (syncDecision.action === 'update' && syncDecision.user) {
+        const existingUser = await pool.request()
+            .input('id', syncDecision.user.id)
+            .query(`SELECT * FROM Users WHERE id = @id`);
         const user = existingUser.recordset[0];
         console.log(`[JIT] Found existing user: ${user.employeeId}`);
         return user;
@@ -37,8 +61,9 @@ export async function findOrCreateUser(profile: UserProfile) {
     // 2. Create new user (JIT Provisioning)
     console.log(`[JIT] Creating new user: ${profile.username}`);
 
-    // Use employeeId from AD if available, otherwise use username
-    const employeeId = profile.employeeId || profile.username;
+    if (syncDecision.conflictsToRelease.length > 0) {
+        await releaseInactiveAdIdentityConflicts(syncDecision.conflictsToRelease);
+    }
 
     // Generate a placeholder password (user won't use this since they're AD user)
     const placeholderPassword = 'EXTERNAL_AUTH_' + Date.now();
@@ -59,7 +84,7 @@ export async function findOrCreateUser(profile: UserProfile) {
                 isADUser, adUsername, authProvider
             ) VALUES (
                 @employeeId, @email, @password, @firstName, @lastName,
-                'USER', 'UNASSIGNED', 'UNASSIGNED', 'M', GETDATE(),
+                'EMPLOYEE', 'UNASSIGNED', 'UNASSIGNED', 'M', GETDATE(),
                 @isADUser, @adUsername, @authProvider
             )
         `);
