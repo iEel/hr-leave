@@ -4,10 +4,11 @@
 
 1. Employee opens `/leave/request`.
 2. System checks leave type rules and balance.
-3. Employee submits leave request.
-4. Request is stored as `PENDING`.
-5. Manager approves or rejects.
-6. Approved leave affects leave balance and attendance adjustment where applicable.
+3. Sick leave keeps the configured medical-certificate requirement. Personal leave may include one optional PDF/JPG/PNG supporting document up to 5 MB.
+4. Employee submits leave request.
+5. Request is stored as `PENDING`.
+6. Manager approves or rejects.
+7. Approved leave affects leave balance and attendance adjustment where applicable.
 
 ## Leave Approval
 
@@ -26,6 +27,7 @@
 ## Leave History And Cancellation
 
 - Employees can view their own leave history under `/leave/history`.
+- Protected attachment links appear in leave history when a file exists. Wording is type-specific: medical certificate for sick leave and supporting document for personal leave.
 - Employees can cancel requests only while they are still `PENDING`.
 - Rejected and cancelled requests do not affect attendance adjustment.
 

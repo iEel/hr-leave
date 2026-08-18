@@ -36,7 +36,7 @@
 
 - Protected routes tested by role.
 - API authorization tested for sensitive resources.
-- Medical attachments served through protected API.
+- Medical and personal-leave attachments served through protected API.
 - Legacy `/uploads/medical/...` rewrite verified.
 - Cron endpoints require secret.
 - Audit log retention configured.
@@ -83,4 +83,4 @@ No-go if any of these are true:
 - Core leave request flow fails
 - HIP sync is enabled but device/network access is unverified
 - Cron secret is missing/default
-- Protected medical files can be accessed without permission
+- Protected leave attachment files can be accessed without permission

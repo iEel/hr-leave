@@ -73,16 +73,16 @@ Use shared helpers where available:
 - `src/lib/leave-access.ts`
 - `src/lib/medical-file-access.ts`
 
-## Medical Attachment Access
+## Leave Attachment Access
 
-Medical certificate files are stored under `public/uploads/medical`, but direct legacy URLs under `/uploads/medical/...` are rewritten by `src/proxy.ts` to `/api/files/medical/...`.
+Leave attachments are stored under the legacy `public/uploads/medical` directory. This includes medical certificates and optional personal-leave supporting documents. Direct legacy URLs under `/uploads/medical/...` are rewritten by `src/proxy.ts` to `/api/files/medical/...`.
 
 Permission checks happen in:
 
 - `src/app/api/files/medical/[filename]/route.ts`
 - `src/lib/medical-file-access.ts`
 
-Do not expose static medical file URLs directly in new code.
+The existing helper and route names retain the word `medical` for compatibility. Do not expose static attachment URLs directly in new code.
 
 ## Security Notes
 

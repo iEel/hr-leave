@@ -37,6 +37,10 @@ import {
     formatVacationAdvanceNoticeError,
     isLeaveDateAllowedByAdvanceNotice,
 } from '@/lib/leave-advance-notice';
+import {
+    getLeaveAttachmentPresentation,
+    hasStoredLeaveAttachment,
+} from '@/lib/leave-attachments';
 
 type LeaveTypeOption = {
     value: string;
@@ -403,6 +407,10 @@ export default function LeaveRequestPage() {
         (leaveType === 'SICK'
             ? calculatedDays >= leaveRules.sickCertThreshold
             : calculatedDays >= selectedDocThreshold);
+    const attachmentPresentation = getLeaveAttachmentPresentation(
+        leaveType,
+        Boolean(requiresMedicalCert),
+    );
 
     const hasVacationEligibilityData = Boolean(vacationEligibility?.probationEndDate && vacationEligibility?.vacationEligibleDate);
     const vacationDaysUntilEligible = vacationEligibility?.daysUntilEligible ?? null;
@@ -484,7 +492,11 @@ export default function LeaveRequestPage() {
 
             // Upload medical certificate file if exists
             let medicalCertificateFileUrl = null;
-            if (medicalCertFile && hasMedicalCert) {
+            const shouldUploadAttachment = attachmentPresentation.isVisible &&
+                medicalCertFile &&
+                (!attachmentPresentation.needsConfirmation || hasMedicalCert);
+
+            if (shouldUploadAttachment) {
                 const uploadFormData = new FormData();
                 uploadFormData.append('file', medicalCertFile);
 
@@ -512,7 +524,10 @@ export default function LeaveRequestPage() {
                 startTime: isHourlyMode ? startTime : null,
                 endTime: isHourlyMode ? endTime : null,
                 reason,
-                hasMedicalCert,
+                hasMedicalCert: hasStoredLeaveAttachment(
+                    leaveType === 'PERSONAL' ? false : hasMedicalCert,
+                    medicalCertificateFileUrl,
+                ),
                 medicalCertificateFile: medicalCertificateFileUrl,
                 usageAmount: calculatedDays,
             };
@@ -616,7 +631,11 @@ export default function LeaveRequestPage() {
                                 <button
                                     key={type.value}
                                     type="button"
-                                    onClick={() => setLeaveType(type.value)}
+                                    onClick={() => {
+                                        setLeaveType(type.value);
+                                        setHasMedicalCert(false);
+                                        setMedicalCertFile(null);
+                                    }}
                                     className={`p-4 rounded-xl border-2 transition-all ${isSelected
                                         ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
                                         : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'
@@ -916,28 +935,39 @@ export default function LeaveRequestPage() {
                     />
                 </div>
 
-                {/* Medical Certificate */}
-                {(leaveType === 'SICK' || requiresMedicalCert) && (
+                {/* Supporting attachment */}
+                {attachmentPresentation.isVisible && (
                     <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
-                        <label className="flex items-center gap-3 cursor-pointer">
-                            <input
-                                type="checkbox"
-                                checked={hasMedicalCert}
-                                onChange={(e) => setHasMedicalCert(e.target.checked)}
-                                className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                            />
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                                ฉันมีใบรับรองแพทย์
-                            </span>
-                            {requiresMedicalCert && (
-                                <span className="text-xs text-red-500">(จำเป็น)</span>
+                        <div className="flex items-center justify-between gap-3">
+                            <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                                {attachmentPresentation.sectionTitle}
+                            </h2>
+                            {attachmentPresentation.isRequired && (
+                                <span className="text-xs font-medium text-red-600 dark:text-red-400">จำเป็น</span>
                             )}
-                        </label>
+                        </div>
 
-                        {hasMedicalCert && (
+                        {attachmentPresentation.needsConfirmation && (
+                            <label className="mt-3 flex items-center gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={hasMedicalCert}
+                                    onChange={(e) => {
+                                        setHasMedicalCert(e.target.checked);
+                                        if (!e.target.checked) setMedicalCertFile(null);
+                                    }}
+                                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                                    ฉันมีใบรับรองแพทย์
+                                </span>
+                            </label>
+                        )}
+
+                        {(!attachmentPresentation.needsConfirmation || hasMedicalCert) && (
                             <div className="mt-4">
                                 <label className="block text-sm text-gray-600 dark:text-gray-400 mb-2">
-                                    อัปโหลดใบรับรองแพทย์ (ถ้ามี)
+                                    {attachmentPresentation.uploadLabel}
                                 </label>
                                 <label
                                     htmlFor="medicalCertInput"
@@ -945,8 +975,9 @@ export default function LeaveRequestPage() {
                                 >
                                     <Upload className="w-8 h-8 mx-auto text-gray-400 mb-2" />
                                     {medicalCertFile ? (
-                                        <p className="text-sm text-green-600 font-medium">
-                                            ✓ {medicalCertFile.name}
+                                        <p className="inline-flex items-center gap-2 text-sm text-green-700 dark:text-green-400 font-medium">
+                                            <CheckCircle className="w-4 h-4" />
+                                            {medicalCertFile.name}
                                         </p>
                                     ) : (
                                         <p className="text-sm text-gray-500">
@@ -957,10 +988,14 @@ export default function LeaveRequestPage() {
                                         id="medicalCertInput"
                                         type="file"
                                         accept=".pdf,.jpg,.jpeg,.png"
+                                        aria-label={attachmentPresentation.uploadLabel}
                                         onChange={(e) => setMedicalCertFile(e.target.files?.[0] || null)}
                                         className="hidden"
                                     />
                                 </label>
+                                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                    รองรับ PDF, JPG และ PNG ขนาดไม่เกิน 5 MB
+                                </p>
                             </div>
                         )}
                     </div>

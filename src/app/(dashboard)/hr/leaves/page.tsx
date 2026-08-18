@@ -16,6 +16,7 @@ import {
     Clock,
 } from 'lucide-react';
 import { formatLeaveDays, formatHourlyDuration } from '@/lib/leave-utils';
+import { getLeaveAttachmentPresentation } from '@/lib/leave-attachments';
 import { ListSkeleton } from '@/components/ui/Skeleton';
 
 interface LeaveRecord {
@@ -183,7 +184,7 @@ export default function HRLeavesPage() {
                                 className="w-4 h-4 text-purple-600"
                             />
                             <Paperclip className="w-4 h-4 text-gray-500" />
-                            <span className="text-sm">มีใบรับรองแพทย์</span>
+                            <span className="text-sm">มีเอกสารแนบ</span>
                         </label>
                         <button
                             type="submit"
@@ -208,6 +209,10 @@ export default function HRLeavesPage() {
                             leaves.map((leave) => {
                                 const statusInfo = STATUS_LABELS[leave.status] || STATUS_LABELS.PENDING;
                                 const StatusIcon = statusInfo.icon;
+                                const attachmentPresentation = getLeaveAttachmentPresentation(
+                                    leave.leaveType,
+                                    leave.hasMedicalCert,
+                                );
                                 return (
                                     <div
                                         key={leave.id}
@@ -241,7 +246,7 @@ export default function HRLeavesPage() {
                                                     {leave.hasMedicalCert && (
                                                         <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-700">
                                                             <Paperclip className="w-3 h-3" />
-                                                            ใบรับรองแพทย์
+                                                            {attachmentPresentation.sectionTitle}
                                                         </span>
                                                     )}
                                                 </div>
@@ -405,7 +410,10 @@ export default function HRLeavesPage() {
                                             className="flex items-center gap-2 text-blue-600 hover:text-blue-700 text-sm font-medium"
                                         >
                                             <Paperclip className="w-4 h-4" />
-                                            ดูใบรับรองแพทย์
+                                            {getLeaveAttachmentPresentation(
+                                                selectedLeave.leaveType,
+                                                selectedLeave.hasMedicalCert,
+                                            ).viewLabel}
                                         </a>
                                     )}
                                 </div>

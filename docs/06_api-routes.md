@@ -17,7 +17,7 @@ This document maps important API routes. API route handlers live under `src/app/
 | Route | Purpose |
 | --- | --- |
 | `/api/leave/request` | Create leave request |
-| `/api/leave/history` | Current user leave history |
+| `/api/leave/history` | Current user leave history, including protected attachment references |
 | `/api/leave/pending` | Pending approvals |
 | `/api/leave/approve` | Approve leave |
 | `/api/leave/cancel` | Cancel leave |
@@ -89,7 +89,7 @@ Cron routes require the configured cron secret. See [`09_deployment.md`](09_depl
 
 | Route | Purpose |
 | --- | --- |
-| `/api/upload/medical` | Upload medical certificate |
-| `/api/files/medical/[filename]` | Protected medical certificate serving |
+| `/api/upload/medical` | Upload a leave attachment; legacy route name retained for compatibility |
+| `/api/files/medical/[filename]` | Serve a protected leave attachment after permission checks |
 
-Do not create new direct static medical file links. Use the protected API route.
+Do not create new direct static attachment links. Use the protected API route.

@@ -2,6 +2,21 @@
 
 This file records decisions that should survive beyond an individual implementation plan.
 
+## 2026-08-18: Personal Leave Reuses Protected Attachment Storage
+
+Decision:
+
+- Personal leave (`PERSONAL`) may include one optional PDF/JPG/PNG supporting document up to 5 MB.
+- Sick leave retains medical-certificate wording and its configured required-document threshold.
+- Reuse `LeaveRequests.hasMedicalCertificate`, `LeaveRequests.medicalCertificateFile`, `/api/upload/medical`, and `/api/files/medical/[filename]` for compatibility.
+- Present generic or type-specific wording in the UI through `src/lib/leave-attachments.ts`.
+
+Rationale:
+
+- Existing storage, normalization, and authorization already protect employee leave files.
+- Reuse avoids a production database migration for a single optional attachment.
+- Keeping wording type-specific prevents personal-leave documents from being mislabeled as medical certificates.
+
 ## 2026-07-02: Rehire With New Employee Code Creates New User
 
 Decision:

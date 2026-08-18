@@ -24,7 +24,9 @@ import {
     GraduationCap,
     RefreshCw,
     UserCheck,
+    Paperclip,
 } from 'lucide-react';
+import { getLeaveAttachmentPresentation } from '@/lib/leave-attachments';
 
 // Leave type config
 const leaveTypeConfig: Record<string, { label: string; icon: React.ElementType; color: string }> = {
@@ -223,6 +225,10 @@ export default function ApprovalsPage() {
                         filteredRequests.map((request) => {
                             const typeConfig = leaveTypeConfig[request.leaveType];
                             const Icon = typeConfig?.icon || Calendar;
+                            const attachmentPresentation = getLeaveAttachmentPresentation(
+                                request.leaveType,
+                                request.hasMedicalCert,
+                            );
 
                             return (
                                 <div
@@ -316,12 +322,15 @@ export default function ApprovalsPage() {
                                                         href={request.medicalCertificateFile}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
-                                                        className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
+                                                        className="inline-flex items-center gap-1.5 text-blue-600 hover:text-blue-700 hover:underline font-medium"
                                                     >
-                                                        📎 ดูใบรับรองแพทย์
+                                                        <Paperclip className="w-3.5 h-3.5" />
+                                                        {attachmentPresentation.viewLabel}
                                                     </a>
                                                 ) : (
-                                                    <span className="text-green-600">✓ มีใบรับรองแพทย์</span>
+                                                    <span className="text-green-600">
+                                                        มี{attachmentPresentation.sectionTitle}
+                                                    </span>
                                                 )
                                             )}
                                         </div>

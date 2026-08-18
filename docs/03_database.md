@@ -65,7 +65,7 @@ Run migrations in order for existing environments. Always back up production bef
 | `startTime`, `endTime` | Hourly leave time range |
 | `usageAmount` | Net leave days |
 | `status` | `PENDING`, `APPROVED`, `REJECTED`, `CANCELLED` |
-| `medicalCertificateFile` | Protected medical attachment reference |
+| `medicalCertificateFile` | Protected leave attachment reference; retained for compatibility and used for medical certificates or optional personal-leave documents |
 
 ## Attendance Tables
 

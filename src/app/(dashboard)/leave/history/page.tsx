@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { formatLeaveDays, formatHourlyDuration } from '@/lib/leave-utils';
+import { LeaveAttachmentLink } from '@/components/leave/LeaveAttachmentLink';
 import {
     History,
     Calendar,
@@ -62,6 +63,8 @@ interface LeaveRecord {
     reason: string;
     status: string;
     rejectionReason: string | null;
+    hasMedicalCert: boolean;
+    medicalCertificateFile: string | null;
     createdAt: string;
     approvedAt: string | null;
     approverName: string | null;
@@ -281,6 +284,11 @@ export default function LeaveHistoryPage() {
                                                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                                                         {leave.reason}
                                                     </p>
+                                                    <LeaveAttachmentLink
+                                                        leaveType={leave.leaveType}
+                                                        fileUrl={leave.medicalCertificateFile}
+                                                        hasAttachmentIndicator={leave.hasMedicalCert}
+                                                    />
                                                     {leave.status === 'REJECTED' && leave.rejectionReason && (
                                                         <p className="text-sm text-red-600 mt-1">
                                                             เหตุผลที่ไม่อนุมัติ: {leave.rejectionReason}

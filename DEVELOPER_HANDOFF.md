@@ -1,7 +1,7 @@
 # HR Leave Management System - Developer Handoff
 
 > Created: 21 January 2026
-> Last updated: 23 June 2026
+> Last updated: 18 August 2026
 > Project path: `D:\Antigravity\hr-leave`
 
 This file is the short entry point for developers and operators. The detailed handoff has been split into numbered documents under [`docs/`](docs/00_index.md).
@@ -47,11 +47,13 @@ Core capabilities:
 - Timezone is `Asia/Bangkok`.
 - HIP CMiF68S must use the custom TCP protocol. Do not use `node-zklib`.
 - Attendance sync currently uses no-confirm/read-only behavior and does not send `A2`.
-- Medical certificate files must be served through `/api/files/medical/[filename]`; do not expose direct static file URLs.
+- Leave attachment files, including medical certificates and optional personal-leave documents, must be served through `/api/files/medical/[filename]`; do not expose direct static file URLs.
 - Cron routes must use `x-cron-secret` with the production `CRON_SECRET`.
 
 ## Latest Major Changes
 
+- 2026-08-18: Added optional personal-leave attachments and employee leave-history attachment links while retaining protected file access and existing DB columns.
+- 2026-07-02: Fixed AD sync/JIT provisioning for rehired employees with new employee codes while keeping leave history and quotas separate.
 - 2026-06-23: Split the long developer handoff into numbered docs under `docs/`.
 - 2026-06-22: HR attendance report status filter now refreshes automatically.
 - 2026-06-21: Added attendance adjustment by approved leave, leave detail links, HR attendance report, and protected medical upload rewrite.

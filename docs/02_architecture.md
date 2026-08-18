@@ -25,6 +25,7 @@ src/
     action/            magic-link action landing pages
     login/             login UI
   components/
+    leave/             shared leave UI components
     layout/            sidebar/topbar shell
     ui/                shared UI components
   hooks/               client hooks
@@ -39,7 +40,7 @@ src/
 - API routes in `src/app/api/**/route.ts` own database access and sensitive operations.
 - Client pages call API routes with `fetch`; they should not embed DB or TCP logic.
 - HIP TCP access happens server-side only through `src/lib/attendance/hip-client.ts`.
-- Protected file access for medical attachments uses API routes, not direct static file paths.
+- Protected file access for leave attachments uses API routes, not direct static file paths.
 
 ## Important Libraries
 
@@ -50,8 +51,10 @@ src/
 | `src/proxy.ts` | Auth redirect, role route guard, protected medical upload rewrite |
 | `src/lib/attendance/*` | HIP protocol, TCP client, repository, sync service, attendance calculations |
 | `src/lib/leave-utils.ts` | Leave duration and display helpers |
+| `src/lib/leave-attachments.ts` | Leave-type attachment labels and storage indicator behavior |
 | `src/lib/leave-access.ts` | Leave detail permission helper |
 | `src/lib/medical-file-access.ts` | Medical certificate permission helper |
+| `src/components/leave/LeaveAttachmentLink.tsx` | Shared protected attachment link with leave-type-specific wording |
 | `src/lib/delegate.ts` | Delegate approver lookup |
 | `src/lib/audit.ts` | Audit logging helper |
 | `src/lib/auth/*` | Auth settings, JIT user provisioning, login error mapping |

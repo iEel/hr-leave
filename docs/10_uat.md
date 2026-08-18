@@ -11,7 +11,10 @@ Use these scenarios before major release or production deployment.
 - Request half-day leave.
 - Request hourly leave.
 - Attach medical certificate for sick leave when required.
+- Submit personal leave without an attachment.
+- Submit personal leave with an optional PDF/JPG/PNG attachment up to 5 MB.
 - View leave history.
+- Open own sick-leave and personal-leave attachments from leave history and verify type-specific wording.
 - Cancel pending leave.
 - View own attendance period.
 - Filter attendance by month/date range.
@@ -26,6 +29,7 @@ Use these scenarios before major release or production deployment.
 - View team calendar.
 - Configure delegate.
 - Verify delegate can approve within scope.
+- Verify manager can open protected sick-leave and personal-leave attachments for team requests.
 - Verify unrelated manager cannot access protected leave detail.
 
 ## HR
@@ -41,6 +45,7 @@ Use these scenarios before major release or production deployment.
 - Export leave CSV.
 - Export attendance CSV.
 - Open leave detail from attendance report.
+- Filter leave records with attachments and open protected sick-leave or personal-leave files.
 
 ## Admin
 
@@ -70,7 +75,7 @@ Use these scenarios before major release or production deployment.
 - Unauthorized users cannot access `/hr` or `/admin`.
 - Employee cannot access another employee's leave detail.
 - Unrelated manager cannot access protected leave detail.
-- Medical certificate direct legacy URL `/uploads/medical/...` routes through protected API.
+- Leave attachment direct legacy URL `/uploads/medical/...` routes through protected API.
 - Cron endpoints reject missing/wrong `x-cron-secret`.
 
 ## Production Smoke Test

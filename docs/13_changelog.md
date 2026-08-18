@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-08-18
+
+- Added optional supporting document upload for personal leave (`PERSONAL`).
+- Kept sick-leave attachment wording and required-certificate rules unchanged.
+- Added protected attachment links to the employee leave-history list.
+- Reused the existing protected attachment storage and access permissions without a database migration.
+
 ## 2026-07-02
 
 - Fixed AD sync/JIT behavior for employees rehired with a new employee code.
