@@ -1,16 +1,7 @@
-import nodemailer from 'nodemailer';
+import type sql from 'mssql';
+import { enqueueEmail } from './email-outbox';
 import { generateApprovalToken, getMagicLink } from './tokens';
 import { formatLeaveDays } from './leave-utils';
-
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT),
-    secure: false, // true for 465, false for other ports
-    auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-    },
-});
 
 export async function sendLeaveRequestEmail(
     managerEmail: string,
@@ -28,7 +19,9 @@ export async function sendLeaveRequestEmail(
         startTime?: string | null;
         endTime?: string | null;
     },
-    approverId: number
+    approverId: number,
+    transaction?: sql.Transaction,
+    eventKey = 'initial'
 ) {
     // Generate Magic Links
     const approveToken = generateApprovalToken({ leaveId: leaveDetails.id, approverId, action: 'APPROVE' });
@@ -117,17 +110,16 @@ export async function sendLeaveRequestEmail(
         </div>
     `;
 
-    try {
-        await transporter.sendMail({
-            from: `"HR Leave System" <${process.env.SMTP_USER}>`,
-            to: managerEmail,
-            subject: `[Leave Request] ${employeeName} - ${leaveTypeThai}`,
-            html: htmlContent,
-        });
-        console.log(`Email sent to ${managerEmail}`);
-    } catch (error) {
-        console.error('Failed to send email:', error);
-    }
+    return enqueueEmail({
+        dedupeKey: `request:${leaveDetails.id}:${approverId}:${eventKey}`,
+        leaveId: leaveDetails.id,
+        kind: 'REQUEST',
+        expectedLeaveStatus: 'PENDING',
+        recipient: managerEmail,
+        approverId,
+        subject: `[Leave Request] ${employeeName} - ${leaveTypeThai}`,
+        html: htmlContent,
+    }, transaction);
 }
 
 /**
@@ -219,15 +211,13 @@ export async function sendLeaveApprovalEmail(
         </div>
     `;
 
-    try {
-        await transporter.sendMail({
-            from: `"HR Leave System" <${process.env.SMTP_USER}>`,
-            to: employeeEmail,
-            subject: `[${statusText}] ใบ${leaveTypeThai} - ${leaveDetails.startDate}`,
-            html: htmlContent,
-        });
-        console.log(`Approval email sent to ${employeeEmail}`);
-    } catch (error) {
-        console.error('Failed to send approval email:', error);
-    }
+    return enqueueEmail({
+        dedupeKey: `result:${leaveDetails.id}:${isApproved ? 'APPROVED' : 'REJECTED'}`,
+        leaveId: leaveDetails.id,
+        kind: 'RESULT',
+        expectedLeaveStatus: isApproved ? 'APPROVED' : 'REJECTED',
+        recipient: employeeEmail,
+        subject: `[${statusText}] ใบ${leaveTypeThai} - ${leaveDetails.startDate}`,
+        html: htmlContent,
+    });
 }
