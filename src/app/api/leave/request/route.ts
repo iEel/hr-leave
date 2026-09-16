@@ -3,6 +3,7 @@ import { auth } from '@/auth';
 import { getPool, sql } from '@/lib/db';
 import { logAudit } from '@/lib/audit';
 import { notifyPendingApproval } from '@/lib/notifications';
+import { queueLeaveRequestEmails, type LeaveEmailRecipient } from '@/lib/leave-email-queue';
 import { TimeSlot } from '@/types';
 import {
     formatVacationAdvanceNoticeError,
@@ -546,6 +547,7 @@ export async function POST(request: NextRequest) {
         await transaction.begin();
 
         let newRequestId: number;
+        let emailRecipients: LeaveEmailRecipient[] = [];
 
         try {
             // Auto-create balance for years that don't exist yet (inside transaction)
@@ -658,6 +660,12 @@ export async function POST(request: NextRequest) {
                 transaction
             });
 
+            emailRecipients = await queueLeaveRequestEmails(transaction, userId, {
+                id: newRequestId, type: leaveType, startDate, endDate, reason,
+                days: usageAmount, timeSlot: isHourly ? 'HOURLY' : timeSlot,
+                isHourly, startTime, endTime,
+            });
+
             await transaction.commit();
             // === END TRANSACTION ===
 
@@ -666,109 +674,9 @@ export async function POST(request: NextRequest) {
             throw txError;
         }
 
-        // Notify manager about pending leave request
-        try {
-            const managerResult = await pool.request()
-                .input('userId', userId)
-                .query(`
-                    SELECT 
-                        u.firstName + ' ' + u.lastName as employeeName,
-                        m.id as managerId,
-                        m.firstName + ' ' + m.lastName as managerName,
-                        m.email as managerEmail
-                    FROM Users u
-                    LEFT JOIN Users m ON u.departmentHeadId = m.id
-                    WHERE u.id = @userId
-                `);
-
-            const info = managerResult.recordset[0];
-
-            if (info?.managerId) {
-                // 1. System Notification to Manager
-                await notifyPendingApproval(
-                    info.managerId,
-                    info.employeeName,
-                    leaveType
-                );
-
-                // 2. Email Notification to Manager (Magic Link)
-                if (info.managerEmail) {
-                    const { sendLeaveRequestEmail } = await import('@/lib/email');
-                    await sendLeaveRequestEmail(
-                        info.managerEmail,
-                        info.managerName || 'Manager',
-                        info.employeeName,
-                        {
-                            id: newRequestId,
-                            type: leaveType,
-                            startDate: startDate,
-                            endDate: endDate,
-                            reason: reason,
-                            days: usageAmount,
-                            timeSlot: isHourly ? 'HOURLY' : timeSlot,
-                            isHourly: isHourly,
-                            startTime: startTime,
-                            endTime: endTime,
-                        },
-                        info.managerId
-                    );
-                }
-
-                // 3. Notify Delegates (if any)
-                try {
-                    const { getActiveDelegates } = await import('@/lib/delegate');
-                    const delegateIds = await getActiveDelegates(info.managerId);
-
-                    for (const delegateId of delegateIds) {
-                        // Skip if delegate is the same person who is requesting leave
-                        if (delegateId === userId) continue;
-
-                        // Fetch delegate info
-                        const delegateResult = await pool.request()
-                            .input('delegateId', delegateId)
-                            .query(`SELECT firstName + ' ' + lastName as name, email FROM Users WHERE id = @delegateId AND isActive = 1`);
-
-                        if (delegateResult.recordset.length > 0) {
-                            const delegate = delegateResult.recordset[0];
-
-                            // System Notification
-                            await notifyPendingApproval(
-                                delegateId,
-                                `${info.employeeName} (แทน${info.managerName})`,
-                                leaveType
-                            );
-
-                            // Email with Magic Link
-                            if (delegate.email) {
-                                const { sendLeaveRequestEmail } = await import('@/lib/email');
-                                await sendLeaveRequestEmail(
-                                    delegate.email,
-                                    delegate.name || 'ผู้อนุมัติแทน',
-                                    info.employeeName,
-                                    {
-                                        id: newRequestId,
-                                        type: leaveType,
-                                        startDate: startDate,
-                                        endDate: endDate,
-                                        reason: reason,
-                                        days: usageAmount,
-                                        timeSlot: isHourly ? 'HOURLY' : timeSlot,
-                                        isHourly: isHourly,
-                                        startTime: startTime,
-                                        endTime: endTime,
-                                    },
-                                    delegateId
-                                );
-                            }
-                        }
-                    }
-                } catch (delegateError) {
-                    console.error('Error notifying delegates:', delegateError);
-                }
-            }
-        } catch (notifyError) {
-            console.error('Error notifying manager:', notifyError);
-            // Don't fail the request if notification fails
+        // Emails are already durable. In-app notifications run after commit.
+        for (const recipient of emailRecipients) {
+            await notifyPendingApproval(recipient.id, recipient.employeeName, leaveType);
         }
 
         return NextResponse.json({
